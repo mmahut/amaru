@@ -27,7 +27,7 @@ use amaru::{
         config::{Config, MaxExtraLedgerSnapshots, StoreType},
     },
 };
-use amaru_kernel::NetworkName;
+use amaru_kernel::{EraHistory, GlobalParameters, NetworkName};
 use amaru_mempool::MempoolConfig;
 use amaru_ouroboros::MempoolMsg;
 use amaru_protocols::tx_submission::ResponderParams;
@@ -123,6 +123,28 @@ pub struct Args {
         default_value_t = DEFAULT_NETWORK,
     )]
     network: NetworkName,
+
+    /// Path to a JSON era history file overriding the network default.
+    ///
+    /// This is required for generated testnets whose epoch length or era
+    /// bounds differ from Amaru's built-in network profile.
+    #[arg(
+        long,
+        value_name = amaru::value_names::FILEPATH,
+        env = amaru::env_vars::ERA_HISTORY_FILE,
+    )]
+    era_history_file: Option<PathBuf>,
+
+    /// Path to a JSON global-parameters file overriding the network default.
+    ///
+    /// This is required for generated testnets whose consensus parameters
+    /// differ from Amaru's built-in network profile.
+    #[arg(
+        long,
+        value_name = amaru::value_names::FILEPATH,
+        env = amaru::env_vars::GLOBAL_PARAMETERS_FILE,
+    )]
+    global_parameters_file: Option<PathBuf>,
 
     /// Address for the HTTP transaction submit API.
     ///
@@ -293,6 +315,8 @@ fn parse_trace_buffer_limits(s: &str) -> Result<(usize, usize), String> {
 
 fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
     let network = args.network;
+    let era_history = load_era_history(args.era_history_file.as_deref(), network)?;
+    let global_parameters = load_global_parameters(args.global_parameters_file.as_deref(), network)?;
 
     let ledger_dir = args.ledger_dir.unwrap_or_else(|| default_ledger_dir(network).into());
 
@@ -323,6 +347,8 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         max_extra_ledger_snapshots = %args.max_extra_ledger_snapshots,
         migrate_chain_db = args.migrate_chain_db,
         network = %args.network,
+        era_history_file = %args.era_history_file.as_deref().map(|p| p.display().to_string()).unwrap_or_else(|| "network default".to_string()),
+        global_parameters_file = %args.global_parameters_file.as_deref().map(|p| p.display().to_string()).unwrap_or_else(|| "network default".to_string()),
         peer_address = %peer_address.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
         pid_file = %args.pid_file.unwrap_or_default().to_string_lossy(),
         submit_api_address = %args.submit_api_address.as_deref().unwrap_or("disabled"),
@@ -346,6 +372,8 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         target_downstream_peers: args.downstream_peers,
         network: args.network,
         network_magic: args.network.to_network_magic(),
+        era_history,
+        global_parameters,
         listen_address: args.listen_address,
         max_extra_ledger_snapshots: args.max_extra_ledger_snapshots,
         migrate_chain_db: args.migrate_chain_db,
@@ -358,6 +386,23 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         tx_submission_responder_params: tx_submission_params,
         ..Config::default()
     })
+}
+
+fn load_era_history(path: Option<&Path>, network: NetworkName) -> Result<EraHistory, Box<dyn std::error::Error>> {
+    match path {
+        Some(path) => Ok(serde_json::from_slice(&std::fs::read(path)?)?),
+        None => Ok(<&EraHistory>::from(network).clone()),
+    }
+}
+
+fn load_global_parameters(
+    path: Option<&Path>,
+    network: NetworkName,
+) -> Result<GlobalParameters, Box<dyn std::error::Error>> {
+    match path {
+        Some(path) => Ok(serde_json::from_slice(&std::fs::read(path)?)?),
+        None => Ok(<&GlobalParameters>::from(network).clone()),
+    }
 }
 
 #[derive(Debug, Error)]

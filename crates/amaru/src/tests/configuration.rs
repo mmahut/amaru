@@ -256,6 +256,7 @@ impl NodeTestConfig {
             upstream_peers: self.upstream_peers.iter().map(|p| p.name.clone()).collect(),
             network: self.network_name,
             network_magic: self.network_name.to_network_magic(),
+            era_history: self.era_history().clone(),
             ..Default::default()
         };
 

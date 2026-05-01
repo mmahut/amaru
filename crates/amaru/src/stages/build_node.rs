@@ -53,7 +53,7 @@ pub fn build_and_run_node(config: Config, meter_provider: Option<SdkMeterProvide
     let trace_buffer = TraceBuffer::new_shared(config.trace_buffer_min_entries, config.trace_buffer_max_size);
     let mut stage_builder = TokioBuilder::default().with_trace_buffer(trace_buffer);
 
-    let node_stages = build_node(&config, config.network.into(), meter_provider, &mut stage_builder)?;
+    let node_stages = build_node(&config, &config.global_parameters, meter_provider, &mut stage_builder)?;
     let mempool_sender = stage_builder.input(node_stages.mempool_stage());
     let tokio_running = stage_builder.run(Handle::current().clone());
     Ok(NodeRunning { tokio_running, mempool_sender })
@@ -104,7 +104,7 @@ pub fn build_node(
     meter_provider: Option<SdkMeterProvider>,
     stage_builder: &mut impl StageGraph,
 ) -> anyhow::Result<NodeStages> {
-    let era_history: &EraHistory = config.network.into();
+    let era_history = &config.era_history;
 
     // Make the ledger and get its tip
     let ledger = Ledger::new(config, era_history.clone(), global_parameters.clone())

@@ -188,6 +188,12 @@ pub mod env_vars {
     /// --ledger-dir
     pub const LEDGER_DIR: &str = "AMARU_LEDGER_DIR";
 
+    /// --era-history-file
+    pub const ERA_HISTORY_FILE: &str = "AMARU_ERA_HISTORY_FILE";
+
+    /// --global-parameters-file
+    pub const GLOBAL_PARAMETERS_FILE: &str = "AMARU_GLOBAL_PARAMETERS_FILE";
+
     /// --listen-address
     pub const LISTEN_ADDRESS: &str = "AMARU_LISTEN_ADDRESS";
 
