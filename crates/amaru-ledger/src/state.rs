@@ -869,8 +869,8 @@ pub fn initial_stake_distributions(
 
     let mut stake_distributions = VecDeque::new();
 
-    let epoch_for_rewards = Epoch::from(latest_epoch - Epoch::from(2));
-    let epoch_for_leader_schedule = Epoch::from(latest_epoch - Epoch::from(1));
+    let epoch_for_rewards = latest_epoch.saturating_sub(2);
+    let epoch_for_leader_schedule = latest_epoch.saturating_sub(1);
 
     for epoch in [epoch_for_rewards, epoch_for_leader_schedule, latest_epoch] {
         let snapshot = snapshots.for_epoch(epoch)?;
@@ -950,7 +950,7 @@ impl HasStakeDistribution for StakeDistributionObserver {
             // Either way, we do know at this point how to forecast this slot.
             .slot_to_epoch_unchecked_horizon(slot)
             .map_err(GetPoolError::SlotToEpochConversionFailure)?
-            - 2;
+            .saturating_sub(2);
         let view = self.view.lock().unwrap();
         let stake_distribution =
             view.iter().find(|s| s.epoch == epoch).ok_or(GetPoolError::StakeDistributionNotAvailable(slot, epoch))?;
