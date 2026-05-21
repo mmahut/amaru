@@ -621,6 +621,7 @@ mod tests {
     #[test_case(fixture!("simple_spend_no_datum"); "simple spend no datum")]
     #[test_case(fixture!("mint"); "mint")]
     #[test_case(fixture!("certificates_v10"); "certificates (protocol ver 10")]
+    #[test_case(fixture!("duplicate_redeemers_last_wins"); "duplicate redeemers last wins")]
     // The following test is commented out because we are disregarding protocol version 9.
     // See the comment on the `ToPlutusData` implementation for `Certificate` for more information
     // #[test_case(fixture!("certificates_v9"); "certificates (protocol ver 9")]
