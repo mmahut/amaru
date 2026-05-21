@@ -172,10 +172,10 @@ impl<A, E> Residual<A> for BlockValidationResidual<E> {
 pub fn execute<C, S: From<C>>(
     context: &mut C,
     arena_pool: &ArenaPool,
-    network: &NetworkName,
+    network: NetworkName,
     protocol_params: &ProtocolParameters,
     era_history: &EraHistory,
-    governance_activity: &GovernanceActivity,
+    governance_activity: GovernanceActivity,
     block: Block,
 ) -> BlockValidation<(), anyhow::Error>
 where
@@ -248,10 +248,10 @@ where
 pub fn validate_transaction<C>(
     context: &mut C,
     arena_pool: &ArenaPool,
-    network: &NetworkName,
+    network: NetworkName,
     protocol_params: &ProtocolParameters,
     era_history: &EraHistory,
-    governance_activity: &GovernanceActivity,
+    governance_activity: GovernanceActivity,
     pointer: TransactionPointer,
     transaction: &Transaction,
     tx_size: u64,

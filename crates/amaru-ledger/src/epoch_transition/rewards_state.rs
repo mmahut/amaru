@@ -66,7 +66,7 @@ pub enum RewardsState {
 
 impl RewardsState {
     /// Consume a rewards summary, if available.
-    pub fn take(&mut self) -> Option<RewardsSummary> {
+    pub fn take_rewards_summary(&mut self) -> Option<RewardsSummary> {
         match std::mem::replace(self, Self::NotReady) {
             Self::NotReady | Self::Effective(_) => None,
             Self::Ready(summary) => Some(summary),

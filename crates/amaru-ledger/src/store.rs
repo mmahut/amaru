@@ -301,7 +301,7 @@ pub trait TransactionalContext<'a>: ReadStore {
         &self,
         era_history: &EraHistory,
         protocol_parameters: &ProtocolParameters,
-        governance_activity: &mut GovernanceActivity,
+        governance_activity: GovernanceActivity,
         point: &Point,
         issuer: Option<&pools::Key>,
         add: Columns<
@@ -323,7 +323,7 @@ pub trait TransactionalContext<'a>: ReadStore {
             impl Iterator<Item = ()>,
         >,
         withdrawals: impl Iterator<Item = accounts::Key>,
-    ) -> Result<()>;
+    ) -> Result<GovernanceActivity>;
 
     /// Refund a deposit into an account. If the account no longer exists, returns the unrefunded
     /// deposit.
@@ -347,7 +347,7 @@ pub trait TransactionalContext<'a>: ReadStore {
     fn set_constitution(&self, constitution: &Constitution) -> Result<()>;
 
     /// Track the current governance activity.
-    fn set_governance_activity(&self, dormant_epochs: &GovernanceActivity) -> Result<()>;
+    fn set_governance_activity(&self, dormant_epochs: GovernanceActivity) -> Result<()>;
 
     /// Remove a list of proposals from the database. This is done when enacting proposals that
     /// cause other proposals to become obsolete.

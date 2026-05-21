@@ -18,8 +18,9 @@ use amaru_kernel::{
     BlockHeight, EraHistory, GlobalParameters, Hash, NetworkName, Point, ProtocolParameters, Slot, Tip,
 };
 use amaru_ledger::{
+    epoch_transition::GovernanceActivity,
     state::{BackwardError, State, VolatileState},
-    store::{GovernanceActivity, ReadStore, Store, StoreError},
+    store::{ReadStore, Store, StoreError},
 };
 use amaru_stores::rocksdb::{RocksDB, RocksDBHistoricalStores, RocksDbConfig};
 
@@ -127,7 +128,7 @@ fn make_state() -> State<MockStore, RocksDBHistoricalStores> {
         era_history,
         global_parameters,
         protocol_parameters,
-        GovernanceActivity { consecutive_dormant_epochs: 0 },
+        GovernanceActivity::default(),
         VecDeque::new(),
     )
 }
@@ -136,9 +137,8 @@ fn make_state() -> State<MockStore, RocksDBHistoricalStores> {
 #[expect(clippy::expect_used)]
 fn forward_to(state: &mut State<MockStore, RocksDBHistoricalStores>, point: Point, height: u64) {
     let issuer = Hash::new([0u8; 28]);
-    state
-        .forward(VolatileState::default().anchor(Tip::new(point, BlockHeight::from(height)), issuer))
-        .expect("forward");
+    let tip = Tip::new(point, BlockHeight::from(height));
+    state.add_block(VolatileState::default().anchor(tip, issuer)).expect("forward");
 }
 
 fn point(slot: u64, tag: u8) -> Point {

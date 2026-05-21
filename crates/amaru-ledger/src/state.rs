@@ -17,7 +17,7 @@ use std::{
     cmp::max,
     collections::{BTreeSet, VecDeque},
     net::SocketAddr,
-    ops::Deref,
+    ops::{Deref, DerefMut},
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -45,7 +45,10 @@ use crate::{
     governance::ratification::{self, RatificationContext},
     rules,
     rules::block::BlockValidation,
-    state::volatile_db::{StoreUpdate, VolatileDB},
+    state::{
+        overlay::StateOverlay,
+        volatile_db::{StoreUpdate, VolatileDB},
+    },
     store::{HistoricalStores, ReadStore, Snapshot, Store, StoreError, TransactionalContext},
     summary::{
         governance::{self, GovernanceSummary},
@@ -57,6 +60,7 @@ use crate::{
 pub mod diff_bind;
 pub mod diff_epoch_reg;
 pub mod diff_set;
+pub mod overlay;
 pub mod volatile_db;
 
 /// The minimum number of past (from the current epoch) snapshots required for the ledger to
@@ -91,25 +95,21 @@ where
     /// Our own in-memory vector of volatile deltas to apply onto the stable store in due time.
     volatile: VolatileDB,
 
-    /// The computed rewards summary to be applied on the next epoch boundary. This is computed
-    /// once in the epoch, and held until the end where it is reset.
+    /// We store updatable information from the state in a separate type that lives in a separate
+    /// module to ensure proper encapsulation.
     ///
-    /// It also contains the latest stake distribution computed from the previous epoch, which we
-    /// hold onto the epoch boundary. In the epoch boundary, the stake distribution becomes
-    /// available for the leader schedule verification, whereas the stake distribution previously
-    /// used for leader schedule is moved as rewards stake.
-    rewards: RewardsState,
+    /// Things like "protocol parameters" may change during epoch transition, but the changes are
+    /// not immediately propagated to the 'stable' store because they only become stable later. So
+    /// in the meantime, they're kept in memory as "updates to be applied". So we only access them
+    /// through dedicated methods that take care of applying pending updates to avoid cases where
+    /// we would inadvertently do a direct field access and create a possibly catastrophic
+    /// inconsistency within the ledger.
+    overlay: StateOverlay,
 
-    /// Computed pools updates that are pending application to the stable store. The value is only
-    /// `Some` during the first `k` blocks of an epoch since this corresponds to the unstable part
-    /// of an epoch.
-    ///
-    /// When present, they must be taken into account when creating the ledger validation context.
-    pools_updates: Option<PoolsEpochTransitionUpdates>,
-
-    /// The result of an epoch boundary ratification, stashed temporarily until it is stable enough
-    /// to persist in the stable storage.
-    governance_updates: Option<GovernanceUpdates>,
+    /// Global (i.e. non-updatable) parameters of the network. This includes things like
+    /// slot length, epoch length, security parameter and other pieces that cannot generally
+    /// be updated but grouped here to avoid dealing with magic values everywhere.
+    global_parameters: Arc<GlobalParameters>,
 
     /// A (shared) collection of the latest stake distributions. Those are used both during rewards
     /// calculations, and for leader schedule verification.
@@ -127,21 +127,22 @@ where
     /// The era history for the network this store is related to.
     era_history: Arc<EraHistory>,
 
-    /// Global (i.e. non-updatable) parameters of the network. This includes things like
-    /// slot length, epoch length, security parameter and other pieces that cannot generally
-    /// be updated but grouped here to avoid dealing with magic values everywhere.
-    global_parameters: Arc<GlobalParameters>,
-
-    /// Updatable protocol parameters.
-    protocol_parameters: ProtocolParameters,
-
-    /// Track the number of dormant epochs (i.e. epochs that start without any available
-    /// proposals).
-    governance_activity: GovernanceActivity,
-
     /// Which network are we connected to. This is mostly helpful for distinguishing between
     /// behavious that are network specifics (e.g. address discriminant).
     network: NetworkName,
+}
+
+impl<S: Store, HS: HistoricalStores> Deref for State<S, HS> {
+    type Target = StateOverlay;
+    fn deref(&self) -> &Self::Target {
+        &self.overlay
+    }
+}
+
+impl<S: Store, HS: HistoricalStores> DerefMut for State<S, HS> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.overlay
+    }
 }
 
 impl<S: Store, HS: HistoricalStores> State<S, HS> {
@@ -181,6 +182,8 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         governance_activity: GovernanceActivity,
         stake_distributions: VecDeque<StakeDistribution>,
     ) -> Self {
+        let epoch = snapshots.most_recent_snapshot();
+
         Self {
             stable: Arc::new(Mutex::new(stable)),
 
@@ -198,21 +201,13 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             //     views of the volatile DB on-disk to be able to restore them quickly.
             volatile: VolatileDB::default(),
 
-            rewards: RewardsState::NotReady,
+            overlay: StateOverlay::new(epoch, protocol_parameters, governance_activity),
 
-            pools_updates: None,
-
-            governance_updates: None,
+            global_parameters: Arc::new(global_parameters),
 
             stake_distributions: Arc::new(Mutex::new(stake_distributions)),
 
             era_history: Arc::new(era_history),
-
-            global_parameters: Arc::new(global_parameters),
-
-            protocol_parameters,
-
-            governance_activity,
 
             network,
         }
@@ -224,20 +219,12 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         StakeDistributionObserver { view: self.stake_distributions.clone(), era_history: self.era_history.clone() }
     }
 
-    pub fn network(&self) -> &NetworkName {
-        &self.network
+    pub fn network(&self) -> NetworkName {
+        self.network
     }
 
     pub fn era_history(&self) -> &EraHistory {
         &self.era_history
-    }
-
-    pub fn protocol_parameters(&self) -> &ProtocolParameters {
-        &self.protocol_parameters
-    }
-
-    pub fn governance_activity(&self) -> &GovernanceActivity {
-        &self.governance_activity
     }
 
     /// Inspect the tip of this ledger state. This corresponds to the point of the latest block
@@ -275,46 +262,47 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
     #[expect(clippy::unwrap_used)]
     fn apply_block(&mut self, now_stable: AnchoredVolatileState) -> Result<(), StateError> {
-        trace_span!(
-            amaru_observability::amaru::ledger::state::APPLY_BLOCK,
-            point_slot = u64::from(now_stable.anchor.0.slot())
-        )
-        .in_scope(|| {
-            let stable_tip_slot = now_stable.anchor.0.slot();
+        let stable_tip_slot = now_stable.anchor.0.slot();
+        trace_span!(amaru_observability::amaru::ledger::state::APPLY_BLOCK, point_slot = u64::from(stable_tip_slot))
+            .in_scope(|| {
+                let epoch = self
+                    .era_history
+                    .slot_to_epoch_unchecked_horizon(stable_tip_slot)
+                    .map_err(|e| StateError::ErrorComputingEpoch(stable_tip_slot, e))?;
 
-            let current_epoch = self
-                .era_history
-                .slot_to_epoch(stable_tip_slot, stable_tip_slot)
-                .map_err(|e| StateError::ErrorComputingEpoch(stable_tip_slot, e))?;
+                // Persist changes for this block
+                let StoreUpdate { point: stable_point, issuer: stable_issuer, fees, add, remove, withdrawals } =
+                    now_stable.into_store_update(epoch, self.protocol_parameters());
 
-            // Persist changes for this block
-            let StoreUpdate { point: stable_point, issuer: stable_issuer, fees, add, remove, withdrawals } =
-                now_stable.into_store_update(current_epoch, &self.protocol_parameters);
+                let db = self.stable.lock().unwrap();
 
-            let db = self.stable.lock().unwrap();
+                let governance_activity = db
+                    .with_transaction(|batch| {
+                        let governance_activity = batch.save(
+                            &self.era_history,
+                            self.protocol_parameters_for(epoch),
+                            self.governance_activity_for(epoch),
+                            &stable_point,
+                            Some(&stable_issuer),
+                            add,
+                            remove,
+                            withdrawals,
+                        )?;
 
-            let batch = db.create_transaction();
+                        batch.with_pots(|mut row| {
+                            row.borrow_mut().fees += fees;
+                        })?;
 
-            db.with_transaction(|batch| {
-                batch.save(
-                    &self.era_history,
-                    &self.protocol_parameters,
-                    &mut self.governance_activity,
-                    &stable_point,
-                    Some(&stable_issuer),
-                    add,
-                    remove,
-                    withdrawals,
-                )?;
+                        Ok(governance_activity)
+                    })
+                    .map_err(StateError::Storage)?;
 
-                batch.with_pots(|mut row| {
-                    row.borrow_mut().fees += fees;
-                })?;
+                drop(db); // Dropping the *mutable reference*, not the *actual database* :)
+
+                *self.governance_activity_mut() = governance_activity;
 
                 Ok(())
             })
-            .map_err(StateError::Storage)
-        })
     }
 
     /// Check whether the next state should cause an epoch transition. This is the case when it
@@ -338,16 +326,14 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             let next_epoch = unsafe_slot_to_epoch(&self.era_history, next_tip.slot());
 
             if next_epoch > current_epoch {
-                let old_protocol_version = self.protocol_parameters.protocol_version;
+                let old_protocol_version = self.protocol_version();
 
                 self.epoch_transition(next_epoch)?;
 
-                if old_protocol_version != self.protocol_parameters.protocol_version {
-                    info!(
-                        from = old_protocol_version.0,
-                        to = self.protocol_parameters.protocol_version.0,
-                        "protocol.upgrade"
-                    )
+                let new_protocol_version = self.protocol_version();
+
+                if old_protocol_version != new_protocol_version {
+                    info!(from = old_protocol_version.0, to = new_protocol_version.0, "protocol.upgrade")
                 }
             }
         }
@@ -362,21 +348,20 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             into = u64::from(next_epoch)
         )
         .in_scope(|| {
+            // FIXME: This should eventually be an '.await', as we always expect to *eventually*
+            // have some rewards summary being available. There's no way to continue progressing
+            // the ledger if we don't.
+            let rewards_summary = self.take_rewards_summary().ok_or(StateError::RewardsSummaryNotReady)?;
+
+            #[allow(clippy::unwrap_used)]
             let db = self.stable.lock().unwrap();
 
-            let rewards_payouts = epoch_transition::end_epoch(
-                &*db,
-                // FIXME: This should eventually be an '.await', as we always expect to *eventually*
-                // have some rewards summary being available. There's no way to continue progressing
-                // the ledger if we don't.
-                self.rewards.take().ok_or(StateError::RewardsSummaryNotReady)?,
-            )?;
+            let rewards_payouts = epoch_transition::end_epoch(&*db, rewards_summary)?;
 
             let ratification_context = RatificationContext::new(
                 self.snapshots.for_epoch(next_epoch - 2)?,
                 self.stake_distribution(next_epoch - 2)?,
-                // TODO: Pass in a mutable ref?
-                self.protocol_parameters.clone(),
+                self.protocol_parameters().clone(),
                 // NOTE: ratification treasury value
                 //
                 // Ratification occurs after rewards have been paid out; and thus, uses the value
@@ -387,9 +372,9 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             let (pools_updates, governance_updates) =
                 epoch_transition::begin_epoch(&*db, next_epoch, &self.era_history, ratification_context)?;
 
-            self.rewards = RewardsState::Effective(rewards_payouts);
-            self.pools_updates = Some(pools_updates);
-            self.governance_updates = Some(governance_updates);
+            drop(db); // Dropping the *mutable reference*, not the *actual database* :)
+
+            self.transition(rewards_payouts, pools_updates, governance_updates);
 
             Ok(())
         })
@@ -405,14 +390,15 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             let epoch = stake_distribution.epoch + 2;
 
             let snapshot = self.snapshots.for_epoch(epoch)?;
+
             let rewards_summary =
-                RewardsSummary::new(&snapshot, stake_distribution, &self.global_parameters, &self.protocol_parameters)
+                RewardsSummary::new(&snapshot, stake_distribution, &self.global_parameters, self.protocol_parameters())
                     .map_err(StateError::Storage)?;
 
             stake_distributions.push_front(compute_stake_distribution(
                 &snapshot,
                 &self.era_history,
-                &self.protocol_parameters,
+                self.protocol_parameters(),
             )?);
 
             Ok(rewards_summary)
@@ -422,7 +408,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     /// Roll the ledger forward with the given block by applying transactions one by one, in
     /// sequence. The update stops at the first invalid transaction, if any. Otherwise, it updates
     /// the internal state of the ledger.
-    pub fn forward(&mut self, next_state: AnchoredVolatileState) -> Result<(), StateError> {
+    pub fn add_block(&mut self, next_state: AnchoredVolatileState) -> Result<(), StateError> {
         trace_span!(amaru_observability::amaru::ledger::state::FORWARD).in_scope(|| {
             self.try_epoch_transition(next_state.anchor.0)?;
 
@@ -470,10 +456,10 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             // tasks while rewards are being computed; they only need to be available at the epoch
             // boundary.
             let stability_window = self.global_parameters.stability_window;
-            /// FIXME: Flush pools updates, rewards and governance updates to disk; and then begin
-            /// rewards calculation.
-            if matches!(self.rewards, RewardsState::NotReady) && relative_slot >= stability_window {
-                self.rewards = RewardsState::Ready(self.compute_rewards()?);
+            // FIXME: Flush pools updates, rewards and governance updates to disk; and then begin
+            // rewards calculation.
+            if matches!(self.rewards(), RewardsState::NotReady) && relative_slot >= stability_window {
+                *self.rewards_mut() = RewardsState::Ready(self.compute_rewards()?);
             }
 
             self.volatile.push_back(next_state);
@@ -683,7 +669,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
             let tip = Tip::new(*point, block_height.into());
 
-            match self.forward(state.anchor(tip, issuer)) {
+            match self.add_block(state.anchor(tip, issuer)) {
                 Ok(()) => BlockValidation::Valid(metrics),
                 Err(e) => {
                     error!(%e, "Failed to roll forward the ledger state");

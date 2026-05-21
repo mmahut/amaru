@@ -48,31 +48,35 @@ use crate::{
 #[derive(Debug)]
 pub struct GovernanceUpdates {
     /// Resulting proposal roots for each of the proposal categories.
-    roots: ProposalsRoots,
+    pub roots: ProposalsRoots,
 
     /// Resulting protocol parameters, includes protocol version upgrades for hard forks.
-    protocol_parameters: ProtocolParameters,
+    pub protocol_parameters: ProtocolParameters,
 
     /// Proposals that have been ratified, have expired or have been pruned due to another
     /// conflicting proposal being dropped.
-    pruned_proposals: BTreeSet<ComparableProposalId>,
+    pub pruned_proposals: BTreeSet<ComparableProposalId>,
 
     /// Payouts done to accounts; either because of a deposit refunds or because of a treasury
     /// withdrawal.
-    payouts: BTreeMap<StakeCredential, Lovelace>,
+    pub payouts: BTreeMap<StakeCredential, Lovelace>,
 
-    /// The governance activity capturing dormant epochs
-    governance_activity: GovernanceActivity,
+    /// Captures whether the resulting epoch is considered 'dormant' (i.e. no active proposals
+    /// left to vote on at the beginning of the epoch, after ratification).
+    pub is_dormant_epoch: bool,
 
     /// The current constitutional committee, if any. No committee signals a state of
     /// no-confidence.
-    constitutional_committee: Option<CommitteeUpdate>,
+    pub constitutional_committee: Option<CommitteeUpdate>,
 
     /// A new constitution that has been voted and approved, if any.
-    new_constitution: Option<Constitution>,
+    pub new_constitution: Option<Constitution>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, cbor::Encode, cbor::Decode)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, cbor::Encode, cbor::Decode, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
 pub struct GovernanceActivity {
     #[n(0)]
     pub consecutive_dormant_epochs: u32,
@@ -177,11 +181,6 @@ impl GovernanceUpdates {
                     }
                 }
 
-                let mut governance_activity = db.governance_activity()?;
-                if is_dormant_epoch {
-                    governance_activity.consecutive_dormant_epochs += 1;
-                }
-
                 // NOTE: 'unwrap_or_clone' pruned proposal ids
                 //
                 // We have disposed of the proposals metadata just before by consuming the object via
@@ -194,7 +193,7 @@ impl GovernanceUpdates {
                     roots: roots.unwrap_or_clone(),
                     pruned_proposals,
                     payouts,
-                    governance_activity,
+                    is_dormant_epoch,
                     protocol_parameters: ctx.protocol_parameters,
                     new_constitution: ctx.new_constitution,
                     constitutional_committee: ctx.constitutional_committee_update,

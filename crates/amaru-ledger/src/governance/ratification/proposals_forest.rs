@@ -756,7 +756,8 @@ mod tests {
     use super::ProposalsForest;
     use crate::{
         governance::ratification::{
-            CommitteeUpdate, OrphanProposal, ProposalEnum, ProposalsRootsRc, any_committee_update, any_proposal_enum,
+            CandidateProposal, CommitteeUpdate, OrphanProposal, ProposalEnum, ProposalsRootsRc, any_committee_update,
+            any_proposal_enum,
             tests::{ERA_HISTORY, MAX_ARBITRARY_EPOCH, MIN_ARBITRARY_EPOCH},
         },
         store::columns::proposals,
@@ -803,12 +804,18 @@ mod tests {
         // second hard-fork with `proposal_a` as parent.
         let proposal_2 = make_proposal(Nullable::Some(proposal_id_1.clone()));
 
-        let proposals =
-            vec![make_row(proposal_id_2.clone(), proposal_2, 20), make_row(proposal_id_1.clone(), proposal_1, 10)];
+        let proposal_id_1 = Rc::new(proposal_id_1);
+        let proposal_id_2 = Rc::new(proposal_id_2);
+
+        let proposals = vec![
+            into_candidate(proposal_id_2.clone(), proposal_2, 20),
+            into_candidate(proposal_id_1.clone(), proposal_1, 10),
+        ];
 
         let forest = make_forest().drain(&ERA_HISTORY, proposals).unwrap();
-        let sequenced_proposals: Vec<_> = forest.sequence.iter().map(|rc| rc.as_ref().clone()).collect();
-        assert_eq!(sequenced_proposals, vec![proposal_id_1, proposal_id_2]);
+        let sequenced_proposals: Vec<_> = forest.sequence.iter().map(|rc| rc.as_ref()).collect();
+
+        assert_eq!(sequenced_proposals, vec![proposal_id_1.as_ref(), proposal_id_2.as_ref()]);
     }
 
     proptest! {
@@ -1355,25 +1362,6 @@ mod tests {
         }
     }
 
-    /// Make a proposal Row
-    fn make_row(
-        proposal_id: ComparableProposalId,
-        proposal: Proposal,
-        slot: u64,
-    ) -> (ComparableProposalId, proposals::Row) {
-        (
-            proposal_id,
-            proposals::Row {
-                proposed_in: ProposalPointer {
-                    transaction: TransactionPointer { slot: Slot::from(slot), transaction_index: 0 },
-                    proposal_index: 0,
-                },
-                valid_until: current_epoch(),
-                proposal,
-            },
-        )
-    }
-
     /// Use a fixed epoch for proposals and proposals forest
     fn current_epoch() -> Epoch {
         Epoch::from(MIN_ARBITRARY_EPOCH + 1)
@@ -1393,6 +1381,12 @@ mod tests {
         )
     }
 
+    /// Make a simple proposal id based on a hash created from just one byte
+    fn make_id(byte: u8) -> ComparableProposalId {
+        let proposal_id = ProposalId { transaction_id: Hash::new([byte; 32]), action_index: 0 };
+        ComparableProposalId::from(proposal_id)
+    }
+
     /// Make a proposal with an optional parent
     fn make_proposal(parent: Nullable<ComparableProposalId>) -> Proposal {
         Proposal {
@@ -1403,8 +1397,20 @@ mod tests {
         }
     }
 
-    /// Make a simple proposal id based on a hash created from just one byte
-    fn make_id(byte: u8) -> ComparableProposalId {
-        ComparableProposalId::from(ProposalId { transaction_id: Hash::new([byte; 32]), action_index: 0 })
+    /// Make a proposal candidate from a raw proposal and id
+    fn into_candidate(
+        proposal_id: Rc<ComparableProposalId>,
+        proposal: Proposal,
+        slot: u64,
+    ) -> (Rc<ComparableProposalId>, CandidateProposal) {
+        let proposed_in = ProposalPointer {
+            transaction: TransactionPointer { slot: Slot::from(slot), transaction_index: 0 },
+            proposal_index: 0,
+        };
+
+        (
+            proposal_id,
+            CandidateProposal { proposed_in, valid_until: current_epoch(), governance_action: proposal.gov_action },
+        )
     }
 }

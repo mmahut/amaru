@@ -66,7 +66,7 @@ pub struct UplcMachineError {
 pub fn execute<C>(
     context: &mut C,
     arena_pool: &ArenaPool,
-    network: &NetworkName,
+    network: NetworkName,
     protocol_parameters: &ProtocolParameters,
     era_history: &EraHistory,
     pointer: TransactionPointer,
@@ -115,7 +115,7 @@ where
         transaction_body.tx_id(),
         &utxos,
         &pointer.slot,
-        *network,
+        network,
         era_history,
         protocol_parameters.protocol_version,
     )?;
@@ -304,7 +304,7 @@ mod tests {
         super::execute(
             &mut context,
             &ARENA_POOL,
-            &network,
+            network,
             protocol_parameters,
             <&EraHistory>::from(network),
             default_pointer(&transaction),

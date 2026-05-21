@@ -337,10 +337,10 @@ fn save_point(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let transaction = db.create_transaction();
 
-    transaction.save(
+    governance_activity = transaction.save(
         era_history,
         protocol_parameters,
-        &mut governance_activity,
+        governance_activity,
         point,
         None,
         Default::default(),
@@ -348,7 +348,7 @@ fn save_point(
         iter::empty(),
     )?;
 
-    transaction.set_governance_activity(&governance_activity)?;
+    transaction.set_governance_activity(governance_activity)?;
 
     transaction.commit()?;
 
@@ -387,7 +387,7 @@ fn import_block_issuers(
                 era_history,
                 // TODO: Unused when storing block issuers; require API change.
                 &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
-                &mut default_governance_activity(),
+                GovernanceActivity::default(),
                 &Point::Specific(fake_slot.into(), Hash::new([0; 32])),
                 Some(&pool),
                 store::Columns {
@@ -451,7 +451,7 @@ fn import_dreps(
     transaction.save(
         era_history,
         protocol_parameters,
-        &mut default_governance_activity(),
+        GovernanceActivity::default(),
         point,
         None,
         store::Columns {
@@ -513,7 +513,7 @@ fn import_proposals(
     transaction.save(
         era_history,
         protocol_parameters,
-        &mut default_governance_activity(),
+        GovernanceActivity::default(),
         point,
         None,
         store::Columns {
@@ -589,7 +589,7 @@ fn import_stake_pools(
         era_history,
         // TODO: Unused when storing block issuers; require API change.
         &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
-        &mut default_governance_activity(),
+        GovernanceActivity::default(),
         point,
         None,
         store::Columns {
@@ -696,7 +696,7 @@ fn import_accounts(
         transaction.save(
             era_history,
             protocol_parameters,
-            &mut default_governance_activity(),
+            GovernanceActivity::default(),
             point,
             None,
             store::Columns {
@@ -811,7 +811,7 @@ fn import_constitutional_committee(
     transaction.save(
         era_history,
         protocol_parameters,
-        &mut default_governance_activity(),
+        GovernanceActivity::default(),
         point,
         None,
         store::Columns {
@@ -896,7 +896,7 @@ fn import_votes(
     transaction.save(
         era_history,
         protocol_parameters,
-        &mut default_governance_activity(),
+        GovernanceActivity::default(),
         point,
         None,
         store::Columns {
@@ -986,10 +986,6 @@ impl<'d, C> cbor::decode::Decode<'d, C> for ConstitutionalCommittee {
             Ok(ConstitutionalCommittee { members: d.decode_with(ctx)?, threshold: d.decode_with(ctx)? })
         })
     }
-}
-
-pub fn default_governance_activity() -> GovernanceActivity {
-    GovernanceActivity { consecutive_dormant_epochs: 0 }
 }
 
 #[cfg(test)]

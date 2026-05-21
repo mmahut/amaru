@@ -30,7 +30,8 @@ use amaru_kernel::{
     cbor::lazy::LazyDecoder,
 };
 use amaru_ledger::{
-    bootstrap::{default_governance_activity, import_initial_snapshot},
+    bootstrap::import_initial_snapshot,
+    epoch_transition::GovernanceActivity,
     store::{self, Store, TransactionalContext},
 };
 use amaru_progress_bar::ProgressBar;
@@ -192,7 +193,7 @@ where
             transaction.save(
                 era_history,
                 &protocol_parameters,
-                &mut default_governance_activity(),
+                GovernanceActivity::default(),
                 point,
                 None,
                 store::Columns {

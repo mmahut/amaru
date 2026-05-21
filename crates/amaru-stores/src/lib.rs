@@ -23,9 +23,10 @@ pub mod tests {
         TransactionInput, any_certificate_pointer, any_hash28, any_pool_params, any_proposal_id, any_stake_credential,
     };
     use amaru_ledger::{
+        epoch_transition::GovernanceActivity,
         state::diff_bind,
         store::{
-            Columns, GovernanceActivity, ReadStore, Store, StoreError, TransactionalContext,
+            Columns, ReadStore, Store, StoreError, TransactionalContext,
             columns::{
                 accounts::{self},
                 cc_members, dreps,
@@ -169,7 +170,6 @@ pub mod tests {
         let slot_leader = any_hash28().new_tree(runner).unwrap().current();
 
         let era_history = (*Into::<&'static EraHistory>::into(NetworkName::Preprod)).clone();
-        let mut governance_activity = GovernanceActivity { consecutive_dormant_epochs: 0 };
 
         {
             let context = store.create_transaction();
@@ -177,7 +177,7 @@ pub mod tests {
             context.save(
                 &era_history,
                 &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
-                &mut governance_activity,
+                GovernanceActivity::default(),
                 &point,
                 Some(&slot_leader),
                 Columns {
@@ -310,12 +310,11 @@ pub mod tests {
             votes: std::iter::empty(),
         };
         let era_history = (*Into::<&'static EraHistory>::into(NetworkName::Preprod)).clone();
-        let mut governance_activity = GovernanceActivity { consecutive_dormant_epochs: 0 };
         let context = store.create_transaction();
         context.save(
             &era_history,
             &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
-            &mut governance_activity,
+            GovernanceActivity::default(),
             &point,
             None,
             Columns::empty(),
@@ -343,12 +342,11 @@ pub mod tests {
         };
 
         let era_history = (*Into::<&'static EraHistory>::into(NetworkName::Preprod)).clone();
-        let mut governance_activity = GovernanceActivity { consecutive_dormant_epochs: 0 };
         let context = store.create_transaction();
         context.save(
             &era_history,
             &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
-            &mut governance_activity,
+            GovernanceActivity::default(),
             &point,
             None,
             Columns::empty(),
@@ -375,12 +373,11 @@ pub mod tests {
             votes: std::iter::empty(),
         };
         let era_history = (*Into::<&'static EraHistory>::into(NetworkName::Preprod)).clone();
-        let mut governance_activity = GovernanceActivity { consecutive_dormant_epochs: 0 };
         let context = store.create_transaction();
         context.save(
             &era_history,
             &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
-            &mut governance_activity,
+            GovernanceActivity::default(),
             &point,
             None,
             Columns::empty(),
@@ -424,12 +421,11 @@ pub mod tests {
         assert!(store.iter_dreps()?.any(|(key, _)| key == fixture.drep_key), "DRep not present before removal");
 
         let era_history = (*Into::<&'static EraHistory>::into(NetworkName::Preprod)).clone();
-        let mut governance_activity = GovernanceActivity { consecutive_dormant_epochs: 0 };
         let context = store.create_transaction();
         context.save(
             &era_history,
             &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
-            &mut governance_activity,
+            GovernanceActivity::default(),
             &point,
             None,
             Columns::empty(),

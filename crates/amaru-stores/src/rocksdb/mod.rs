@@ -28,11 +28,12 @@ use amaru_kernel::{
     TransactionInput, cbor,
 };
 use amaru_ledger::{
+    epoch_transition::GovernanceActivity,
     governance::ratification::{ProposalsRoots, ProposalsRootsRc},
     state::diff_bind::Resettable,
     store::{
-        Columns, EpochTransitionProgress, GovernanceActivity, HistoricalStores, OpenErrorKind, ReadStore, Snapshot,
-        Store, StoreError, TransactionalContext, columns as scolumns,
+        Columns, EpochTransitionProgress, HistoricalStores, OpenErrorKind, ReadStore, Snapshot, Store, StoreError,
+        TransactionalContext, columns as scolumns,
     },
     summary::Pots,
 };
@@ -655,7 +656,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
         Ok(())
     }
 
-    fn set_governance_activity(&self, governance_activity: &GovernanceActivity) -> Result<(), StoreError> {
+    fn set_governance_activity(&self, governance_activity: GovernanceActivity) -> Result<(), StoreError> {
         self.db
             .put(KEY_GOVERNANCE_ACTIVITY, as_value(governance_activity))
             .map_err(|err| StoreError::Internal(err.into()))?;
@@ -682,7 +683,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
         &self,
         era_history: &EraHistory,
         protocol_parameters: &ProtocolParameters,
-        governance_activity: &mut GovernanceActivity,
+        mut governance_activity: GovernanceActivity,
         point: &Point,
         issuer: Option<&scolumns::pools::Key>,
         add: Columns<
@@ -704,7 +705,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
             impl Iterator<Item = ()>,
         >,
         withdrawals: impl Iterator<Item = scolumns::accounts::Key>,
-    ) -> Result<(), StoreError> {
+    ) -> Result<GovernanceActivity, StoreError> {
         match (point, self.tip().ok()) {
             (Point::Specific(new, _), Some(Point::Specific(current, _)))
                 if *new <= current && !self.host.incremental_save =>
@@ -785,7 +786,8 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
                 }
             }
         }
-        Ok(())
+
+        Ok(governance_activity)
     }
 
     fn with_pots<'db>(
