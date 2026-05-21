@@ -31,19 +31,47 @@ fi
 
 require_command aws
 require_command jq
+require_command curl
 require_env AWS_ACCESS_KEY_ID
 require_env AWS_SECRET_ACCESS_KEY
 require_env BUCKET_NAME
 require_env ENDPOINT
 
-if [ -n "${BOOTSTRAP_SNAPSHOT_PUBLIC_URL_BASE:-}" ]; then
-  public_url_base="${BOOTSTRAP_SNAPSHOT_PUBLIC_URL_BASE}"
-elif [[ "$ENDPOINT" =~ ^https://([a-z0-9]+)\.r2\.cloudflarestorage\.com/?$ ]]; then
-  # Cloudflare R2 S3 endpoints are private APIs; bootstrap URLs must use the public r2.dev hostname.
-  public_url_base="https://pub-${BASH_REMATCH[1]}.r2.dev"
-else
-  public_url_base="${ENDPOINT%/}/${BUCKET_NAME}"
-fi
+is_public_object_reachable() {
+  local object_url="$1"
+  local http_code
+  http_code="$(curl -sS -L -o /dev/null -w '%{http_code}' --range 0-0 "$object_url")"
+  [[ "$http_code" == "200" || "$http_code" == "206" ]]
+}
+
+manifest_public_url_base() {
+  if [ ! -f "$manifest_path" ]; then
+    return 1
+  fi
+
+  local first_url
+  first_url="$(jq -r 'map(.url // empty) | map(select(length > 0)) | first // empty' "$manifest_path" 2>/dev/null || true)"
+  if [ -z "$first_url" ]; then
+    return 1
+  fi
+
+  printf '%s\n' "${first_url%/*}"
+}
+
+candidate_public_url_bases() {
+  local manifest_base
+
+  manifest_base="$(manifest_public_url_base || true)"
+  if [ -z "$manifest_base" ]; then
+    echo "Error: could not determine public URL base from '$manifest_path'." >&2
+    echo "Expected at least one existing snapshot URL in manifest for network '$network'." >&2
+    exit 1
+  fi
+
+  printf '%s\n' "${manifest_base%/}"
+}
+
+public_url_base=""
 
 epochs=("$epoch" "$((epoch + 1))" "$((epoch + 2))")
 metadata_files=()
@@ -65,6 +93,19 @@ for target_epoch in "${epochs[@]}"; do
   object_key="$(basename "$archive_path")"
   echo "Uploading '$archive_path' to 's3://${BUCKET_NAME}/${object_key}'"
   aws s3 cp "$archive_path" "s3://${BUCKET_NAME}/${object_key}" --endpoint-url "$ENDPOINT"
+
+  if [ -z "$public_url_base" ]; then
+    public_url_base="$(candidate_public_url_bases)"
+    echo "Using public snapshot URL base '$public_url_base'"
+  fi
+
+  public_object_url="${public_url_base%/}/${object_key}"
+  if ! is_public_object_reachable "$public_object_url"; then
+    echo "Error: uploaded snapshot is not publicly reachable at '$public_object_url'." >&2
+    echo "Hint: update '${manifest_path}' so existing URLs use the correct public base for network '$network'." >&2
+    exit 1
+  fi
+
   metadata_files+=("$metadata_path")
 done
 
