@@ -45,7 +45,7 @@ impl ToPlutusData<3> for OutputRef<'_> {
 
 impl ToPlutusData<3> for ScriptContext<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        constr_v3!(0, [self.tx_info, self.redeemer, self.script_purpose.to_script_info(self.datum)])
+        constr_v3!(0, [self.tx_info, self.redeemer_data, self.script_purpose.to_script_info(self.datum)])
     }
 }
 
@@ -610,7 +610,6 @@ mod tests {
         super::test_vectors::{self, TestVector},
         *,
     };
-    use crate::script_context::Redeemers;
 
     macro_rules! fixture {
         ($title:literal) => {
@@ -622,6 +621,7 @@ mod tests {
     #[test_case(fixture!("simple_spend_no_datum"); "simple spend no datum")]
     #[test_case(fixture!("mint"); "mint")]
     #[test_case(fixture!("certificates_v10"); "certificates (protocol ver 10")]
+    #[test_case(fixture!("duplicate_redeemers_last_wins"); "duplicate redeemers last wins")]
     // The following test is commented out because we are disregarding protocol version 9.
     // See the comment on the `ToPlutusData` implementation for `Certificate` for more information
     // #[test_case(fixture!("certificates_v9"); "certificates (protocol ver 9")]
@@ -635,24 +635,24 @@ mod tests {
 
         let transaction: Transaction = cbor::decode(&test_vector.input.transaction_bytes).unwrap();
 
-        let redeemers = Redeemers::iter_from(transaction.witnesses.redeemer.as_ref().expect("no redeemers provided"));
+        let utxos = test_vector.input.utxo.clone().into();
+        let tx_info = TxInfo::new(
+            &transaction.body,
+            &transaction.witnesses,
+            transaction.tx_id(),
+            &utxos,
+            &0.into(),
+            network,
+            network.into(),
+            PROTOCOL_VERSION_10,
+        )
+        .unwrap();
 
-        let produced_contexts = redeemers
-            .map(|redeemer| {
-                let utxos = test_vector.input.utxo.clone().into();
-                let tx_info = TxInfo::new(
-                    &transaction.body,
-                    &transaction.witnesses,
-                    transaction.tx_id(),
-                    &utxos,
-                    &0.into(),
-                    network,
-                    network.into(),
-                    PROTOCOL_VERSION_10,
-                )
-                .unwrap();
-
-                let script_context = ScriptContext::new(&tx_info, redeemer.deref()).unwrap();
+        let produced_contexts = tx_info
+            .redeemers
+            .keys()
+            .map(|key| {
+                let script_context = ScriptContext::new(&tx_info, key).unwrap();
                 let plutus_data = to_cbor(
                     &<ScriptContext<'_> as ToPlutusData<3>>::to_plutus_data(&script_context)
                         .expect("failed to encode as PlutusData"),
