@@ -27,6 +27,33 @@ struct KoiosBlock {
     parent_hash: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct KoiosTip {
+    epoch_no: u64,
+}
+
+pub(super) async fn fetch_current_epoch(
+    client: &reqwest::Client,
+    network: NetworkName,
+) -> Result<u64, Box<dyn Error>> {
+    let response = client
+        .get(format!("{}/tip", koios_api_base(network)?))
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .await?
+        .error_for_status()?;
+
+    let tip = response
+        .json::<Vec<KoiosTip>>()
+        .await?
+        .into_iter()
+        .next()
+        .ok_or("Koios returned empty tip response")?;
+
+    info!(epoch = tip.epoch_no, "resolved current epoch from Koios");
+    Ok(tip.epoch_no)
+}
+
 async fn fetch_block_by_hash(
     client: &reqwest::Client,
     network: NetworkName,

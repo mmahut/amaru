@@ -25,8 +25,13 @@ require_env() {
 }
 
 if [ -z "$epoch" ]; then
-  echo "Error: bootstrap snapshot epoch must be provided as the first argument." >&2
-  exit 1
+  latest_epoch="$(find "$metadata_dir" -maxdepth 1 -name '*.json' | sed 's|.*/||; s|\.json$||' | grep -E '^[0-9]+$' | sort -n | tail -1)"
+  if [ -z "$latest_epoch" ]; then
+    echo "Error: no epoch metadata files found in '$metadata_dir'; pass an epoch as the first argument." >&2
+    exit 1
+  fi
+  epoch="$latest_epoch"
+  echo "No epoch specified; using latest available epoch: $epoch"
 fi
 
 require_command aws

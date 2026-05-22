@@ -36,7 +36,7 @@ use archive::{
 };
 use config::resolve_config_dir;
 use db_analyser::{ensure_db_analyser_binary, exact_snapshot_dir, run_db_analyser, select_analyse_from_slot};
-use koios::fetch_last_block_for_epoch;
+use koios::{fetch_current_epoch, fetch_last_block_for_epoch};
 
 const PACKAGED_HEADERS_FILE_NAME: &str = "bootstrap.headers.json";
 
@@ -54,13 +54,14 @@ pub struct Args {
     /// The bootstrap start epoch to capture.
     ///
     /// The command expands it to the three consecutive snapshots bootstrap needs.
+    /// When omitted, the current epoch is fetched from Koios and the start epoch
+    /// is set to three epochs before it (the last 3 completed epochs).
     #[arg(
         long = "epoch",
-        required = true,
         value_name = amaru::value_names::UINT,
         env = amaru::env_vars::EPOCH,
     )]
-    epoch: u64,
+    epoch: Option<u64>,
 
     /// Distribution directory used for metadata, caches and temporary work files.
     #[arg(
@@ -109,6 +110,17 @@ fn default_snapshot_output_dir(network: NetworkName) -> PathBuf {
 
 pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let Args { network, epoch, dist_dir, force, cardano_node_config_dir } = args;
+    let client = reqwest::Client::new();
+    let requested_epoch = epoch;
+    let epoch = match requested_epoch {
+        Some(e) => e,
+        None => {
+            let current_epoch = fetch_current_epoch(&client, network).await?;
+            current_epoch
+                .checked_sub(3)
+                .ok_or_else(|| format!("cannot infer bootstrap start epoch from current epoch {current_epoch}"))?
+        }
+    };
     let target_epochs = bootstrap_target_epochs(epoch)?;
     let dist_dir = dist_dir.unwrap_or_else(|| default_dist_dir(network));
     let metadata_dir = dist_dir.join("epochs");
@@ -122,7 +134,6 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(cardano_db_dir.join("immutable"))?;
     fs::create_dir_all(&ledger_snapshot_dir)?;
 
-    let client = reqwest::Client::new();
     let config_dir = resolve_config_dir(&client, cardano_node_config_dir, network, &work_dir).await?;
 
     info!(
@@ -132,7 +143,8 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         network = %network,
         dist_dir = %dist_dir.display(),
         force,
-        requested_epoch = epoch,
+        requested_epoch = ?requested_epoch,
+        start_epoch = epoch,
         target_epochs = ?target_epochs,
         "running",
     );
