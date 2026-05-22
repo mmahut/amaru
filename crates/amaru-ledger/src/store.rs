@@ -122,6 +122,34 @@ pub struct GovernanceActivity {
     pub consecutive_dormant_epochs: u32,
 }
 
+#[cfg(any(test, feature = "test-utils"))]
+pub use governance_activity_proxy::*;
+
+#[cfg(any(test, feature = "test-utils"))]
+mod governance_activity_proxy {
+    use amaru_kernel::utils::serde::HasProxy;
+    use serde::Deserialize;
+
+    use super::GovernanceActivity;
+
+    /// Fixture JSON shape `{ "numDormantEpochs": <u32> }`.
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct GovernanceActivityProxy {
+        num_dormant_epochs: u32,
+    }
+
+    impl From<GovernanceActivityProxy> for GovernanceActivity {
+        fn from(p: GovernanceActivityProxy) -> Self {
+            GovernanceActivity { consecutive_dormant_epochs: p.num_dormant_epochs }
+        }
+    }
+
+    impl HasProxy for GovernanceActivity {
+        type Proxy = GovernanceActivityProxy;
+    }
+}
+
 // Snapshot
 // ----------------------------------------------------------------------------
 
@@ -149,7 +177,35 @@ pub trait Store: ReadStore {
     fn next_snapshot(&self, epoch: Epoch) -> Result<()>;
 
     /// Create a new transaction context. This is used to perform updates on the store.
+    ///
+    /// Prefer [`Store::with_transaction`] if you can. It ensures the transaction is
+    /// always either committed or rolled back, removing the risk of leaking an open
+    /// transaction on an early `?` return.
     fn create_transaction(&self) -> Self::Transaction<'_>;
+
+    /// Run `f` inside a transaction:
+    ///
+    /// - On `Ok`, the transaction is committed.
+    /// - On `Err`, the transaction is dropped and auto-rolled-back by its `Drop` impl.
+    ///
+    /// This makes it impossible to leak an open transaction through an early `?` return
+    /// between `create_transaction()` and `commit()`.
+    fn with_transaction<R, E>(
+        &self,
+        f: impl FnOnce(&Self::Transaction<'_>) -> std::result::Result<R, E>,
+    ) -> std::result::Result<R, E>
+    where
+        E: From<StoreError>,
+    {
+        let tx = self.create_transaction();
+        match f(&tx) {
+            Ok(result) => {
+                tx.commit()?;
+                Ok(result)
+            }
+            Err(err) => Err(err),
+        }
+    }
 }
 
 // ReadStore

@@ -241,7 +241,7 @@ async fn do_initialize(Params { conn_id, role, magic, .. }: &Params, eff: Effect
 }
 
 async fn do_handshake(
-    Params { role, peer, conn_id, manager, era_history, mempool_stage, .. }: &Params,
+    Params { role, peer, conn_id, manager, era_history, mempool_stage, config, .. }: &Params,
     muxer: StageRef<MuxMessage>,
     pipeline: StageRef<ChainSyncInitiatorMsg>,
     handshake: StageRef<Inputs<Void>>,
@@ -278,8 +278,16 @@ async fn do_handshake(
     .await;
 
     let keepalive = register_keepalive(*role, muxer.clone(), &eff).await;
-    let tx_submission =
-        register_tx_submission(*role, muxer.clone(), &eff, TxOrigin::Remote(peer.clone()), mempool_stage.clone()).await;
+    let tx_submission = register_tx_submission(
+        *role,
+        muxer.clone(),
+        &eff,
+        TxOrigin::Remote(peer.clone()),
+        mempool_stage.clone(),
+        config.tx_submission_params,
+        era_history.clone(),
+    )
+    .await;
 
     if *role == Role::Initiator {
         let chainsync_initiator = register_chainsync_initiator(&muxer, peer.clone(), *conn_id, pipeline, &eff).await;

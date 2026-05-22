@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use amaru_kernel::Transaction;
+use amaru_kernel::{Tip, Transaction};
 use amaru_ouroboros::{
-    MempoolError, MempoolInsertError, MempoolMsg, MempoolSeqNo, TxId, TxInsertResult, TxOrigin, TxRejectReason,
+    MempoolError, MempoolInsertError, MempoolMsg, MempoolSeqNo, TxInsertResult, TxOrigin, TxRejectReason,
 };
 use amaru_protocols::mempool_effects::MemoryPool;
 use pure_stage::{Effects, StageRef};
@@ -38,7 +38,7 @@ pub async fn stage(state: MempoolStageState, msg: MempoolMsg, eff: Effects<Mempo
         }
         MempoolMsg::Insert { tx, origin, caller } => {
             let tx = *tx;
-            let tx_id = TxId::from(&tx);
+            let tx_id = tx.tx_id();
             match validate_and_insert(&ledger, &memory_pool, tx, &origin).await {
                 Ok(result) => {
                     if let TxInsertResult::Accepted { seq_no, .. } = result {
@@ -55,7 +55,7 @@ pub async fn stage(state: MempoolStageState, msg: MempoolMsg, eff: Effects<Mempo
         MempoolMsg::InsertBatch { txs, origin, caller } => {
             let mut results = Vec::with_capacity(txs.len());
             for tx in txs {
-                let tx_id = TxId::from(&tx);
+                let tx_id = tx.tx_id();
                 match validate_and_insert(&ledger, &memory_pool, tx, &origin).await {
                     Ok(result) => {
                         if let TxInsertResult::Accepted { seq_no, .. } = result {
@@ -72,6 +72,15 @@ pub async fn stage(state: MempoolStageState, msg: MempoolMsg, eff: Effects<Mempo
             }
             eff.send(&caller, Ok(results)).await;
         }
+        MempoolMsg::NewTip(tip) => {
+            let removed = apply_new_tip(&ledger, &memory_pool, tip).await;
+            if removed > 0 {
+                notify_capacity_waiters(&mut state, &eff).await;
+            }
+        }
+        MempoolMsg::SubscribeCapacity { caller } => {
+            state.capacity_waiters.push(caller);
+        }
     }
     state
 }
@@ -81,14 +90,35 @@ pub async fn stage(state: MempoolStageState, msg: MempoolMsg, eff: Effects<Mempo
 ///
 async fn validate_and_insert(
     ledger: &Ledger,
-    memory_pool: &MemoryPool<MempoolMsg>,
+    memory_pool: &MemoryPool,
     tx: Transaction,
     origin: &TxOrigin,
 ) -> Result<TxInsertResult, MempoolError> {
     match ledger.validate_tx(&tx).await {
         Ok(()) => memory_pool.insert(tx, origin.clone()).await,
-        Err(error) => Ok(TxInsertResult::rejected(TxId::from(&tx), TxRejectReason::Invalid(error))),
+        Err(error) => Ok(TxInsertResult::rejected(tx.tx_id(), TxRejectReason::Invalid(error))),
     }
+}
+
+/// Revalidate all the mempool transactions when a new tip has been adopted.
+/// Returns the number of invalid txs that were successfully removed.
+async fn apply_new_tip(ledger: &Ledger, memory_pool: &MemoryPool, tip: Tip) -> usize {
+    let mut invalid_tx_ids = vec![];
+    for tx in memory_pool.mempool_txs().await {
+        if ledger.validate_tx(&tx).await.is_err() {
+            invalid_tx_ids.push(tx.tx_id());
+        }
+    }
+
+    if !invalid_tx_ids.is_empty()
+        && let Err(error) = memory_pool.remove_txs(&invalid_tx_ids).await
+    {
+        tracing::error!(%error, %tip, "failed to remove invalid transactions after new tip");
+        return 0;
+    }
+
+    tracing::debug!(%tip, invalidated_txs = invalid_tx_ids.len(), "revalidated mempool after new tip");
+    invalid_tx_ids.len()
 }
 
 /// Notify the waiters whose target sequence number has just been reached.
@@ -115,9 +145,18 @@ async fn notify_ready_waiters(state: &mut MempoolStageState, eff: &Effects<Mempo
     }
 }
 
+/// Notify all one-shot capacity subscribers and drain the list. Subscribers that still need
+/// to be notified after re-evaluating must re-subscribe.
+async fn notify_capacity_waiters(state: &mut MempoolStageState, eff: &Effects<MempoolMsg>) {
+    for caller in state.capacity_waiters.drain(..) {
+        eff.send(&caller, ()).await;
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MempoolStageState {
     waiters: Vec<MempoolWaiter>,
+    capacity_waiters: Vec<StageRef<()>>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

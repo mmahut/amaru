@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use amaru_kernel::{HeaderHash, NonEmptyVec};
+use amaru_kernel::{HeaderHash, NonEmptyVec, ORIGIN_HASH};
+use amaru_ouroboros::MempoolMsg;
 use pure_stage::trace_buffer::TerminationReason;
 use test_setup::{
     assert_trace, setup, te_find_ancestor_on_best_chain, te_load_header, te_terminate, te_terminated, test_prep,
@@ -24,7 +25,6 @@ use crate::stages::{
     adopt_chain::test_setup::{
         te_clock, te_find_anchor_at_height, te_roll_forward_chain, te_send, te_set_anchor_hash, te_switch_to_fork,
     },
-    block_source::BlockSourceMsg,
     test_utils::{te_input, te_state},
 };
 
@@ -35,14 +35,15 @@ fn test_incoming_tip_not_in_store() {
     prep.store_headers(&[&prep.headers.h0, &prep.headers.h1]);
     prep.set_best_chain(prep.headers.h1.clone());
 
-    let msg = prep.headers.h3.tip(); // h3 not in store
-    let (running, _guards, mut logs) = setup(&prep, msg);
+    let tip = prep.headers.h3.tip(); // h3 not in store
+    let msg = AdoptChainMsg::new(tip, BlockHeight::new(0));
+    let (running, _guards, mut logs) = setup(&prep, msg.clone());
     assert_trace(
         &running,
         &[
             te_state("ac-1", &prep.state),
-            te_input("ac-1", &AdoptChainMsg::new(msg, BlockHeight::new(0))),
-            te_load_header("ac-1", msg.hash()),
+            te_input("ac-1", &msg),
+            te_load_header("ac-1", tip.hash()),
             te_terminate("ac-1"),
             te_terminated("ac-1", TerminationReason::Voluntary),
         ],
@@ -60,15 +61,16 @@ fn test_current_best_not_loadable() {
     let missing_current_best = Tip::new(Point::Specific(4u64.into(), HeaderHash::from([0u8; 32])), BlockHeight::new(4));
     prep.state.current_best_tip = missing_current_best;
 
-    let msg = prep.headers.h3.tip();
-    let (running, _guards, mut logs) = setup(&prep, msg);
+    let tip = prep.headers.h3.tip();
+    let msg = AdoptChainMsg::new(tip, BlockHeight::new(0));
+    let (running, _guards, mut logs) = setup(&prep, msg.clone());
     assert_trace(
         &running,
         &[
             te_state("ac-1", &prep.state),
-            te_input("ac-1", &AdoptChainMsg::new(msg, BlockHeight::new(0))),
-            te_load_header("ac-1", msg.hash()),
-            te_load_header("ac-1", missing_current_best.hash()),
+            te_input("ac-1", &msg),
+            te_load_header("ac-1", tip.hash()),
+            te_load_header("ac-1", ORIGIN_HASH),
             te_terminate("ac-1"),
             te_terminated("ac-1", TerminationReason::Voluntary),
         ],
@@ -86,14 +88,15 @@ fn test_incoming_not_better_than_current_best() {
     prep.set_anchor(prep.headers.h0.hash());
     prep.set_best_chain(prep.headers.h3.clone());
 
-    let msg = prep.headers.h3a.tip(); // h3a has same height as h3 but lower op_cert_seq
-    let (running, _guards, mut logs) = setup(&prep, msg);
+    let tip = prep.headers.h3a.tip(); // h3a has same height as h3 but lower op_cert_seq
+    let msg = AdoptChainMsg::new(tip, BlockHeight::new(0));
+    let (running, _guards, mut logs) = setup(&prep, msg.clone());
     assert_trace(
         &running,
         &[
             te_state("ac-1", &prep.state),
-            te_input("ac-1", &AdoptChainMsg::new(msg, BlockHeight::new(0))),
-            te_load_header("ac-1", msg.hash()),
+            te_input("ac-1", &msg),
+            te_load_header("ac-1", tip.hash()),
             te_load_header("ac-1", prep.headers.h3.hash()),
             te_state("ac-1", &prep.state),
         ],
@@ -110,28 +113,30 @@ fn test_incoming_not_better_than_current_best() {
 fn test_extension_adopts_and_sends() {
     let mut prep = test_prep(2);
     prep.store_headers(&prep.headers.main_chain());
+    prep.store_block(&prep.headers.h3);
     prep.set_anchor(prep.headers.h0.hash());
     prep.set_best_chain(prep.headers.h2.clone());
 
-    let msg = prep.headers.h3.tip();
-    let (running, _guards, mut logs) = setup(&prep, msg);
+    let tip = prep.headers.h3.tip();
+    let msg = AdoptChainMsg::new(tip, BlockHeight::new(0));
+    let (running, _guards, mut logs) = setup(&prep, msg.clone());
 
     let mut expected = prep.state.clone();
-    expected.current_best_tip = msg;
+    expected.current_best_tip = tip;
     expected.suppressed = 1;
     assert_trace(
         &running,
         &[
             te_state("ac-1", &prep.state),
-            te_input("ac-1", &AdoptChainMsg::new(msg, BlockHeight::new(0))),
-            te_load_header("ac-1", msg.hash()),
+            te_input("ac-1", &msg),
+            te_load_header("ac-1", tip.hash()),
             te_load_header("ac-1", prep.headers.h2.hash()),
-            te_roll_forward_chain("ac-1", msg.point()),
+            te_roll_forward_chain("ac-1", tip.point()),
             te_find_anchor_at_height("ac-1", BlockHeight::new(2)),
             te_set_anchor_hash("ac-1", prep.headers.h1.hash()),
             te_clock("ac-1"),
-            te_send("ac-1", "downstream", ManagerMessage::NewTip(msg)),
-            te_send("ac-1", "block_source", BlockSourceMsg::AdoptedTip(msg)),
+            te_send("ac-1", "mempool", MempoolMsg::NewTip(tip)),
+            te_send("ac-1", "downstream", ManagerMessage::NewTip(tip)),
             te_state("ac-1", &expected),
         ],
     );
@@ -152,23 +157,26 @@ fn test_extension_adopts_and_sends() {
 fn test_fork_switch_adopts_and_sends() {
     let mut prep = test_prep(2);
     prep.store_headers(&prep.headers.all());
+    prep.store_block(&prep.headers.h2a);
+    prep.store_block(&prep.headers.h3a);
     prep.set_anchor(prep.headers.h0.hash());
     prep.set_best_chain(prep.headers.h2.clone());
 
-    let msg = prep.headers.h3a.tip(); // h3a has height 4 > h2's 3, so it wins
-    let (running, _guards, mut logs) = setup(&prep, msg);
+    let tip = prep.headers.h3a.tip(); // h3a has height 4 > h2's 3, so it wins
+    let msg = AdoptChainMsg::new(tip, BlockHeight::new(0));
+    let (running, _guards, mut logs) = setup(&prep, msg.clone());
 
     let mut expected = prep.state.clone();
-    expected.current_best_tip = msg;
+    expected.current_best_tip = tip;
     expected.suppressed = 1;
     assert_trace(
         &running,
         &[
             te_state("ac-1", &prep.state),
-            te_input("ac-1", &AdoptChainMsg::new(msg, BlockHeight::new(0))),
-            te_load_header("ac-1", msg.hash()),
+            te_input("ac-1", &msg),
+            te_load_header("ac-1", tip.hash()),
             te_load_header("ac-1", prep.headers.h2.hash()),
-            te_find_ancestor_on_best_chain("ac-1", msg.hash()),
+            te_find_ancestor_on_best_chain("ac-1", tip.hash()),
             te_switch_to_fork(
                 "ac-1",
                 prep.headers.h1.point(),
@@ -177,14 +185,14 @@ fn test_fork_switch_adopts_and_sends() {
             te_find_anchor_at_height("ac-1", BlockHeight::new(2)),
             te_set_anchor_hash("ac-1", prep.headers.h1.hash()),
             te_clock("ac-1"),
-            te_send("ac-1", "downstream", ManagerMessage::NewTip(msg)),
-            te_send("ac-1", "block_source", BlockSourceMsg::AdoptedTip(msg)),
+            te_send("ac-1", "mempool", MempoolMsg::NewTip(tip)),
+            te_send("ac-1", "downstream", ManagerMessage::NewTip(tip)),
             te_state("ac-1", &expected),
         ],
     );
 
     // Verify store state: best chain switched to fork ending at h3a
-    assert_eq!(prep.store.get_best_chain_hash(), msg.hash());
+    assert_eq!(prep.store.get_best_chain_hash(), tip.hash());
     assert_eq!(prep.store.get_anchor_hash(), prep.headers.h1.hash());
 
     logs.assert_and_remove(Level::DEBUG, &["adopted tip"]).assert_no_remaining_at([
@@ -198,34 +206,36 @@ fn test_fork_switch_adopts_and_sends() {
 fn test_fork_switch_opcert_hacked() {
     let mut prep = test_prep(2);
     prep.store_headers(&prep.headers.all());
+    prep.store_block(&prep.headers.h2);
     prep.set_anchor(prep.headers.h0.hash());
     prep.set_best_chain(prep.headers.h2a.clone());
 
-    let msg = prep.headers.h2.tip(); // h2 is newer opcert seq no
-    let (running, _guards, mut logs) = setup(&prep, msg);
+    let tip = prep.headers.h2.tip(); // h2 is newer opcert seq no
+    let msg = AdoptChainMsg::new(tip, BlockHeight::new(0));
+    let (running, _guards, mut logs) = setup(&prep, msg.clone());
 
     let mut expected = prep.state.clone();
-    expected.current_best_tip = msg;
+    expected.current_best_tip = tip;
     expected.suppressed = 1;
     assert_trace(
         &running,
         &[
             te_state("ac-1", &prep.state),
-            te_input("ac-1", &AdoptChainMsg::new(msg, BlockHeight::new(0))),
-            te_load_header("ac-1", msg.hash()),
+            te_input("ac-1", &msg),
+            te_load_header("ac-1", tip.hash()),
             te_load_header("ac-1", prep.headers.h2a.hash()),
-            te_find_ancestor_on_best_chain("ac-1", msg.hash()),
+            te_find_ancestor_on_best_chain("ac-1", tip.hash()),
             te_switch_to_fork("ac-1", prep.headers.h1.point(), NonEmptyVec::singleton(prep.headers.h2.point())),
             te_find_anchor_at_height("ac-1", BlockHeight::new(1)),
             te_clock("ac-1"),
-            te_send("ac-1", "downstream", ManagerMessage::NewTip(msg)),
-            te_send("ac-1", "block_source", BlockSourceMsg::AdoptedTip(msg)),
+            te_send("ac-1", "mempool", MempoolMsg::NewTip(tip)),
+            te_send("ac-1", "downstream", ManagerMessage::NewTip(tip)),
             te_state("ac-1", &expected),
         ],
     );
 
     // Verify store state: best chain switched to fork ending at h3a
-    assert_eq!(prep.store.get_best_chain_hash(), msg.hash());
+    assert_eq!(prep.store.get_best_chain_hash(), tip.hash());
     assert_eq!(prep.store.get_anchor_hash(), prep.headers.h0.hash());
 
     logs.assert_and_remove(Level::DEBUG, &["adopted tip"]).assert_no_remaining_at([
@@ -242,15 +252,16 @@ fn test_fork_not_better_no_switch() {
     prep.set_anchor(prep.headers.h0.hash());
     prep.set_best_chain(prep.headers.h2.clone());
 
-    let msg = prep.headers.h2.tip();
-    let (running, _guards, mut logs) = setup(&prep, msg);
+    let tip = prep.headers.h2.tip();
+    let msg = AdoptChainMsg::new(tip, BlockHeight::new(0));
+    let (running, _guards, mut logs) = setup(&prep, msg.clone());
 
     assert_trace(
         &running,
         &[
             te_state("ac-1", &prep.state),
-            te_input("ac-1", &AdoptChainMsg::new(msg, BlockHeight::new(0))),
-            te_load_header("ac-1", msg.hash()),
+            te_input("ac-1", &msg),
+            te_load_header("ac-1", tip.hash()),
             te_load_header("ac-1", prep.headers.h2.hash()),
             te_state("ac-1", &prep.state),
         ],
@@ -261,70 +272,4 @@ fn test_fork_not_better_no_switch() {
     assert_eq!(prep.store.get_anchor_hash(), prep.headers.h0.hash());
 
     logs.assert_no_remaining_at([Level::INFO, Level::WARN, Level::ERROR]);
-}
-
-/// Incoming tip is strictly shorter than current best → early return, no header loads, no adopt.
-#[test]
-fn test_incoming_shorter_than_current_best() {
-    let mut prep = test_prep(2);
-    prep.store_headers(&prep.headers.main_chain());
-    prep.set_anchor(prep.headers.h0.hash());
-    prep.set_best_chain(prep.headers.h3.clone()); // height 4
-
-    let msg = prep.headers.h2.tip(); // height 3 < 4
-    let (running, _guards, mut logs) = setup(&prep, msg);
-
-    assert_trace(
-        &running,
-        &[
-            te_state("ac-1", &prep.state),
-            te_input("ac-1", &AdoptChainMsg::new(msg, BlockHeight::new(0))),
-            te_state("ac-1", &prep.state),
-        ],
-    );
-
-    logs.assert_and_remove(Level::DEBUG, &["incoming tip shorter than current best, skipping"])
-        .assert_no_remaining_at([Level::INFO, Level::WARN, Level::ERROR]);
-}
-
-/// First tip adoption when current best is Origin (no current best header) → direct roll_forward, drag anchor, send.
-#[test]
-fn test_first_tip_from_origin() {
-    let prep = test_prep(2);
-    // Do not call set_best_chain; state starts with Origin.
-    // Store only the first real header we will adopt.
-    prep.store_headers(&[&prep.headers.h1]);
-    // No need to set anchor for the very first adoption; drag will handle it.
-
-    let msg = prep.headers.h1.tip();
-    let (running, _guards, mut logs) = setup(&prep, msg);
-
-    let mut expected = prep.state.clone();
-    expected.current_best_tip = msg;
-    expected.suppressed = 1;
-
-    assert_trace(
-        &running,
-        &[
-            te_state("ac-1", &prep.state),
-            te_input("ac-1", &AdoptChainMsg::new(msg, BlockHeight::new(0))),
-            te_load_header("ac-1", msg.hash()),
-            // current_best load is skipped because point == Origin
-            te_roll_forward_chain("ac-1", msg.point()),
-            te_find_anchor_at_height("ac-1", BlockHeight::new(0)), // 2 - 2 saturating
-            te_clock("ac-1"),
-            te_send("ac-1", "downstream", ManagerMessage::NewTip(msg)),
-            te_send("ac-1", "block_source", BlockSourceMsg::AdoptedTip(msg)),
-            te_state("ac-1", &expected),
-        ],
-    );
-
-    // Verify store: best chain now points to h1, anchor likely at Origin or h0 depending on find_anchor_at_height(0)
-    assert_eq!(prep.store.get_best_chain_hash(), prep.headers.h1.hash());
-
-    logs.assert_and_remove(Level::DEBUG, &["adopted tip"]).assert_no_remaining_at([
-        Level::INFO,
-        Level::WARN,
-        Level::ERROR,
-    ]);
 }

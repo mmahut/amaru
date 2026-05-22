@@ -36,7 +36,7 @@ use crate::stages::{block_source::BlockSourceMsg, select_chain::cmp_tip};
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AdoptChain {
     downstream: StageRef<ManagerMessage>,
-    block_source: StageRef<BlockSourceMsg>,
+    block_source: StageRef<BlockSourceMsg>, // kept from branch to support peer_selection integration
     consensus_security_param: u64,
     current_best_tip: Tip,
     max_block_height: BlockHeight,
@@ -47,7 +47,7 @@ pub struct AdoptChain {
 impl AdoptChain {
     pub fn new(
         downstream: StageRef<ManagerMessage>,
-        block_source: StageRef<BlockSourceMsg>,
+        block_source: StageRef<BlockSourceMsg>, // kept from branch
         consensus_security_param: u64,
         current_best_tip: Tip,
     ) -> Self {

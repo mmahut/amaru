@@ -473,6 +473,27 @@ impl EraHistory {
         Ok(system_start + relative_time)
     }
 
+    /// Convert a wall-clock time into the slot containing that time.
+    ///
+    /// The time is first made relative to `system_start`, then matched against the era whose time
+    /// bounds contain it. The end bound is exclusive, so a time exactly at an era boundary belongs
+    /// to the next era.
+    pub fn posix_time_to_slot(&self, time: SystemTime, system_start: SystemTime) -> Result<Slot, EraHistoryError> {
+        let relative_time = time.duration_since(system_start).map_err(|_| EraHistoryError::InvalidEraHistory)?;
+
+        for era in &self.eras {
+            if era.start.time > relative_time {
+                return Err(EraHistoryError::InvalidEraHistory);
+            }
+
+            if era.end.as_ref().is_none_or(|end| relative_time < end.time) {
+                return relative_time_to_slot(relative_time, era);
+            }
+        }
+
+        Err(EraHistoryError::InvalidEraHistory)
+    }
+
     pub fn slot_to_relative_time(&self, slot: Slot, tip: Slot) -> Result<Duration, EraHistoryError> {
         for era in &self.eras {
             if era.start.slot > slot {
@@ -630,6 +651,15 @@ impl EraHistory {
         let era_index = self.slot_to_era_index(slot)?;
         Ok(self.eras[era_index].params.era_name)
     }
+
+    /// Return the era tag of the currently active era (the last era in the history).
+    ///
+    /// The last era is the one without an upper bound and corresponds to the era the
+    /// network is currently in.
+    pub fn current_era_tag(&self) -> EraName {
+        #[expect(clippy::expect_used)]
+        self.eras.last().expect("EraHistory cannot be empty").params.era_name
+    }
 }
 
 /// Compute the time in milliseconds between the start of the system and the given slot.
@@ -649,6 +679,20 @@ fn slot_to_relative_time(slot: &Slot, era: &EraSummary) -> Result<Duration, EraH
     Ok(relative_time)
 }
 
+/// Compute the slot containing a relative time within the given era.
+///
+/// **pre-condition**: the given summary must be the era containing that relative time.
+fn relative_time_to_slot(relative_time: Duration, era: &EraSummary) -> Result<Slot, EraHistoryError> {
+    let time_elapsed = relative_time.checked_sub(era.start.time).ok_or(EraHistoryError::InvalidEraHistory)?;
+    let slot_length = era.params.slot_length.as_millis();
+    if slot_length == 0 {
+        return Err(EraHistoryError::InvalidEraHistory);
+    }
+    let slots_elapsed: u64 =
+        (time_elapsed.as_millis() / slot_length).try_into().map_err(|_| EraHistoryError::SlotTooFar)?;
+    Ok(era.start.slot.offset_by(slots_elapsed))
+}
+
 /// Compute the epoch corresponding to the given slot.
 ///
 /// **pre-condition**: the given summary must be the era containing that slot.
@@ -657,6 +701,36 @@ fn slot_to_epoch(slot: &Slot, era: &EraSummary) -> Result<Epoch, EraHistoryError
     let epochs_elapsed = slots_elapsed / era.params.epoch_size_slots;
     let epoch_number = era.start.epoch + epochs_elapsed;
     Ok(epoch_number)
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use proxy::*;
+
+#[cfg(any(test, feature = "test-utils"))]
+mod proxy {
+    use serde::Deserialize;
+
+    use super::EraHistory;
+    use crate::{EraSummary, Slot, cardano::era_summary::EraSummaryProxy, utils::serde::HasProxy};
+
+    /// Fixture JSON shape: camelCase with `eras` decoded element-wise via the `EraSummary` proxy.
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct EraHistoryProxy {
+        stability_window: Slot,
+        eras: Vec<EraSummaryProxy>,
+    }
+
+    impl From<EraHistoryProxy> for EraHistory {
+        fn from(p: EraHistoryProxy) -> Self {
+            let eras: Vec<EraSummary> = p.eras.into_iter().map(EraSummary::from).collect();
+            EraHistory::new(&eras, p.stability_window)
+        }
+    }
+
+    impl HasProxy for EraHistory {
+        type Proxy = EraHistoryProxy;
+    }
 }
 
 #[cfg(test)]
@@ -773,6 +847,53 @@ mod tests {
     fn slot_to_relative_time_within_horizon() {
         let eras = two_eras();
         assert_eq!(eras.slot_to_relative_time(Slot::new(172800), Slot::new(172800)), Ok(Duration::from_secs(172800)));
+    }
+
+    #[test]
+    fn relative_time_to_slot_uses_era_start_and_slot_length() {
+        let era = EraSummary {
+            start: EraBound { time: Duration::from_secs(60), slot: Slot::new(100), epoch: Epoch::new(10) },
+            end: None,
+            params: EraParams::new(10, Duration::from_secs(2), EraName::Conway).unwrap(),
+        };
+
+        assert_eq!(relative_time_to_slot(Duration::from_secs(60), &era), Ok(Slot::new(100)));
+        assert_eq!(relative_time_to_slot(Duration::from_secs(61), &era), Ok(Slot::new(100)));
+        assert_eq!(relative_time_to_slot(Duration::from_secs(81), &era), Ok(Slot::new(110)));
+        assert_eq!(relative_time_to_slot(Duration::from_secs(59), &era), Err(EraHistoryError::InvalidEraHistory));
+    }
+
+    #[test]
+    fn posix_time_to_slot_uses_system_start_and_era_boundaries() {
+        let system_start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+        let eras = EraHistory {
+            stability_window: Slot::new(20),
+            eras: vec![
+                EraSummary {
+                    start: EraBound { time: Duration::from_secs(0), slot: Slot::new(0), epoch: Epoch::new(0) },
+                    end: Some(EraBound { time: Duration::from_secs(10), slot: Slot::new(10), epoch: Epoch::new(1) }),
+                    params: EraParams::new(10, Duration::from_secs(1), EraName::Babbage).unwrap(),
+                },
+                EraSummary {
+                    start: EraBound { time: Duration::from_secs(10), slot: Slot::new(10), epoch: Epoch::new(1) },
+                    end: None,
+                    params: EraParams::new(10, Duration::from_secs(2), EraName::Conway).unwrap(),
+                },
+            ],
+        };
+
+        assert_eq!(eras.posix_time_to_slot(system_start, system_start), Ok(Slot::new(0)));
+        assert_eq!(
+            eras.posix_time_to_slot(system_start + Duration::from_millis(1_500), system_start),
+            Ok(Slot::new(1))
+        );
+        assert_eq!(eras.posix_time_to_slot(system_start + Duration::from_secs(10), system_start), Ok(Slot::new(10)));
+        assert_eq!(eras.posix_time_to_slot(system_start + Duration::from_secs(11), system_start), Ok(Slot::new(10)));
+        assert_eq!(eras.posix_time_to_slot(system_start + Duration::from_secs(12), system_start), Ok(Slot::new(11)));
+        assert_eq!(
+            eras.posix_time_to_slot(system_start - Duration::from_secs(1), system_start),
+            Err(EraHistoryError::InvalidEraHistory)
+        );
     }
 
     #[test]

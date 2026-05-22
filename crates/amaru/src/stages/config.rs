@@ -15,15 +15,17 @@
 use std::{fmt::Display, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use amaru_kernel::{BlockHeader, NetworkMagic, NetworkName};
+use amaru_mempool::MempoolConfig;
 use amaru_ouroboros::ChainStore;
-use amaru_stores::{in_memory::MemoryStore, rocksdb::RocksDbConfig};
+use amaru_protocols::tx_submission::ResponderParams;
+use amaru_stores::rocksdb::RocksDbConfig;
 use anyhow::Context;
 
 use crate::DEFAULT_PEER_REMOVAL_COOLDOWN_SECS;
 
 /// Configuration for the Amaru node, including storage options, network settings, and other parameters.
 pub struct Config {
-    pub ledger_store: StoreType<MemoryStore>,
+    pub ledger_store: RocksDbConfig,
     pub chain_store: StoreType<Arc<dyn ChainStore<BlockHeader>>>,
     pub upstream_peers: Vec<String>,
     pub target_upstream_peers: usize,
@@ -62,6 +64,12 @@ pub struct Config {
 
     /// If set, raw trace buffer bytes are written here during node shutdown.
     pub trace_dump_path: Option<PathBuf>,
+
+    /// Mempool configuration (max size for now).
+    pub mempool: MempoolConfig,
+
+    /// Tx-submission responder parameters (max outstanding tx-id window, fetch batch size, etc...).
+    pub tx_submission_responder_params: ResponderParams,
 }
 
 impl Config {
@@ -79,7 +87,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Config {
         Config {
-            ledger_store: StoreType::RocksDb(RocksDbConfig::new(PathBuf::from("./ledger.db"))),
+            ledger_store: RocksDbConfig::new(PathBuf::from("./ledger.db")),
             chain_store: StoreType::RocksDb(RocksDbConfig::new(PathBuf::from("./chain.db"))),
             upstream_peers: vec![],
             target_upstream_peers: 3,
@@ -99,6 +107,8 @@ impl Default for Config {
             trace_buffer_min_entries: 0,
             trace_buffer_max_size: 0,
             trace_dump_path: None,
+            mempool: MempoolConfig::default(),
+            tx_submission_responder_params: ResponderParams::default(),
         }
     }
 }

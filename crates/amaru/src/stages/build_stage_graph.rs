@@ -24,7 +24,7 @@ use amaru_consensus::stages::{
     track_peers::{self, TrackPeers, TrackPeersMsg},
     validate_block::{self, ValidateBlock, ValidateBlockMsg},
 };
-use amaru_kernel::{EraHistory, GlobalParameters, Peer, Point, Tip};
+use amaru_kernel::{EraHistory, GlobalParameters, Peer, Tip};
 use amaru_ouroboros::MempoolMsg;
 use amaru_protocols::{
     manager,
@@ -99,6 +99,11 @@ pub fn build_stage_graph(
             .try_into()
             .expect("consensus security param will not be larger than u64::MAX")
     };
+
+    // Wire mempool (from main) — kept for its own use even if not passed to adopt_chain in this resolution
+    let mempool_stage = stage_graph.wire_up(mempool_stage, MempoolStageState::default()).without_state();
+
+    // Keep branch's peer_selection integration for block_source and adopt_chain/fetch_blocks
     let _block_source = stage_graph.wire_up(
         block_source_stage,
         BlockSource::new(ledger_tip, config.block_source_max_tip_distance, peer_selection_ref.clone()),
@@ -131,14 +136,18 @@ pub fn build_stage_graph(
             peer_selection_ref.clone(),
         ),
     );
+    // Include main's useful RecoverStoredBlocks preload
+    #[expect(clippy::expect_used)]
+    stage_graph
+        .preload(&fetch_blocks, [FetchBlocksMsg::RecoverStoredBlocks])
+        .expect("fetch blocks recovery message must be preloaded");
+
     let fetch_blocks_input =
         stage_graph.contramap(fetch_blocks, "fetch_blocks_input", |(tip, parent)| FetchBlocksMsg::NewTip(tip, parent));
 
     let select_chain = stage_graph.wire_up(select_chain, SelectChain::new(fetch_blocks_input));
     #[expect(clippy::expect_used)]
-    stage_graph
-        .preload(&select_chain, [SelectChainMsg::Initialize, SelectChainMsg::FetchNextFrom(Point::Origin)])
-        .expect("initialization message must be preloaded");
+    stage_graph.preload(&select_chain, [SelectChainMsg::Initialize]).expect("initialization message must be preloaded");
     let select_chain_input = stage_graph
         .contramap(select_chain, "select_chain_input", |(tip, parent)| SelectChainMsg::TipFromUpstream(tip, parent));
 
@@ -148,19 +157,19 @@ pub fn build_stage_graph(
     );
     let track_peers_input = stage_graph.contramap(track_peers, "track_peers_input", TrackPeersMsg::FromUpstream);
 
+    // Keep branch's peer_selection initialization preload (core to the peer_selection work)
     #[expect(clippy::expect_used)]
     stage_graph
         .preload(&peer_selection, [PeerSelectionMsg::Initialize])
         .expect("initialization message must be preloaded");
 
-    let mempool_stage = stage_graph.wire_up(mempool_stage, MempoolStageState::default()).without_state();
-
+    // Manager creation — use main's style with tx_submission_params (now supported in our extended config)
     let manager_stage = stage_graph
         .wire_up(
             manager,
             Manager::new(
                 config.network_magic,
-                ManagerConfig::default(),
+                ManagerConfig::default().with_tx_submission_params(config.tx_submission_responder_params),
                 Arc::new(era_history.clone()),
                 track_peers_input,
                 mempool_stage.clone(),

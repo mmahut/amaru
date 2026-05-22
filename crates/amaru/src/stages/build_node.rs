@@ -21,7 +21,7 @@ use amaru_consensus::{
     validate_header::ValidateHeader,
 };
 use amaru_kernel::{BlockHeader, ConsensusParameters, EraHistory, GlobalParameters, ORIGIN_HASH, Point, Transaction};
-use amaru_mempool::InMemoryMempool;
+use amaru_mempool::{InMemoryMempool, MempoolConfig};
 use amaru_metrics::METRICS_METER_NAME;
 use amaru_network::connection::TokioConnections;
 use amaru_ouroboros::{ChainStore, ConnectionsResource, HasStakeDistribution, MempoolMsg, ResourceMempool};
@@ -128,7 +128,15 @@ pub fn build_node(
         make_validate_header(global_parameters, era_history, chain_store.clone(), ledger.get_stake_distribution()?);
 
     // Register resources
-    register_resources(stage_builder, chain_store, global_parameters, ledger, validate_header, meter_provider);
+    register_resources(
+        stage_builder,
+        chain_store,
+        global_parameters,
+        ledger,
+        validate_header,
+        meter_provider,
+        config.mempool.clone(),
+    );
 
     // Build the stage graph and return a reference to the stages that can be connected from outside this function
     let node_stages = build_stage_graph(config, era_history, global_parameters, ledger_tip, stage_builder);
@@ -143,6 +151,7 @@ pub fn build_node(
 
 /// Register the resources required by the external effects invoked by the stages in the stage graph.
 /// It is possible to override those resources later on.
+#[allow(clippy::too_many_arguments)]
 fn register_resources(
     stage_graph: &mut impl StageGraph,
     chain_store: Arc<dyn ChainStore<BlockHeader>>,
@@ -150,6 +159,7 @@ fn register_resources(
     ledger: Ledger,
     validate_header: ValidateHeader,
     meter_provider: Option<SdkMeterProvider>,
+    mempool_config: MempoolConfig,
 ) {
     stage_graph.resources().put::<ResourceHeaderStore>(chain_store);
     stage_graph.resources().put::<ResourceParameters>(global_parameters.clone());
@@ -158,7 +168,7 @@ fn register_resources(
     stage_graph.resources().put::<ResourceHeaderValidation>(Arc::new(validate_header));
     stage_graph.resources().put::<ResourceTxValidation>(ledger.get_tx_validation());
     stage_graph.resources().put::<ConnectionsResource>(Arc::new(TokioConnections::new(65535)));
-    stage_graph.resources().put::<ResourceMempool<Transaction>>(Arc::new(InMemoryMempool::default()));
+    stage_graph.resources().put::<ResourceMempool<Transaction>>(Arc::new(InMemoryMempool::new(mempool_config)));
 
     if let Some(provider) = meter_provider {
         let meter = provider.meter(METRICS_METER_NAME);
@@ -176,13 +186,14 @@ fn initialize_chain_store(config: &Config, ledger_tip: Point) -> anyhow::Result<
         StoreType::RocksDb(ref rocks_db_config) => Arc::new(RocksDBStore::open(rocks_db_config)?),
     };
 
-    if chain_store.get_anchor_hash() == ORIGIN_HASH {
-        tracing::info!(anchor = %ledger_tip, "setting anchor hash");
+    let anchor_hash = chain_store.get_anchor_hash();
+
+    // This corresponds to a bootstrap, we need to correctly initialize the chain store
+    if anchor_hash == ORIGIN_HASH {
+        tracing::info!(anchor = %ledger_tip, "first initialization - setting anchor and best chain");
         chain_store.set_anchor_hash(&ledger_tip.hash())?;
-    }
-    if chain_store.get_best_chain_hash() == ORIGIN_HASH {
-        tracing::info!(best_chain = %ledger_tip, "setting best chain hash");
-        chain_store.set_best_chain_hash(&ledger_tip.hash())?;
+        chain_store.set_block_valid(&ledger_tip.hash(), true)?;
+        chain_store.roll_forward_chain(&ledger_tip)?;
     }
 
     Ok(chain_store)

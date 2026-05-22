@@ -43,6 +43,8 @@ pub mod ex_units;
 pub mod ex_units_prices;
 pub mod governance_action;
 pub mod hash;
+pub mod language_view;
+pub mod script_integrity_data;
 // TODO: BlockHeader vs Header
 //
 // We have two types that seemingly fulfill the same function. They shall be unified.
@@ -63,7 +65,6 @@ pub mod network_magic;
 pub mod network_name;
 pub mod non_zero_int;
 pub mod nonce;
-pub mod ordered_redeemer;
 pub mod peer;
 pub mod plutus_data;
 pub mod plutus_script;
@@ -90,7 +91,6 @@ pub mod required_script;
 pub mod reward;
 pub mod reward_account;
 pub mod reward_kind;
-pub mod script_kind;
 pub mod script_purpose;
 pub mod slot;
 pub mod stake_credential;
@@ -98,8 +98,10 @@ pub mod stake_credential_kind;
 pub mod tip;
 pub mod transaction;
 pub mod transaction_body;
+pub(crate) mod transaction_id;
 pub mod transaction_input;
 pub mod transaction_pointer;
+pub mod validity_interval;
 pub mod value;
 pub mod vkey_witness;
 pub mod vote;

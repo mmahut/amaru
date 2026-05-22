@@ -47,9 +47,11 @@ once_cell.workspace = true
 proptest.workspace = true
 test-case.workspace = true
 toml.workspace = true
+tempfile.workspace = true
 
 # Internal dependencies ───────────────────────────────────────────────────────┐
 amaru-kernel = { workspace = true, features = ["test-utils"] }
+amaru-stores.workspace = true
 amaru-tracing-json.workspace = true
 
 [build-dependencies]

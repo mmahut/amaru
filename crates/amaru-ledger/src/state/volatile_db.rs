@@ -35,18 +35,8 @@ pub const EVENT_TARGET: &str = "amaru::ledger::state::volatile_db";
 // VolatileDB
 // ----------------------------------------------------------------------------
 
-// TODO: Currently, the cache owns data that are also available in the sequence. We could
-// potentially avoid cloning and re-allocation altogether by sharing an allocator and having them
-// both reference from within that allocator (e.g. an arena allocator like bumpalo)
-//
-// Ideally, we would just have the struct be self-referenced, but that isn't possible in Rust and
-// we cannot introduce a lifetime to the VolatileDB (which would bubble up to the State).
-//
-// Another option is to have the cache not own data, but indices onto the sequence. This may
-// require to switch the sequence back to a Vec to allow fast random lookups.
 #[derive(Default)]
 pub struct VolatileDB {
-    cache: VolatileCache,
     sequence: VecDeque<AnchoredVolatileState>,
 }
 
@@ -68,7 +58,19 @@ impl VolatileDB {
     }
 
     pub fn resolve_input(&self, input: &TransactionInput) -> Option<&MemoizedTransactionOutput> {
-        self.cache.utxo.produced.get(input)
+        for state in self.sequence.iter().rev() {
+            if state.state.utxo.consumed.contains(input) {
+                return None;
+            }
+            if let Some(output) = state.state.utxo.produced.get(input) {
+                return Some(output);
+            }
+        }
+        None
+    }
+
+    pub fn has_consumed_input(&self, input: &TransactionInput) -> bool {
+        self.sequence.iter().any(|state| state.state.utxo.consumed.contains(input))
     }
 
     pub fn contains(&self, point: &Point) -> bool {
@@ -76,26 +78,14 @@ impl VolatileDB {
     }
 
     pub fn pop_front(&mut self) -> Option<AnchoredVolatileState> {
-        self.sequence.pop_front().inspect(|state| {
-            // NOTE: It is imperative to remove consumed and produced UTxOs from the cache as we
-            // remove them from the sequence to prevent the cache from growing out of proportion.
-            for k in state.state.utxo.consumed.iter() {
-                self.cache.utxo.consumed.remove(k);
-            }
-
-            for (k, _) in state.state.utxo.produced.iter() {
-                self.cache.utxo.produced.remove(k);
-            }
-        })
+        self.sequence.pop_front()
     }
 
     pub fn push_back(&mut self, state: AnchoredVolatileState) {
-        // TODO: See NOTE on VolatileDB regarding the .clone()
-        self.cache.merge(state.state.utxo.clone());
         self.sequence.push_back(state);
     }
 
-    pub fn rollback_to<E>(&mut self, point: &Point, on_unknown_point: impl Fn(&Point) -> E) -> Result<(), E> {
+    pub fn rollback_to<'a>(&mut self, point: &'a Point) -> Result<(), &'a Point> {
         let target_slot = point.slot_or_default();
 
         // Check if the target point is beyond the sequence
@@ -121,54 +111,31 @@ impl VolatileDB {
                 first_slot = ?first.anchor.0.slot(),
                 "Attempting to rollback to a point before the first point of the volatile state"
             );
-            return Err(on_unknown_point(point));
+            return Err(point);
         }
 
-        // Now we know the target point is within the sequence
-        // Rebuild the cache up to that point
-        let mut cache = VolatileCache::default();
-
-        // Keep all elements with slot <= target_slot
+        // Now we know the target point is within the sequence.
+        // Keep all elements with point <= target point.
         let mut ix = 0;
         let mut found = false;
         for diff in self.sequence.iter() {
             if diff.anchor.0.point() <= *point {
-                // TODO: See NOTE on VolatileDB regarding the .clone()
-                cache.merge(diff.state.utxo.clone());
                 ix += 1;
                 if diff.anchor.0.point() == *point {
                     found = true;
                     break;
                 }
             } else {
-                return Err(on_unknown_point(point));
+                return Err(point);
             }
         }
 
         if !found {
-            return Err(on_unknown_point(point));
+            return Err(point);
         }
 
         self.sequence.truncate(ix);
-        self.cache = cache;
         Ok(())
-    }
-}
-
-// VolatileCache
-// ----------------------------------------------------------------------------
-
-// TODO: At this point, we only need to lookup UTxOs, so the aggregated cache is limited to those.
-// It would be relatively easy to extend to accounts, but it is trickier for pools since
-// DiffEpochReg aren't meant to be mergeable across epochs.
-#[derive(Default)]
-struct VolatileCache {
-    pub utxo: DiffSet<TransactionInput, MemoizedTransactionOutput>,
-}
-
-impl VolatileCache {
-    pub fn merge(&mut self, utxo: DiffSet<TransactionInput, MemoizedTransactionOutput>) {
-        self.utxo.merge(utxo);
     }
 }
 
@@ -201,6 +168,10 @@ impl VolatileState {
 
     pub fn resolve_input(&self, input: &TransactionInput) -> Option<&MemoizedTransactionOutput> {
         self.utxo.produced.get(input)
+    }
+
+    pub fn has_consumed_input(&self, input: &TransactionInput) -> bool {
+        self.utxo.consumed.contains(input)
     }
 }
 
@@ -387,7 +358,7 @@ mod tests {
         // This represents rolling back to a point in the stable DB
         let rollback_point = Point::Specific(Slot::from(5), Hash::new([0u8; 32]));
 
-        let result = db.rollback_to(&rollback_point, |_| "Point not found");
+        let result = db.rollback_to(&rollback_point);
 
         // This should fail
         // (rolling back to a point inside the stable DB is not allowed)
@@ -404,7 +375,7 @@ mod tests {
         let rollback_point = Point::Specific(Slot::from(30), Hash::new([0u8; 32]));
 
         // This should succeed, keeping all 3 elements
-        let result = db.rollback_to(&rollback_point, |_| "Point not found");
+        let result = db.rollback_to(&rollback_point);
 
         assert!(result.is_ok(), "Rolling back to the exact slot of the last element should succeed");
         assert_eq!(db.len(), 3, "All elements should be retained");
@@ -418,7 +389,7 @@ mod tests {
         // Rollback to slot 20 (middle element)
         let rollback_point = Point::Specific(Slot::from(20), Hash::new([0u8; 32]));
 
-        let result = db.rollback_to(&rollback_point, |_| "Point not found");
+        let result = db.rollback_to(&rollback_point);
 
         // This should succeed
         assert!(result.is_ok());
@@ -433,7 +404,7 @@ mod tests {
         // Try to rollback to slot 40 (after the sequence)
         let rollback_point = Point::Specific(Slot::from(40), Hash::new([0u8; 32]));
 
-        let result = db.rollback_to(&rollback_point, |_| "Point not found");
+        let result = db.rollback_to(&rollback_point);
 
         // This should succeed
         assert!(result.is_ok(), "Rolling back to a point after the sequence should succeed");
@@ -448,10 +419,42 @@ mod tests {
         // Rollback to slot 25 (between 20 and 30)
         let rollback_point = Point::Specific(Slot::from(25), Hash::new([0u8; 32]));
 
-        let result = db.rollback_to(&rollback_point, |_| "Point not found");
+        let result = db.rollback_to(&rollback_point);
 
-        assert_eq!(result.unwrap_err(), "Point not found");
+        assert_eq!(result.unwrap_err(), &rollback_point);
         assert_eq!(db.len(), 3, "All elements should be retained");
+    }
+
+    #[test]
+    fn test_consumed_input_is_tracked() {
+        let input = test_input(1);
+        let mut state = create_test_state(10, 1);
+        state.state.utxo.consume(input.clone());
+
+        let mut db = VolatileDB::default();
+        db.push_back(state);
+
+        assert!(db.has_consumed_input(&input));
+        assert!(db.resolve_input(&input).is_none());
+    }
+
+    #[test]
+    fn test_rollback_removes_consumed_input_from_cache() {
+        let input = test_input(1);
+        let mut db = VolatileDB::default();
+        let first = create_test_state(10, 1);
+        let first_point = first.anchor.0.point();
+        db.push_back(first);
+
+        let mut second = create_test_state(20, 2);
+        second.state.utxo.consume(input.clone());
+        db.push_back(second);
+
+        assert!(db.has_consumed_input(&input));
+
+        db.rollback_to(&first_point).unwrap();
+
+        assert!(!db.has_consumed_input(&input));
     }
 
     // HELPERS
@@ -472,5 +475,9 @@ mod tests {
 
         assert_eq!(db.len(), 3);
         db
+    }
+
+    fn test_input(tag: u8) -> TransactionInput {
+        TransactionInput { transaction_id: Hash::new([tag; 32]), index: 0 }
     }
 }

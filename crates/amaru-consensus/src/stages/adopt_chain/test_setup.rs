@@ -15,9 +15,10 @@
 use std::sync::Arc;
 
 use amaru_kernel::{
-    BlockHeader, BlockHeight, HeaderHash, NonEmptyVec, Point, Tip, make_header, make_header_with_op_cert_seq,
+    BlockHeader, BlockHeight, HeaderHash, NonEmptyVec, Point, TESTNET_ERA_HISTORY, Tip,
+    cardano::network_block::make_encoded_block, make_header, make_header_with_op_cert_seq,
 };
-use amaru_ouroboros::StoreError;
+use amaru_ouroboros::{MempoolMsg, StoreError};
 use amaru_ouroboros_traits::{ChainStore, in_memory_consensus_store::InMemConsensusStore};
 use amaru_protocols::store_effects::{
     FindAncestorOnBestChainEffect, FindAnchorAtHeightEffect, GetAnchorHashEffect, GetBestChainHashEffect,
@@ -25,17 +26,16 @@ use amaru_protocols::store_effects::{
     SetAnchorHashEffect, SwitchToForkEffect,
 };
 use pure_stage::{
-    DeserializerGuards, Effect, Name, StageGraph, StageRef, TerminationReason, simulation::SimulationRunning,
-    trace_buffer::TraceEntry,
+    DeserializerGuards, Effect, Name, StageGraph, StageRef, TerminationReason,
+    simulation::{SimulationBuilder, SimulationRunning},
+    trace_buffer::{TraceBuffer, TraceEntry},
 };
 use tokio::runtime::{Builder, Runtime};
+use tracing::Level;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use super::*;
-pub use crate::stages::test_utils::assert_trace;
-use crate::stages::{
-    block_source::BlockSourceMsg,
-    test_utils::{Logs, run_simulation},
-};
+use crate::stages::test_utils::{BufferWriter, Logs};
 
 pub fn make_block_header(block_number: u64, slot: u64, parent: Option<HeaderHash>) -> BlockHeader {
     BlockHeader::from(make_header(block_number, slot, parent))
@@ -69,6 +69,7 @@ pub struct HeaderTree {
     pub h3a: BlockHeader,
 }
 
+#[allow(dead_code)]
 impl HeaderTree {
     pub fn new() -> Self {
         let h0 = make_block_header(1, 1, None);
@@ -83,6 +84,10 @@ impl HeaderTree {
 
     pub fn main_chain(&self) -> [&BlockHeader; 5] {
         [&self.h0, &self.h1, &self.h2, &self.h3, &self.h4]
+    }
+
+    pub fn fork_chain(&self) -> [&BlockHeader; 3] {
+        [&self.h0, &self.h1, &self.h2a]
     }
 
     pub fn all(&self) -> [&BlockHeader; 7] {
@@ -105,6 +110,11 @@ impl TestPrep {
         }
     }
 
+    pub fn store_block(&self, header: &BlockHeader) {
+        let raw_block = make_encoded_block(header, &TESTNET_ERA_HISTORY);
+        self.store.store_block(&header.hash(), &raw_block).unwrap();
+    }
+
     pub fn set_anchor(&self, hash: HeaderHash) {
         self.store.set_anchor_hash(&hash).unwrap();
     }
@@ -124,8 +134,8 @@ pub fn register_guards() -> DeserializerGuards {
         pure_stage::register_data_deserializer::<AdoptChain>().boxed(),
         pure_stage::register_data_deserializer::<Tip>().boxed(),
         pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
+        pure_stage::register_data_deserializer::<MempoolMsg>().boxed(),
         pure_stage::register_data_deserializer::<AdoptChainMsg>().boxed(),
-        pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
         pure_stage::register_data_deserializer::<Option<BlockHeader>>().boxed(),
         pure_stage::register_data_deserializer::<Option<Point>>().boxed(),
         pure_stage::register_data_deserializer::<Result<(), StoreError>>().boxed(),
@@ -146,9 +156,9 @@ pub fn register_guards() -> DeserializerGuards {
 
 pub fn test_prep(consensus_security_param: u64) -> TestPrep {
     let downstream = StageRef::named_for_tests("downstream");
-    let block_source = StageRef::named_for_tests("block_source");
+    let mempool = StageRef::named_for_tests("mempool");
     let headers = HeaderTree::new();
-    let state = AdoptChain::new(downstream, block_source, consensus_security_param, Tip::origin());
+    let state = AdoptChain::new(downstream, mempool, consensus_security_param, Tip::origin());
     TestPrep {
         state,
         rt: Builder::new_current_thread().build().unwrap(),
@@ -157,25 +167,30 @@ pub fn test_prep(consensus_security_param: u64) -> TestPrep {
     }
 }
 
-pub fn setup(prep: &TestPrep, tip: Tip) -> (SimulationRunning, DeserializerGuards, Logs) {
+pub fn setup(prep: &TestPrep, msg: AdoptChainMsg) -> (SimulationRunning, DeserializerGuards, Logs) {
+    let writer = BufferWriter::new();
+    let mut logs = writer.clone();
+
+    let sub = tracing_subscriber::fmt()
+        .with_max_level(Level::DEBUG)
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .set_default();
+    logs.set_guard(sub);
+
     let guards = register_guards();
 
-    run_simulation(
-        prep.rt.handle(),
-        guards,
-        |network| {
-            let ac = network.stage("ac", stage);
-            let ac = network.wire_up(ac, prep.state.clone());
-            network.preload(&ac, [AdoptChainMsg::new(tip, BlockHeight::new(0))]).unwrap();
-        },
-        |resources| {
-            resources.put::<ResourceHeaderStore>(prep.store.clone());
-        },
-        |_running| {
-            // Virtual child stages are enabled by default (recommended for all stage tests).
-            // adopt_chain does not create child stages.
-        },
-    )
+    let mut network = SimulationBuilder::default().with_trace_buffer(TraceBuffer::new_shared(100, 1000000));
+    network.resources().put::<ResourceHeaderStore>(prep.store.clone());
+
+    let ac = network.stage("ac", stage);
+    let ac = network.wire_up(ac, prep.state.clone());
+    network.preload(&ac, [msg]).unwrap();
+
+    let mut running = network.run();
+    running.run_until_blocked_incl_effects(prep.rt.handle());
+
+    (running, guards, logs.logs())
 }
 
 pub fn te_load_header(at_stage: &str, hash: HeaderHash) -> TraceEntry {
@@ -216,4 +231,15 @@ pub fn te_terminate(at_stage: impl AsRef<str>) -> TraceEntry {
 
 pub fn te_terminated(at_stage: impl AsRef<str>, reason: TerminationReason) -> TraceEntry {
     TraceEntry::Terminated { stage: Name::from(at_stage.as_ref()), reason }
+}
+
+#[track_caller]
+pub fn assert_trace(running: &SimulationRunning, expected: &[TraceEntry]) {
+    let mut tb = running.trace_buffer().lock();
+    let trace = tb
+        .iter_entries()
+        .filter_map(|(_, e)| (!matches!(e, TraceEntry::Resume { .. })).then_some(e))
+        .collect::<Vec<_>>();
+    tb.clear();
+    pretty_assertions::assert_eq!(trace, expected);
 }

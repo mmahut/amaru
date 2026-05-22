@@ -27,6 +27,7 @@ use crate::{
     connection::{self, ConnectionMessage},
     network_effects::{ConnectError, Network, NetworkOps},
     protocol::Role,
+    tx_submission::ResponderParams,
 };
 
 /// Messages the [`Manager`] sends to the consensus `peer_selection` stage.
@@ -249,6 +250,7 @@ pub struct ManagerConfig {
     pub connect_retries: u16,
     pub accept_interval: Duration,
     pub three_strike_window: Duration,
+    pub tx_submission_params: ResponderParams,
 }
 
 impl ManagerConfig {
@@ -266,6 +268,11 @@ impl ManagerConfig {
         self.accept_interval = accept_interval;
         self
     }
+
+    pub fn with_tx_submission_params(mut self, params: ResponderParams) -> Self {
+        self.tx_submission_params = params;
+        self
+    }
 }
 
 impl Default for ManagerConfig {
@@ -276,6 +283,7 @@ impl Default for ManagerConfig {
             connect_retries: 3,
             accept_interval: Duration::from_millis(100),
             three_strike_window: Duration::from_secs(60),
+            tx_submission_params: ResponderParams::default(),
         }
     }
 }

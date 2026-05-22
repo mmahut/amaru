@@ -16,7 +16,7 @@ use std::{borrow::Cow, collections::BTreeMap, time::SystemTime};
 
 use amaru_kernel::{
     Address, BigInt, Bytes, ComputeHash, Hash, Int, MaybeIndefArray, MemoizedDatum, NonEmptyKeyValuePairs, NonZeroInt,
-    Nullable, PlutusData, Redeemer, ShelleyDelegationPart, ShelleyPaymentPart, StakeCredential,
+    Nullable, PlutusData, ShelleyDelegationPart, ShelleyPaymentPart, StakeCredential, TransactionId, size,
 };
 use thiserror::Error;
 
@@ -391,15 +391,6 @@ where
     }
 }
 
-impl<const V: u8> ToPlutusData<V> for Redeemer
-where
-    PlutusVersion<V>: IsKnownPlutusVersion,
-{
-    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        Ok(self.data.clone())
-    }
-}
-
 impl<const V: u8> ToPlutusData<V> for PlutusData
 where
     PlutusVersion<V>: IsKnownPlutusVersion,
@@ -439,5 +430,14 @@ where
 {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         self.as_ref().to_plutus_data()
+    }
+}
+
+impl<const V: u8> ToPlutusData<V> for TransactionId
+where
+    PlutusVersion<V>: IsKnownPlutusVersion,
+{
+    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
+        AsRef::<Hash<{ size::TRANSACTION_BODY }>>::as_ref(self).to_plutus_data()
     }
 }
