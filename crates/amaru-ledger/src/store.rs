@@ -254,7 +254,7 @@ pub trait HistoricalStores {
             .unwrap_or_default()
             .first()
             .copied()
-            .unwrap_or_else(|| panic!("called 'epoch' on empty database?!"))
+            .unwrap_or_else(|| panic!("called 'least_recent_snapshot' on empty database?!"))
     }
 
     /// The most recent snapshot. Note that we never starts from genesis; so there's always a
@@ -265,7 +265,7 @@ pub trait HistoricalStores {
             .unwrap_or_default()
             .last()
             .copied()
-            .unwrap_or_else(|| panic!("called 'epoch' on empty database?!"))
+            .unwrap_or_else(|| panic!("called 'most_recent_snapshot' on empty database?!"))
     }
 
     /// Access a `Snapshot` for a specific `Epoch`

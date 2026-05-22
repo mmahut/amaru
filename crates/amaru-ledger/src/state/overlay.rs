@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::mem;
+
 use amaru_kernel::{Epoch, ProtocolParameters, ProtocolVersion};
 
-use crate::{
-    epoch_transition::{GovernanceActivity, GovernanceUpdates, PoolsEpochTransitionUpdates, RewardsState},
-    summary::rewards::{RewardsPayouts, RewardsSummary},
+use crate::epoch_transition::{
+    Computed, Effective, GovernanceActivity, GovernanceUpdates, PoolsEpochTransitionUpdates, Rewards, RewardsState,
 };
 
 /// Represents the information we sometimes have to overlay on top of the immutable store. That is,
@@ -66,15 +67,26 @@ impl StateOverlay {
         }
     }
 
+    /// Rollback an existing overlay, throwing away the epoch transition calculations.
+    pub fn rollback(&mut self) {
+        self.epoch = self.epoch - 1;
+        self.rewards = match mem::take(&mut self.rewards) {
+            st @ RewardsState::NotReady | st @ RewardsState::Computed(..) => st,
+            RewardsState::Effective(effective) => RewardsState::Computed(effective.into()),
+        };
+        self.pools_updates = None;
+        self.governance_updates = None;
+    }
+
     /// Record transition into a new epoch.
     pub fn transition(
         &mut self,
-        rewards_payouts: RewardsPayouts,
+        effective_rewards: Rewards<Effective>,
         pools_updates: PoolsEpochTransitionUpdates,
         governance_updates: GovernanceUpdates,
     ) {
         self.epoch = self.epoch + 1;
-        self.rewards = RewardsState::Effective(rewards_payouts);
+        self.rewards = RewardsState::Effective(effective_rewards);
         self.pools_updates = Some(pools_updates);
         self.governance_updates = Some(governance_updates);
     }
@@ -142,9 +154,9 @@ impl StateOverlay {
         &mut self.rewards
     }
 
-    /// Consume a rewards summary from a previous computation and mark the rewards as 'NotReady'.
-    pub fn take_rewards_summary(&mut self) -> Option<RewardsSummary> {
-        self.rewards.take_rewards_summary()
+    /// Consume a computed summary from a previous computation and mark the rewards as 'NotReady'.
+    pub fn take_computed_rewards(&mut self) -> Option<Rewards<Computed>> {
+        self.rewards.take_computed_rewards()
     }
 
     fn assert_previous_epoch(&self, epoch: Epoch) {

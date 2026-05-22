@@ -15,7 +15,7 @@
 use std::collections::VecDeque;
 
 use amaru_kernel::{
-    BlockHeight, EraHistory, GlobalParameters, Hash, NetworkName, Point, ProtocolParameters, Slot, Tip,
+    BlockHeight, Epoch, EraHistory, GlobalParameters, Hash, NetworkName, Point, ProtocolParameters, Slot, Tip,
 };
 use amaru_ledger::{
     epoch_transition::GovernanceActivity,
@@ -124,6 +124,7 @@ fn make_state() -> State<MockStore, RocksDBHistoricalStores> {
     State::new_with(
         MockStore(store),
         snapshots,
+        Epoch::default(),
         network,
         era_history,
         global_parameters,

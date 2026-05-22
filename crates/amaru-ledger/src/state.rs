@@ -157,9 +157,12 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
         let stake_distributions = initial_stake_distributions(&snapshots, &era_history)?;
 
+        let epoch = snapshots.most_recent_snapshot();
+
         Ok(Self::new_with(
             stable,
             snapshots,
+            epoch,
             network,
             era_history,
             global_parameters,
@@ -173,6 +176,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     pub fn new_with(
         stable: S,
         snapshots: HS,
+        epoch: Epoch,
         network: NetworkName,
         era_history: EraHistory,
         global_parameters: GlobalParameters,
@@ -180,8 +184,6 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         governance_activity: GovernanceActivity,
         stake_distributions: VecDeque<StakeDistribution>,
     ) -> Self {
-        let epoch = snapshots.most_recent_snapshot();
-
         Self {
             stable: Arc::new(Mutex::new(stable)),
 
@@ -308,18 +310,6 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     /// into the new epoch before the block can be validated.
     fn try_epoch_transition(&mut self, next_tip: Tip) -> Result<(), StateError> {
         if let Some(current_tip) = self.volatile_tip() {
-            // NOTE: calculating current epoch from slot on block application.
-            //
-            // This is only safe provided the next_tip is within the foreseeable window. If this isn't
-            // the case, it's a clear signal of something going very wrong in the consensus/networking
-            // pipeline feeding blocks to the ledger since they'd be attempting to feed a block that is
-            // many day after the last applied block!
-            let unsafe_slot_to_epoch = |era_history: &EraHistory, slot: Slot| -> Epoch {
-                era_history
-                    .slot_to_epoch_unchecked_horizon(slot)
-                    .unwrap_or_else(|e| unreachable!("impossible; failed to compute epoch from tip ({slot:?}): {e:?}"))
-            };
-
             let current_epoch = unsafe_slot_to_epoch(&self.era_history, current_tip.slot());
             let next_epoch = unsafe_slot_to_epoch(&self.era_history, next_tip.slot());
 
@@ -349,12 +339,12 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             // FIXME: This should eventually be an '.await', as we always expect to *eventually*
             // have some rewards summary being available. There's no way to continue progressing
             // the ledger if we don't.
-            let rewards_summary = self.take_rewards_summary().ok_or(StateError::RewardsSummaryNotReady)?;
+            let computed_rewards = self.take_computed_rewards().ok_or(StateError::RewardsSummaryNotReady)?;
 
             #[allow(clippy::unwrap_used)]
             let db = self.stable.lock().unwrap();
 
-            let rewards_payouts = epoch_transition::end_epoch(&*db, rewards_summary)?;
+            let effective_rewards = epoch_transition::end_epoch(&*db, computed_rewards)?;
 
             let ratification_context = RatificationContext::new(
                 self.snapshots.for_epoch(next_epoch - 2)?,
@@ -364,7 +354,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 //
                 // Ratification occurs after rewards have been paid out; and thus, uses the value
                 // of the treasury that already includes any unpaid rewards.
-                db.pots()?.treasury + rewards_payouts.treasury(),
+                db.pots()?.treasury + effective_rewards.treasury(),
             )?;
 
             let (pools_updates, governance_updates) =
@@ -372,7 +362,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
             drop(db); // Dropping the *mutable reference*, not the *actual database* :)
 
-            self.transition(rewards_payouts, pools_updates, governance_updates);
+            self.overlay.transition(effective_rewards, pools_updates, governance_updates);
 
             Ok(())
         })
@@ -380,7 +370,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
     #[expect(clippy::unwrap_used)]
     fn compute_rewards(&mut self) -> Result<RewardsSummary, StateError> {
-        trace_span!(amaru_observability::amaru::ledger::state::COMPUTE_REWARDS).in_scope(|| {
+        info_span!(amaru_observability::amaru::ledger::state::COMPUTE_REWARDS).in_scope(|| {
             let mut stake_distributions = self.stake_distributions.lock().unwrap();
             let stake_distribution =
                 stake_distributions.pop_back().ok_or(StateError::StakeDistributionNotAvailableForRewards)?;
@@ -457,7 +447,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             // FIXME: Flush pools updates, rewards and governance updates to disk; and then begin
             // rewards calculation.
             if matches!(self.rewards(), RewardsState::NotReady) && relative_slot >= stability_window {
-                *self.rewards_mut() = RewardsState::Ready(self.compute_rewards()?);
+                *self.rewards_mut() = RewardsState::Computed(self.compute_rewards()?.into());
             }
 
             self.volatile.push_back(next_state);
@@ -736,10 +726,24 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 if *to > tip {
                     return Err(BackwardError::RollbackPointInFuture { rollback_point: *to, tip });
                 }
-                self.volatile.rollback_to(to).map_err(|rollback_point| BackwardError::UnknownRollbackPoint {
-                    rollback_point: *rollback_point,
-                    tip,
-                })
+
+                if to == &tip {
+                    self.volatile.clear();
+                } else {
+                    self.volatile.rollback_to(to).map_err(|rollback_point| BackwardError::UnknownRollbackPoint {
+                        rollback_point: *rollback_point,
+                        tip,
+                    })?;
+                }
+
+                let epoch_from = unsafe_slot_to_epoch(&self.era_history, tip.slot_or_default());
+                let epoch_to = unsafe_slot_to_epoch(&self.era_history, to.slot_or_default());
+
+                if epoch_to < epoch_from {
+                    self.overlay.rollback();
+                }
+
+                Ok(())
             },
         )
     }
@@ -962,6 +966,18 @@ fn trace_block_transactions(point: &Point, block_height: u64, block: &Block) {
         let tx_id = body.tx_id();
         trace!(target: EVENT_TARGET, %point, block_height, tx_index, tx_id = %tx_id, "transaction found in block");
     }
+}
+
+// NOTE: calculating current epoch from slot on block application.
+//
+// This is only safe provided the next_tip is within the foreseeable window. If this isn't
+// the case, it's a clear signal of something going very wrong in the consensus/networking
+// pipeline feeding blocks to the ledger since they'd be attempting to feed a block that is
+// many day after the last applied block!
+fn unsafe_slot_to_epoch(era_history: &EraHistory, slot: Slot) -> Epoch {
+    era_history
+        .slot_to_epoch_unchecked_horizon(slot)
+        .unwrap_or_else(|e| unreachable!("impossible; failed to compute epoch from tip ({slot:?}): {e:?}"))
 }
 
 // Errors

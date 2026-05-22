@@ -218,12 +218,12 @@ fn set<A: Eq + Clone>(source: &mut A, new: &A, to_string: impl FnOnce(&A) -> Str
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
-pub mod tests {
-    use amaru_kernel::{any_certificate_pointer, any_pool_params};
+#[cfg(test)]
+mod tests {
+    use amaru_kernel::{Epoch, PoolParams, any_certificate_pointer, any_pool_params};
     use proptest::{collection::vec, prelude::*};
 
-    use super::*;
+    use super::PoolsEpochTransitionUpdates;
     use crate::store::columns::pools::Row as Pool;
 
     // Generate a sequence of plausible updates, where each item in the vector correspond to an

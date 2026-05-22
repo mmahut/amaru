@@ -19,14 +19,13 @@ use crate::{
     governance::ratification::RatificationContext,
     state::StateError,
     store::{ReadStore, StoreError},
-    summary::rewards::{RewardsPayouts, RewardsSummary},
 };
 
 mod pools_updates;
 pub use pools_updates::PoolsEpochTransitionUpdates;
 
 mod rewards_state;
-pub use rewards_state::RewardsState;
+pub use rewards_state::{Computed, Effective, Rewards, RewardsState};
 
 mod ratification;
 pub use ratification::{GovernanceActivity, GovernanceUpdates};
@@ -34,39 +33,16 @@ pub use ratification::{GovernanceActivity, GovernanceUpdates};
 /// Ends the ongoing epoch by calculating rewards payouts to the various still-registered accounts.
 /// Unpaid rewards are assigned back to the treasury.
 ///
-pub fn end_epoch(db: &impl ReadStore, mut rewards_summary: RewardsSummary) -> Result<RewardsPayouts, StoreError> {
+pub fn end_epoch(db: &impl ReadStore, computed_rewards: Rewards<Computed>) -> Result<Rewards<Effective>, StoreError> {
     trace_span!(INFO, amaru_observability::amaru::ledger::state::END_EPOCH).in_scope(|| {
-        let mut rewards_payouts =
-            RewardsPayouts::new(rewards_summary.delta_reserves(), rewards_summary.delta_treasury());
-
         // FIXME: account de-registrations from the volatile db
         //
         // The following code only looks at accounts from the stable store which is missing the last
         // `k` blocks of an epoch. One may unregister its account in that last unstable chunk; so
         // we must filter them out.
+        let accounts = db.iter_accounts()?.map(|(k, _v)| k);
 
-        // FIXME: retain unregistered accounts for epoch transition
-        //
-        // We have to prune accounts from that have been unregistered in this epoch and can no longer
-        // receive rewards. The number of accounts doing so is usually limited compared to the total
-        // number of accounts (~1.5M on Mainnet). So instead of iterating through all accounts to see
-        // which have disappeared, we could simply remember which accounts have unregistered in the
-        // epoch and prune them here rapidly.
-        //
-        // With interning of the account key, each account weights ~8 bytes; so even if all accounts
-        // were to unregister in the epoch (end of Cardano?), that'd still be ~11MB of resident memory.
-        // So very negligeable.
-        for (account, _) in db.iter_accounts()? {
-            if let Some(rewards) = rewards_summary.extract_rewards(&account)
-                && rewards > 0
-            {
-                rewards_payouts.add_account(account, rewards);
-            }
-        }
-
-        rewards_payouts.add_unclaimed_rewards(rewards_summary.unclaimed_rewards());
-
-        Ok(rewards_payouts)
+        Ok(Rewards::<Effective>::new(computed_rewards, accounts))
     })
 }
 
