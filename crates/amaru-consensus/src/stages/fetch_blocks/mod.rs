@@ -24,7 +24,7 @@ use pure_stage::{Effects, OrTerminateWith, ScheduleId, StageRef};
 use crate::stages::{
     block_source::BlockSourceMsg,
     peer_selection::PeerSelectionMsg,
-    select_chain::{best_tip_from_store, load_parent_point, SelectChainMsg},
+    select_chain::{SelectChainMsg, best_tip_from_store, load_parent_point},
 };
 
 // TODO make configurable
@@ -284,8 +284,8 @@ impl FetchBlocks {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FetchBlocksMsg {
     NewTip(Tip, Point),
-    Block(Peer, NetworkBlock),     // kept from branch for peer_selection integration
-    RecoverStoredBlocks,           // added from main
+    RecoverStoredBlocks,
+    Block(Peer, NetworkBlock),
     Timeout(u64),
 }
 
@@ -297,8 +297,8 @@ pub async fn stage(mut state: FetchBlocks, msg: FetchBlocksMsg, eff: Effects<Fet
     }
     match msg {
         FetchBlocksMsg::NewTip(tip, parent) => state.new_tip(tip, parent, eff).await,
-        FetchBlocksMsg::Block(peer, block) => state.block(peer, block, eff).await,  // peer-aware from branch
-        FetchBlocksMsg::RecoverStoredBlocks => state.recover_stored_blocks(eff).await, // from main
+        FetchBlocksMsg::RecoverStoredBlocks => state.recover_stored_blocks(eff).await,
+        FetchBlocksMsg::Block(peer, block) => state.block(peer, block, eff).await,
         FetchBlocksMsg::Timeout(req_id) => state.timeout(req_id, eff).await,
     }
     state

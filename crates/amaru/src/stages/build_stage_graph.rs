@@ -109,8 +109,10 @@ pub fn build_stage_graph(
         BlockSource::new(ledger_tip, config.block_source_max_tip_distance, peer_selection_ref.clone()),
     );
 
-    let adopt_chain =
-        stage_graph.wire_up(adopt_chain, AdoptChain::new(manager.sender(), block_source_sender.clone(), k, ledger_tip));
+    let adopt_chain = stage_graph.wire_up(
+        adopt_chain,
+        AdoptChain::new(manager.sender(), block_source_sender.clone(), mempool_stage.clone(), k, ledger_tip),
+    );
 
     let validate_block = stage_graph.wire_up(
         validate_block,

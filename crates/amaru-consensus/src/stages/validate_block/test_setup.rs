@@ -35,8 +35,7 @@ use pure_stage::{
 use tokio::runtime::{Builder, Runtime};
 
 use super::*;
-use crate::stages::test_utils::TraceMatch; // for te_record_metrics return type (not pub, as it's internal)
-pub use crate::stages::test_utils::assert_trace; // the version accepting &[TraceEntry] for main paths
+pub use crate::stages::test_utils::assert_trace;
 use crate::{
     effects::{
         ContainsPointEffect, RecordMetricsEffect, ResourceBlockValidation, ResourceHasStakePools, RollbackBlockEffect,
@@ -44,7 +43,7 @@ use crate::{
     },
     stages::{
         block_source::BlockSourceMsg,
-        test_utils::{Logs, run_simulation},
+        test_utils::{Logs, TraceMatch, run_simulation},
     },
 };
 
