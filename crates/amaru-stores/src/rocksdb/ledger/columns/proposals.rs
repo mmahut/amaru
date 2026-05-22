@@ -14,6 +14,7 @@
 
 use std::ops::Deref;
 
+use amaru_kernel::ProposalId;
 pub use amaru_ledger::store::{
     StoreError,
     columns::proposals::{Key, Row, Value},
@@ -49,7 +50,7 @@ pub fn add<DB>(db: &Transaction<'_, DB>, rows: impl Iterator<Item = (Key, Value)
 /// Remove an expired or enacted proposal.
 pub fn remove<'iter, DB, K>(db: &Transaction<'_, DB>, rows: impl Iterator<Item = K>) -> Result<(), StoreError>
 where
-    K: Deref<Target = Key> + 'iter,
+    K: Deref<Target = ProposalId> + 'iter,
 {
     let _span = trace_span!(
         amaru_observability::amaru::stores::ledger::columns::PROPOSALS_REMOVE,

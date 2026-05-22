@@ -106,11 +106,11 @@ pub struct Rewards<STEP: KnownRewardState> {
     /// A type-level marker for 'STEP'
     step: PhantomData<STEP>,
 
-    /// Amount to be paid to the reserves
-    reserves: Lovelace,
+    /// Amount to be subtracted from the reserves
+    delta_reserves: Lovelace,
 
     /// Amount to be paid to the treasury
-    treasury: Lovelace,
+    delta_treasury: Lovelace,
 
     /// Per-account rewards, determined from their relative stake and their delegatee.
     accounts: BTreeMap<StakeCredential, Lovelace>,
@@ -122,8 +122,12 @@ pub struct Rewards<STEP: KnownRewardState> {
 }
 
 impl Rewards<Computed> {
-    pub fn new(reserves: Lovelace, treasury: Lovelace, accounts: BTreeMap<StakeCredential, Lovelace>) -> Self {
-        Self { reserves, treasury, accounts, unclaimed: (), step: PhantomData }
+    pub fn new(
+        delta_reserves: Lovelace,
+        delta_treasury: Lovelace,
+        accounts: BTreeMap<StakeCredential, Lovelace>,
+    ) -> Self {
+        Self { delta_reserves, delta_treasury, accounts, unclaimed: (), step: PhantomData }
     }
 
     /// Fetch and remove from the summary rewards pertaining to a given account, if any.
@@ -145,8 +149,8 @@ impl From<Rewards<Effective>> for Rewards<Computed> {
     fn from(mut effective_rewards: Rewards<Effective>) -> Self {
         effective_rewards.accounts.append(&mut effective_rewards.unclaimed);
         Self {
-            reserves: effective_rewards.reserves,
-            treasury: effective_rewards.treasury,
+            delta_reserves: effective_rewards.delta_reserves,
+            delta_treasury: effective_rewards.delta_treasury,
             accounts: effective_rewards.accounts,
             unclaimed: (),
             step: PhantomData,
@@ -158,8 +162,8 @@ impl Rewards<Effective> {
     /// Compute the effective rewards from a current set of existing accounts.
     pub fn new(mut computed_rewards: Rewards<Computed>, accounts: impl Iterator<Item = StakeCredential>) -> Self {
         let mut effective_rewards: Rewards<Effective> = Self {
-            reserves: computed_rewards.reserves,
-            treasury: computed_rewards.treasury,
+            delta_reserves: computed_rewards.delta_reserves,
+            delta_treasury: computed_rewards.delta_treasury,
             accounts: BTreeMap::new(),
             unclaimed: BTreeMap::new(),
             step: PhantomData,
@@ -190,13 +194,22 @@ impl Rewards<Effective> {
         effective_rewards
     }
 
+    pub fn accounts(&self) -> &BTreeMap<StakeCredential, Lovelace> {
+        &self.accounts
+    }
+
+    /// Get rewards for a specific account, consuming the account.
+    pub fn pop_account(&mut self, account: &StakeCredential) -> Lovelace {
+        self.accounts.remove(account).unwrap_or(0)
+    }
+
     /// Amount to be paid to the reserves
-    pub fn reserves(&self) -> Lovelace {
-        self.reserves
+    pub fn delta_reserves(&self) -> Lovelace {
+        self.delta_reserves
     }
 
     /// Amount to be paid to the treasury
-    pub fn treasury(&self) -> Lovelace {
-        self.treasury + self.unclaimed.values().sum::<Lovelace>()
+    pub fn delta_treasury(&self) -> Lovelace {
+        self.delta_treasury + self.unclaimed.values().sum::<Lovelace>()
     }
 }

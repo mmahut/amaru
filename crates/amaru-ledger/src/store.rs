@@ -22,9 +22,9 @@ use std::{
     path::Path,
 };
 
+use amaru_kernel::ProposalId;
 use amaru_kernel::{
     CertificatePointer,
-    ComparableProposalId,
     Constitution,
     ConstitutionalCommitteeStatus,
     DRep,
@@ -46,11 +46,7 @@ use amaru_kernel::{
 use columns::*;
 use thiserror::Error;
 
-use crate::{
-    epoch_transition::GovernanceActivity,
-    governance::ratification::{ProposalsRoots, ProposalsRootsRc},
-    summary::Pots,
-};
+use crate::{epoch_transition::GovernanceActivity, governance::ratification::ProposalsRoots, summary::Pots};
 
 #[derive(Debug, Error)]
 #[error(transparent)]
@@ -341,7 +337,7 @@ pub trait TransactionalContext<'a>: ReadStore {
     ) -> Result<()>;
 
     /// Persist the latest proposal roots for the ongoing epoch.
-    fn set_proposals_roots(&self, roots: &ProposalsRootsRc) -> Result<()>;
+    fn set_proposals_roots(&self, roots: &ProposalsRoots) -> Result<()>;
 
     /// Persist the latest enacted constitution
     fn set_constitution(&self, constitution: &Constitution) -> Result<()>;
@@ -353,7 +349,7 @@ pub trait TransactionalContext<'a>: ReadStore {
     /// cause other proposals to become obsolete.
     fn remove_proposals<'iter, Id>(&self, proposals: impl IntoIterator<Item = Id>) -> Result<()>
     where
-        Id: Deref<Target = ComparableProposalId> + 'iter;
+        Id: Deref<Target = ProposalId> + 'iter;
 
     /// Import delegation relationships between delegators and dreps.
     fn add_drep_delegations(

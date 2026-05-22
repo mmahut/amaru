@@ -14,6 +14,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    mem,
     ops::Deref,
 };
 
@@ -59,8 +60,16 @@ impl PoolsEpochTransitionUpdates {
         &self.retired
     }
 
+    pub fn take_retired(&mut self) -> BTreeSet<PoolId> {
+        mem::take(&mut self.retired)
+    }
+
     pub fn updated(&self) -> &BTreeMap<PoolId, Pool> {
         &self.updated
+    }
+
+    pub fn take_updated(&mut self) -> BTreeMap<PoolId, Pool> {
+        mem::take(&mut self.updated)
     }
 
     pub fn refunds(&self) -> impl Iterator<Item = (&StakeCredential, Lovelace)> {

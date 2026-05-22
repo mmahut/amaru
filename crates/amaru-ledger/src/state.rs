@@ -22,9 +22,9 @@ use std::{
 };
 
 use amaru_kernel::{
-    AsHash, Block, Epoch, EraHistory, EraHistoryError, GlobalParameters, HasTransactionId, Hash, Hasher, Lovelace,
-    MemoizedTransactionOutput, NetworkName, Point, PoolId, ProtocolParameters, Slot, StakeCredential,
-    StakeCredentialKind, Tip, Transaction, TransactionInput, TransactionPointer, to_cbor,
+    Block, Epoch, EraHistory, EraHistoryError, GlobalParameters, HasTransactionId, Hash, Hasher,
+    MemoizedTransactionOutput, NetworkName, Point, PoolId, ProtocolParameters, Slot, Tip, Transaction,
+    TransactionInput, TransactionPointer, to_cbor,
 };
 use amaru_metrics::ledger::LedgerMetrics;
 use amaru_observability::{info_span, trace_span};
@@ -32,7 +32,7 @@ use amaru_ouroboros_traits::{HasStakeDistribution, PoolSummary, has_stake_distri
 use amaru_plutus::arena_pool::ArenaPool;
 use anyhow::anyhow;
 use thiserror::Error;
-use tracing::{Span, debug, error, info, trace};
+use tracing::{Span, error, info, trace};
 use volatile_db::AnchoredVolatileState;
 pub use volatile_db::VolatileState;
 
@@ -262,17 +262,28 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
     #[expect(clippy::unwrap_used)]
     fn apply_block(&mut self, now_stable: AnchoredVolatileState) -> Result<(), StateError> {
-        let stable_tip_slot = now_stable.anchor.0.slot();
-        trace_span!(amaru_observability::amaru::ledger::state::APPLY_BLOCK, point_slot = u64::from(stable_tip_slot))
-            .in_scope(|| {
-                let epoch = self
-                    .era_history
-                    .slot_to_epoch_unchecked_horizon(stable_tip_slot)
-                    .map_err(|e| StateError::ErrorComputingEpoch(stable_tip_slot, e))?;
+        let tip_slot = now_stable.anchor.0.slot();
+        let tip_epoch = unsafe_slot_to_epoch(&self.era_history, tip_slot);
 
+        // TODO: Flush ledger overlay sooner.
+        //
+        // This is flushing the overlay at the last moment; just before we need to apply a
+        // now-stable block from the new epoch. In principle, that block has been sitting in the
+        // volatile db for a while.
+        //
+        // Hence, we know in advanced that the overlay must be applied. In fact, there can be
+        // between 1s and multiple minutes before the next block. So we could get a head start and
+        // start flushing right away; instead of awaiting for the next block to arrive.
+        if self.epoch() == tip_epoch && !self.overlay.is_empty() {
+            self.overlay.apply(&*self.stable.lock().unwrap())?;
+            self.snapshots.prune(self.overlay.epoch() - MIN_LEDGER_SNAPSHOTS)?;
+        }
+
+        trace_span!(amaru_observability::amaru::ledger::state::APPLY_BLOCK, point_slot = u64::from(tip_slot)).in_scope(
+            || {
                 // Persist changes for this block
                 let StoreUpdate { point: stable_point, issuer: stable_issuer, fees, add, remove, withdrawals } =
-                    now_stable.into_store_update(epoch, self.protocol_parameters());
+                    now_stable.into_store_update(tip_epoch, self.protocol_parameters());
 
                 let db = self.stable.lock().unwrap();
 
@@ -280,8 +291,8 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                     .with_transaction(|batch| {
                         let governance_activity = batch.save(
                             &self.era_history,
-                            self.protocol_parameters_for(epoch),
-                            self.governance_activity_for(epoch),
+                            self.protocol_parameters_for(tip_epoch),
+                            self.governance_activity_for(tip_epoch),
                             &stable_point,
                             Some(&stable_issuer),
                             add,
@@ -302,7 +313,8 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 *self.governance_activity_mut() = governance_activity;
 
                 Ok(())
-            })
+            },
+        )
     }
 
     /// Check whether the next state should cause an epoch transition. This is the case when it
@@ -354,7 +366,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 //
                 // Ratification occurs after rewards have been paid out; and thus, uses the value
                 // of the treasury that already includes any unpaid rewards.
-                db.pots()?.treasury + effective_rewards.treasury(),
+                db.pots()?.treasury + effective_rewards.delta_treasury(),
             )?;
 
             let (pools_updates, governance_updates) =
@@ -398,8 +410,6 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     /// the internal state of the ledger.
     pub fn add_block(&mut self, next_state: AnchoredVolatileState) -> Result<(), StateError> {
         trace_span!(amaru_observability::amaru::ledger::state::FORWARD).in_scope(|| {
-            self.try_epoch_transition(next_state.anchor.0)?;
-
             let volatile_len_before = self.volatile.len() as u64;
             let security_param = self.global_parameters.consensus_security_param;
 
@@ -437,15 +447,13 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 self.era_history.slot_in_epoch(tip, tip).map_err(|e| StateError::ErrorComputingEpoch(tip, e))?;
 
             // Once we reach the stability window, compute rewards unless we've already done so.
-            //
+            let stability_window = self.global_parameters.stability_window;
+
             // FIXME: Asynchronous rewards calculation
             //
             // compute rewards in a thread, or in a non-blocking manner to carry on with other
             // tasks while rewards are being computed; they only need to be available at the epoch
             // boundary.
-            let stability_window = self.global_parameters.stability_window;
-            // FIXME: Flush pools updates, rewards and governance updates to disk; and then begin
-            // rewards calculation.
             if matches!(self.rewards(), RewardsState::NotReady) && relative_slot >= stability_window {
                 *self.rewards_mut() = RewardsState::Computed(self.compute_rewards()?.into());
             }
@@ -643,6 +651,12 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
             let metrics = self.new_metrics(point, &block, issuer);
 
+            let tip = Tip::new(*point, block_height.into());
+
+            if let Err(e) = self.try_epoch_transition(tip) {
+                return BlockValidation::Err(anyhow!(e));
+            }
+
             rules::validate_block(
                 &mut context,
                 arena_pool,
@@ -654,8 +668,6 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             )?;
 
             let state: VolatileState = context.into();
-
-            let tip = Tip::new(*point, block_height.into());
 
             match self.add_block(state.anchor(tip, issuer)) {
                 Ok(()) => BlockValidation::Valid(metrics),
@@ -835,57 +847,6 @@ pub fn compute_stake_distribution(
     })
 }
 
-// Operations on the state
-// ----------------------------------------------------------------------------
-
-pub fn reset_fees<'store>(db: &impl TransactionalContext<'store>) -> Result<(), StoreError> {
-    let _span = trace_span!(amaru_observability::amaru::ledger::state::RESET_FEES);
-    let _guard = _span.enter();
-
-    db.with_pots(|mut row| {
-        row.borrow_mut().fees = 0;
-    })
-}
-
-pub fn reset_blocks_count<'store>(db: &impl TransactionalContext<'store>) -> Result<(), StoreError> {
-    let _span = trace_span!(amaru_observability::amaru::ledger::state::RESET_BLOCKS_COUNT);
-    let _guard = _span.enter();
-
-    // TODO: If necessary, come up with a more efficient way of dropping a "table".
-    // RocksDB does support batch-removing of key ranges, but somehow, not in a
-    // transactional way. So it isn't as trivial to implement as it may seem.
-    db.with_block_issuers(|iterator| {
-        for (_, mut row) in iterator {
-            *row.borrow_mut() = None;
-        }
-    })
-}
-
-/// Return deposits back to reward accounts.
-pub fn refund_many<'store>(
-    db: &impl TransactionalContext<'store>,
-    mut refunds: impl Iterator<Item = (StakeCredential, Lovelace)>,
-) -> Result<(), StateError> {
-    let leftovers = refunds.try_fold::<_, _, Result<_, StoreError>>(0, |leftovers, (account, deposit)| {
-        debug!(
-            target: EVENT_TARGET,
-            type = %StakeCredentialKind::from(&account),
-            account = %account.as_hash(),
-            %deposit,
-            "refund"
-        );
-
-        Ok(leftovers + db.refund(&account, deposit)?)
-    })?;
-
-    if leftovers > 0 {
-        debug!(target: EVENT_TARGET, ?leftovers, "refund");
-        db.with_pots(|mut pots| pots.borrow_mut().treasury += leftovers)?;
-    }
-
-    Ok(())
-}
-
 // StakeDistributionView
 // ----------------------------------------------------------------------------
 
@@ -1017,6 +978,9 @@ pub enum StateError {
 
     #[error("rewards summary not ready")]
     RewardsSummaryNotReady,
+
+    #[error("expected effective rewards to apply but found something else")]
+    NoEffectiveRewards,
 
     #[error("failed to compute epoch from slot {0:?}: {1}")]
     ErrorComputingEpoch(Slot, EraHistoryError),

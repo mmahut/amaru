@@ -104,6 +104,12 @@ define_schemas! {
                 required into: u64
             }
 
+            /// Flushing the epoch transition overlay to disk
+            public APPLYING_OVERLAY {
+                required epoch: u64
+            }
+
+
             /// Resolve transaction inputs from various sources
             public RESOLVE_INPUTS {
                 optional resolved_from_context: u64

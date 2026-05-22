@@ -16,7 +16,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io::Read,
     iter,
-    rc::Rc,
     sync::LazyLock,
 };
 
@@ -31,7 +30,7 @@ use tracing::{info, warn};
 
 use crate::{
     epoch_transition::GovernanceActivity,
-    governance::ratification::ProposalsRootsRc,
+    governance::ratification::ProposalsRoots,
     state::{diff_bind::Resettable, diff_epoch_reg::DiffEpochReg},
     store::{self, Store, StoreError, TransactionalContext, columns::proposals},
 };
@@ -730,11 +729,11 @@ fn import_proposals_roots(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let transaction = db.create_transaction();
 
-    let roots = ProposalsRootsRc {
-        protocol_parameters: Option::from(protocol_parameters).map(Rc::new),
-        hard_fork: Option::from(hard_fork).map(Rc::new),
-        constitutional_committee: Option::from(constitutional_committee).map(Rc::new),
-        constitution: Option::from(constitution).map(Rc::new),
+    let roots = ProposalsRoots {
+        protocol_parameters: Option::from(protocol_parameters),
+        hard_fork: Option::from(hard_fork),
+        constitutional_committee: Option::from(constitutional_committee),
+        constitution: Option::from(constitution),
     };
 
     info!(
