@@ -28,6 +28,7 @@ use amaru_progress_bar::new_terminal_progress_bar;
 use amaru_stores::rocksdb::{RocksDB, RocksDbConfig, consensus::RocksDBStore};
 use async_compression::tokio::bufread::GzipDecoder;
 use futures_util::TryStreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::{
     fs::{self, File},
@@ -88,9 +89,10 @@ async fn download_snapshots(snapshots_content: Vec<u8>, snapshots_dir: &PathBuf)
 
     // Create a reqwest client
     let client = reqwest::Client::new();
+    let total = snapshots.len();
 
     // Download each snapshot
-    for snapshot in &snapshots {
+    for (i, snapshot) in snapshots.iter().enumerate() {
         info!(epoch=%snapshot.epoch, point=%snapshot.point,
             "Downloading snapshot",
         );
@@ -115,7 +117,9 @@ async fn download_snapshots(snapshots_content: Vec<u8>, snapshots_dir: &PathBuf)
             return Err(BootstrapError::DownloadInvalidStatusCode(snapshot.url.clone(), response.status()));
         }
 
-        let (tmp_path, file) = uncompress_to_temp_file(&target_path, response).await?;
+        let progress = new_download_progress_bar(response.content_length(), i + 1, total, snapshot.epoch);
+        let (tmp_path, file) = uncompress_to_temp_file(&target_path, response, &progress).await?;
+        progress.finish_and_clear();
 
         file.sync_all().await?;
         tokio::fs::rename(&tmp_path, &target_path).await?;
@@ -127,13 +131,26 @@ async fn download_snapshots(snapshots_content: Vec<u8>, snapshots_dir: &PathBuf)
     Ok(())
 }
 
+#[allow(clippy::expect_used)]
+fn new_download_progress_bar(content_length: Option<u64>, index: usize, total: usize, epoch: u64) -> ProgressBar {
+    let template = "  snapshot {prefix} (epoch {msg}) {bar:40} {bytes:>10}/{total_bytes:<10} {bytes_per_sec:>12}";
+    let style = ProgressStyle::with_template(template).expect("hard-coded progress bar template should parse");
+    let pb = ProgressBar::new(content_length.unwrap_or(0)).with_style(style);
+    pb.set_prefix(format!("{}/{}", index, total));
+    pb.set_message(epoch.to_string());
+    pb
+}
+
 async fn uncompress_to_temp_file(
     target_path: &Path,
     response: reqwest::Response,
+    progress: &ProgressBar,
 ) -> Result<(PathBuf, File), BootstrapError> {
     let tmp_path = target_path.with_extension("partial");
     let mut file = File::create(&tmp_path).await?;
-    let raw_stream_reader = StreamReader::new(response.bytes_stream().map_err(io::Error::other));
+    let raw_stream_reader = StreamReader::new(
+        response.bytes_stream().inspect_ok(|chunk| progress.inc(chunk.len() as u64)).map_err(io::Error::other),
+    );
     let buffered_reader = BufReader::new(raw_stream_reader);
     let mut decoded_stream = GzipDecoder::new(buffered_reader);
     tokio::io::copy(&mut decoded_stream, &mut file).await?;
@@ -146,6 +163,7 @@ pub async fn bootstrap(network: NetworkName, ledger_dir: PathBuf, chain_dir: Pat
     let snapshots_dir: PathBuf = default_snapshots_dir(network).into();
     let snapshots_file = get_bootstrap_file(network, snapshot_file_name)?
         .ok_or(BootstrapError::MissingConfigFile(snapshot_file_name.into()))?;
+
     download_snapshots(snapshots_file, &snapshots_dir).await?;
     import_snapshots_from_directory(network, &ledger_dir, &snapshots_dir).await?;
     import_nonces(network.into(), &chain_dir, default_initial_nonces(network)?).await?;
