@@ -27,7 +27,6 @@ export AWS_SECRET_ACCESS_KEY=...
 export AWS_DEFAULT_REGION=auto
 export BUCKET_NAME=...
 export ENDPOINT=https://<s3-compatible-endpoint>
-export BOOTSTRAP_SNAPSHOT_PUBLIC_URL_BASE=https://<public-base-url>
 ```
 
 The publish script also requires `aws` and `jq` on `PATH`.
@@ -40,7 +39,6 @@ make \
 	BOOTSTRAP_SNAPSHOT_EPOCH=163 \
 	BUCKET_NAME=... \
 	ENDPOINT=https://<s3-compatible-endpoint> \
-	BOOTSTRAP_SNAPSHOT_PUBLIC_URL_BASE=https://<public-base-url> \
 	publish-bootstrap-snapshots
 ```
 

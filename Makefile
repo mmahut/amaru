@@ -2,7 +2,6 @@ export AMARU_NETWORK ?= preprod
 export AMARU_PEER_ADDRESS ?= 127.0.0.1:3001
 AWS_DEFAULT_REGION ?= auto
 BOOTSTRAP_SNAPSHOT_EPOCH ?=
-BOOTSTRAP_SNAPSHOT_PUBLIC_URL_BASE ?=
 BUCKET_NAME ?=
 ENDPOINT ?=
 HASKELL_NODE_CONFIG_DIR ?= cardano-node-config
@@ -60,7 +59,6 @@ publish-bootstrap-snapshots: ## &start Upload and publish the three existing boo
 	AWS_DEFAULT_REGION="$(AWS_DEFAULT_REGION)" \
 	BUCKET_NAME="$(BUCKET_NAME)" \
 	ENDPOINT="$(ENDPOINT)" \
-	BOOTSTRAP_SNAPSHOT_PUBLIC_URL_BASE="$(BOOTSTRAP_SNAPSHOT_PUBLIC_URL_BASE)" \
 	bash ./scripts/publish-bootstrap-snapshots "$(BOOTSTRAP_SNAPSHOT_EPOCH)"
 
 download-haskell-config: ## &start Download Haskell node configuration files for $AMARU_NETWORK
