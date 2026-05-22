@@ -22,10 +22,9 @@ use std::{
 };
 
 use amaru_kernel::{
-    AsHash, Block, ComparableProposalId, ConstitutionalCommitteeStatus, Epoch, EraHistory, EraHistoryError,
-    GlobalParameters, HasTransactionId, Hash, Hasher, Lovelace, MemoizedTransactionOutput, NetworkName, Point, PoolId,
-    ProtocolParameters, Slot, StakeCredential, StakeCredentialKind, Tip, Transaction, TransactionInput,
-    TransactionPointer, expect_stake_credential, to_cbor,
+    AsHash, Block, Epoch, EraHistory, EraHistoryError, GlobalParameters, HasTransactionId, Hash, Hasher, Lovelace,
+    MemoizedTransactionOutput, NetworkName, Point, PoolId, ProtocolParameters, Slot, StakeCredential,
+    StakeCredentialKind, Tip, Transaction, TransactionInput, TransactionPointer, to_cbor,
 };
 use amaru_metrics::ledger::LedgerMetrics;
 use amaru_observability::{info_span, trace_span};
@@ -38,11 +37,10 @@ use volatile_db::AnchoredVolatileState;
 pub use volatile_db::VolatileState;
 
 use crate::{
-    context,
     context::{DefaultPreparationContext, DefaultValidationContext},
     epoch_transition,
-    epoch_transition::{GovernanceActivity, GovernanceUpdates, PoolsEpochTransitionUpdates, RewardsState},
-    governance::ratification::{self, RatificationContext},
+    epoch_transition::{GovernanceActivity, RewardsState},
+    governance::ratification::RatificationContext,
     rules,
     rules::block::BlockValidation,
     state::{

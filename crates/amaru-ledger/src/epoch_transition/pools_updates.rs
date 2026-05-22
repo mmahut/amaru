@@ -23,7 +23,7 @@ use amaru_kernel::{
 };
 use tracing::debug;
 
-use crate::store::columns::pools;
+use crate::store::{ReadStore, StoreError, columns::pools::Row as Pool};
 
 /// Captures stake pool updates computed at the epoch transition, but not yet applied to the
 /// immutable storage. Those updates are meant to be updated only after `k` blocks have passed in
@@ -34,7 +34,7 @@ pub struct PoolsEpochTransitionUpdates {
     retired: BTreeSet<PoolId>,
 
     /// Pools that have updated their parameters and/or metadata at the epoch transition.
-    updated: BTreeMap<PoolId, pools::Row>,
+    updated: BTreeMap<PoolId, Pool>,
 
     /// Pool owners refunds, corresponding to the return of their deposit upon de-registration.
     refunds: BTreeMap<StakeCredential, Lovelace>,
@@ -43,6 +43,37 @@ pub struct PoolsEpochTransitionUpdates {
 const STAKE_POOL_DEPOSIT: Lovelace = 500_000_000;
 
 impl PoolsEpochTransitionUpdates {
+    /// Create a new transition update from a read-only store and the epoch that is *beginning*. So
+    /// when transitioning from e -> e + 1; 'epoch' is e + 1.
+    pub fn new(db: &impl ReadStore, epoch: Epoch) -> Result<Self, StoreError> {
+        let mut pools_updates = Self::default();
+
+        for (_pool_id, pool) in db.iter_pools()? {
+            pools_updates.tick_pool(epoch, pool)
+        }
+
+        Ok::<_, StoreError>(pools_updates)
+    }
+
+    pub fn retired(&self) -> &BTreeSet<PoolId> {
+        &self.retired
+    }
+
+    pub fn updated(&self) -> &BTreeMap<PoolId, Pool> {
+        &self.updated
+    }
+
+    pub fn refunds(&self) -> impl Iterator<Item = (&StakeCredential, Lovelace)> {
+        self.refunds.iter().map(|(account, refund)| (account, *refund))
+    }
+
+    /// Only check if a pool would be retiring, without taking ownership or modifying the original
+    /// object.
+    pub fn is_retiring(epoch: Epoch, pool: &Pool) -> bool {
+        let (_, retirement, needs_update) = fold_future_params(&pool.future_params, epoch);
+        needs_update && retirement.is_some_and(|retirement_epoch| retirement_epoch <= epoch)
+    }
+
     /// Check whether a pool needs any sort of updates at the beginning of an epoch
     /// ('current_epoch').
     ///
@@ -59,7 +90,7 @@ impl PoolsEpochTransitionUpdates {
     ///
     /// a. Any re-registration that comes after a retirement cancels that retirement.
     /// b. Any retirement that come after a retirement cancels that previous retirement.
-    pub fn tick_pool(&mut self, epoch: Epoch, mut pool: pools::Row) {
+    pub fn tick_pool(&mut self, epoch: Epoch, mut pool: Pool) {
         let (update, retirement, needs_update) = fold_future_params(&pool.future_params, epoch);
 
         if needs_update {
@@ -106,7 +137,7 @@ impl PoolsEpochTransitionUpdates {
         }
     }
 
-    fn retire_pool(&mut self, epoch: Epoch, pool: pools::Row) {
+    fn retire_pool(&mut self, epoch: Epoch, pool: Pool) {
         debug!(pool = %pool.id(), "tick.pool.retiring");
 
         self.retired.insert(pool.id());
@@ -184,5 +215,139 @@ fn set<A: Eq + Clone>(source: &mut A, new: &A, to_string: impl FnOnce(&A) -> Str
         Box::new(field)
     } else {
         Box::new(tracing::field::Empty) as Box<dyn tracing::Value>
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+pub mod tests {
+    use amaru_kernel::{any_certificate_pointer, any_pool_params};
+    use proptest::{collection::vec, prelude::*};
+
+    use super::*;
+    use crate::store::columns::pools::Row as Pool;
+
+    // Generate a sequence of plausible updates, where each item in the vector correspond to an
+    // epoch's update. So a caller is expected to tick a base Pool between each application.
+    pub fn any_row_seq_updates() -> impl Strategy<Value = Vec<Vec<(Option<PoolParams>, Epoch)>>> {
+        vec(Just(()), 0..10).prop_flat_map(|cols| {
+            cols.iter()
+                .enumerate()
+                .map(|(epoch, _)| {
+                    let future_params = || {
+                        prop_oneof![
+                            (1..3u64).prop_map(move |offset| (None, Epoch::from(epoch as u64) + offset)),
+                            any_pool_params().prop_map(move |params| (Some(params), Epoch::from(epoch as u64 + 1)))
+                        ]
+                    };
+                    vec(future_params(), 0..3)
+                })
+                .collect::<Vec<_>>()
+        })
+    }
+
+    #[derive(Debug)]
+    struct Model {
+        current: Option<PoolParams>,
+        future: Option<PoolParams>,
+        retiring: Option<Epoch>,
+    }
+
+    impl Model {
+        fn new(initial_params: PoolParams) -> Self {
+            Self { current: Some(initial_params), future: None, retiring: None }
+        }
+
+        // Apply model's changes at the epoch boundary
+        fn begin_epoch(&mut self, epoch: Epoch) {
+            if let Some(retirement) = self.retiring
+                && retirement <= epoch
+            {
+                self.current = None;
+            }
+
+            if let Some(future) = self.future.take() {
+                self.current = Some(future);
+            }
+        }
+
+        // Process all updates through our simpler model
+        fn tick(&mut self, epoch: Epoch, updates: &[(Option<PoolParams>, Epoch)]) {
+            self.begin_epoch(epoch);
+
+            for (update, retirement_epoch) in updates {
+                match update {
+                    None if self.current.is_none() => {}
+                    None => {
+                        self.retiring = Some(*retirement_epoch);
+                    }
+                    Some(params) if self.current.is_none() => {
+                        self.retiring = None;
+                        self.current = Some(params.clone());
+                    }
+                    Some(params) => {
+                        self.retiring = None;
+                        self.future = Some(params.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_tick_pool(
+            registered_at in any_certificate_pointer(u64::MAX),
+            initial_params in any_pool_params(),
+            sequence in any_row_seq_updates(),
+        ) {
+            let mut model = Model::new(initial_params.clone());
+            let mut pool_opt = Some(Pool::new(registered_at, initial_params));
+
+            for (current_epoch, updates) in sequence.into_iter().enumerate() {
+                let Some(mut pool) = pool_opt.take() else {
+                    break;
+                };
+
+                let current_epoch = Epoch::from(current_epoch as u64);
+
+                model.tick(current_epoch, &updates);
+
+                let mut pools_updates = PoolsEpochTransitionUpdates::default();
+                let pool_id = pool.id();
+                pool.future_params = updates;
+                pools_updates.tick_pool(current_epoch, pool);
+
+                if let Some(pool) = pools_updates.updated().get(&pool_id).cloned() {
+                    prop_assert_eq!(
+                        model.current.as_ref(),
+                        Some(&pool.current_params),
+                        "current_epoch = {:?}, model = {:?}",
+                        current_epoch,
+                        model
+                    );
+
+                    let obsolete_count = pool.future_params.iter()
+                        .filter(|(_, epoch)| epoch <= &current_epoch)
+                        .count();
+
+                    prop_assert_eq!(
+                        obsolete_count,
+                        0,
+                        "future_params should not contain obsolete entries: {:?}",
+                        pool.future_params
+                    );
+
+                    pool_opt = Some(pool)
+                } else if pools_updates.retired().contains(&pool_id) {
+                    prop_assert_eq!(
+                        model.current.as_ref(),
+                        None,
+                        "current_epoch = {:?}, model = {:?}",
+                        current_epoch,
+                        model,
+                    );
+                }
+            }
+        }
     }
 }

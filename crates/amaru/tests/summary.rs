@@ -97,7 +97,7 @@ fn compare_snapshot(epoch: Epoch) {
     let rewards_summary =
         RewardsSummary::new(snapshot_from_the_future.as_ref(), stake_distr, global_parameters, &protocol_parameters)
             .unwrap()
-            .with_unclaimed_refunds(snapshot_from_the_future.as_ref(), &protocol_parameters)
+            .with_unclaimed_refunds(snapshot_from_the_future.as_ref())
             .unwrap();
 
     insta::with_settings!({

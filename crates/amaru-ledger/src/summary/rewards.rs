@@ -109,7 +109,6 @@ certain mutations are applied to the system.
 
 use std::collections::BTreeMap;
 
-use amaru_iter_borrow::borrowable_proxy::BorrowableProxy;
 use amaru_kernel::{
     Epoch, GlobalParameters, Lovelace, PoolId, ProtocolParameters, StakeCredential, expect_stake_credential,
 };
@@ -121,7 +120,8 @@ use serde::ser::SerializeStruct;
 use tracing::info;
 
 use crate::{
-    store::{Snapshot, StoreError, columns::*},
+    epoch_transition::PoolsEpochTransitionUpdates,
+    store::{Snapshot, StoreError},
     summary::{
         AccountState, PoolState, Pots, SafeRatio, safe_ratio,
         serde::{encode_pool_id, serialize_map},
@@ -500,24 +500,18 @@ impl RewardsSummary {
     // rewards calculation for 174 kicks in later in the epoch, the deposit was already added to the
     // treasury... So it won't be present from our snapshot labeled 176 since it happened BEFORE the
     // beginning of the epoch 177.
-    pub fn with_unclaimed_refunds(
-        mut self,
-        db: &impl Snapshot,
-        protocol_parameters: &ProtocolParameters,
-    ) -> Result<Self, StoreError> {
-        let leftovers = 0;
+    pub fn with_unclaimed_refunds(mut self, db: &impl Snapshot) -> Result<Self, StoreError> {
+        let leftovers = PoolsEpochTransitionUpdates::new(db, self.epoch + 3)?.refunds().try_fold(
+            0,
+            |leftovers, (account, refund)| {
+                // TODO: Multi-get here?
+                if db.account(account)?.is_none() {
+                    return Ok(leftovers + refund);
+                }
 
-        // FIXME
-        //
-        // let leftovers = db.iter_pools()?.try_fold(0, |leftovers, (_, row)| {
-        //     if let Some(account) = pools::Row::tick(Box::new(BorrowableProxy::new(Some(row), |_| {})), self.epoch + 3)
-        //         && db.account(&account)?.is_none()
-        //     {
-        //         return Ok::<_, StoreError>(leftovers + protocol_parameters.stake_pool_deposit);
-        //     }
-        //
-        //     Ok(leftovers)
-        // })?;
+                Ok::<_, StoreError>(leftovers)
+            },
+        )?;
 
         self.pots.treasury += leftovers;
 

@@ -754,13 +754,10 @@ mod tests {
     use proptest::{collection, prelude::*, test_runner::RngSeed};
 
     use super::ProposalsForest;
-    use crate::{
-        governance::ratification::{
-            CandidateProposal, CommitteeUpdate, OrphanProposal, ProposalEnum, ProposalsRootsRc, any_committee_update,
-            any_proposal_enum,
-            tests::{ERA_HISTORY, MAX_ARBITRARY_EPOCH, MIN_ARBITRARY_EPOCH},
-        },
-        store::columns::proposals,
+    use crate::governance::ratification::{
+        CandidateProposal, CommitteeUpdate, OrphanProposal, ProposalEnum, ProposalsRootsRc, any_committee_update,
+        any_proposal_enum,
+        tests::{ERA_HISTORY, MAX_ARBITRARY_EPOCH, MIN_ARBITRARY_EPOCH},
     };
 
     const MAX_TREE_SIZE: usize = 8;

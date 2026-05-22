@@ -92,7 +92,7 @@ impl<'a, C> cbor::decode::Decode<'a, C> for Row {
 #[cfg(any(test, feature = "test-utils"))]
 pub mod tests {
     use amaru_kernel::{any_certificate_pointer, any_pool_params, prop_cbor_roundtrip};
-    use proptest::{collection, collection::vec, prelude::*};
+    use proptest::{collection, prelude::*};
 
     use super::*;
 
@@ -110,25 +110,6 @@ pub mod tests {
         )
     }
 
-    // Generate a sequence of plausible updates, where each item in the vector correspond to an
-    // epoch's update. So a caller is expected to tick a base Row between each application.
-    pub fn any_row_seq_updates() -> impl Strategy<Value = Vec<Vec<(Option<PoolParams>, Epoch)>>> {
-        vec(Just(()), 0..10).prop_flat_map(|cols| {
-            cols.iter()
-                .enumerate()
-                .map(|(epoch, _)| {
-                    let future_params = || {
-                        prop_oneof![
-                            (1..3u64).prop_map(move |offset| (None, Epoch::from(epoch as u64) + offset)),
-                            any_pool_params().prop_map(move |params| (Some(params), Epoch::from(epoch as u64 + 1)))
-                        ]
-                    };
-                    vec(future_params(), 0..3)
-                })
-                .collect::<Vec<_>>()
-        })
-    }
-
     prop_cbor_roundtrip!(Row, any_row());
 
     proptest! {
@@ -144,90 +125,6 @@ pub mod tests {
 
             prop_assert_eq!(row_extended.future_params.len(), row.future_params.len() + 1);
             prop_assert_eq!(row_extended.future_params.last(), Some(&future_params));
-        }
-
-        #[test]
-        fn prop_tick_pool(
-            registered_at in any_certificate_pointer(u64::MAX),
-            initial_params in any_pool_params(),
-            updates in any_row_seq_updates(),
-        ) {
-            #[derive(Debug)]
-            struct Model {
-                current: Option<PoolParams>,
-                future: Option<PoolParams>,
-                retiring: Option<Epoch>,
-            }
-
-            let mut model = Model {
-                current: Some(initial_params.clone()),
-                future: None,
-                retiring: None,
-            };
-
-            let mut row = Some(Row::new(registered_at, initial_params));
-            for (current_epoch, updates) in updates.into_iter().enumerate() {
-                let current_epoch = Epoch::from(current_epoch as u64);
-                // Apply model's changes at the epoch boundary
-                if let Some(retirement) = model.retiring
-                    && retirement <= current_epoch
-                {
-                    model.current = None;
-                }
-                if let Some(future) = model.future.take() {
-                    model.current = Some(future);
-                }
-
-                // Process all updates through our simpler model
-                model = updates.iter().fold(model, |mut model, (update, epoch)| {
-                    match update {
-                        None if model.current.is_none() => {},
-                        None => { model.retiring = Some(*epoch); },
-                        Some(params) if model.current.is_none() => {
-                            model.retiring = None;
-                            model.current = Some(params.clone());
-                        },
-                        Some(params) => {
-                            model.retiring = None;
-                            model.future = Some(params.clone());
-                        },
-                    }
-                    model
-                });
-
-                // Process them through row ticks, and ensure conformance with the model
-                Row::tick(Box::new(&mut row), current_epoch);
-                match row.as_mut() {
-                    None => {
-                        if let Some(params) = updates.iter().find(|(params, _)| params.is_some()).cloned() {
-                            let mut new = Row::new(registered_at, params.0.unwrap());
-                            new.future_params.extend(updates.clone());
-                            row = Some(new);
-                        }
-                    },
-                    Some(row) => {
-                        prop_assert_eq!(
-                            model.current.as_ref(),
-                            Some(&row.current_params),
-                            "current_epoch = {:?}, model = {:?}",
-                            current_epoch,
-                            model
-                        );
-
-                        let obsolete_count = row.future_params.iter()
-                            .filter(|(_, epoch)| epoch <= &current_epoch)
-                            .count();
-                        prop_assert_eq!(
-                            obsolete_count,
-                            0,
-                            "future_params should not contain obsolete entries: {:?}",
-                            row.future_params
-                        );
-
-                        row.future_params.extend(updates.clone());
-                    }
-                }
-            }
         }
     }
 }
