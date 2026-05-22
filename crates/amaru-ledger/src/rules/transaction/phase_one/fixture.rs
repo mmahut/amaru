@@ -52,7 +52,7 @@ pub(super) struct Fixture {
 pub(super) struct InitialState {
     #[serde(deserialize_with = "deserialize_utxo")]
     pub(super) utxo: BTreeMap<TransactionInput, MemoizedTransactionOutput>,
-    pub(super) voting_state: GovernanceActivity,
+    pub(super) governance_activity: GovernanceActivity,
 }
 
 pub(super) enum Expected {

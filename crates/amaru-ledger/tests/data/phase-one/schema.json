@@ -166,20 +166,20 @@
     },
     "VotingState": {
       "type": "object",
-      "required": ["numDormantEpochs"],
+      "required": ["consecutiveDormantEpochs"],
       "properties": {
-        "numDormantEpochs": { "type": "integer", "minimum": 0 }
+        "consecutiveDormantEpochs": { "type": "integer", "minimum": 0 }
       }
     },
     "InitialState": {
       "type": "object",
-      "required": ["utxo", "votingState"],
+      "required": ["utxo", "governanceActivity"],
       "properties": {
         "utxo": {
           "type": "array",
           "items": { "$ref": "#/$defs/UtxoEntry" }
         },
-        "votingState": { "$ref": "#/$defs/VotingState" }
+        "governanceActivity": { "$ref": "#/$defs/VotingState" }
       }
     },
     "MinFeeReferenceScripts": {

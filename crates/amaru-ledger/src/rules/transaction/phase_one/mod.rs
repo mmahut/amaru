@@ -351,7 +351,7 @@ mod tests {
             fixture.network,
             &protocol_parameters,
             &era_history,
-            fixture.initial_state.voting_state,
+            fixture.initial_state.governance_activity,
             fixture.ledger_env,
             tx.is_expected_valid,
             tx.body,

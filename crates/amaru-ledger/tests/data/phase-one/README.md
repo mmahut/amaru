@@ -35,7 +35,7 @@ required-field rules.
 | `network`            | `mainnet`, `preprod`, `preview`, or `testnet_<magic>`. |
 | `eraHistory`         | Inline `{ stabilityWindow, eras: [EraSummary] }` or a `$ref` to a shared file. |
 | `protocolParameters` | Inline (see `schema.json`) or a `$ref` to a shared file, optionally with `$override`. |
-| `initialState`       | `{ utxo: [{input, output}], votingState }`.            |
+| `initialState`       | `{ utxo: [{input, output}], governanceActivity }`.     |
 | `ledgerEnv`          | `{ slot, txIx }`.                                      |
 | `transaction`        | Hex-encoded CBOR.                                      |
 | `expected`           | `"Pass"` or `{ "predicate": "<Name>", ... }`.          |
