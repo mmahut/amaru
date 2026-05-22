@@ -77,8 +77,8 @@ enum Command {
     /// Fetch specified headers
     FetchChainHeaders(cmd::fetch_chain_headers::Args),
 
-    /// Generate the three consecutive epoch snapshots needed for bootstrap.
-    GenerateEpochSnapshots(cmd::generate_epoch_snapshots::Args),
+    /// Create the three consecutive epoch snapshots needed for bootstrap.
+    CreateSnapshots(cmd::create_snapshots::Args),
 
     /// Migrate the chain database to the current version.
     ///
@@ -160,7 +160,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Run(args) => cmd::run::run(args, metrics.unwrap()).await,
         Command::Bootstrap(args) => cmd::bootstrap::run(args).await,
         Command::FetchChainHeaders(args) => cmd::fetch_chain_headers::run(args).await,
-        Command::GenerateEpochSnapshots(args) => cmd::generate_epoch_snapshots::run(args).await,
+        Command::CreateSnapshots(args) => cmd::create_snapshots::run(args).await,
         Command::DumpChainDB(args) => cmd::dump_chain_db::run(args).await,
         Command::RemoveValidationStatus(args) => cmd::remove_validation_status::run(args).await,
         Command::DumpTracesSchema(args) => cmd::dump_schemas::run(args).await,

@@ -137,7 +137,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let config_dir = resolve_config_dir(&client, cardano_node_config_dir, network, &work_dir).await?;
 
     info!(
-        _command = "generate-epoch-snapshots",
+        _command = "create-snapshots",
         snapshot_output_dir = %snapshot_output_dir.display(),
         config_dir = %config_dir.display(),
         network = %network,
@@ -253,7 +253,7 @@ fn remove_path_if_exists(path: &Path, kind: &'static str) -> Result<(), Box<dyn 
         return Ok(());
     }
 
-    info!(path = %path.display(), kind, "removing existing generate-epoch-snapshots output");
+    info!(path = %path.display(), kind, "removing existing create-snapshots output");
 
     if fs::symlink_metadata(path)?.is_dir() {
         fs::remove_dir_all(path)?;

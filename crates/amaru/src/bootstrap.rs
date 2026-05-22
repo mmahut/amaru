@@ -534,7 +534,7 @@ fn load_packaged_headers_from_snapshot(snapshot_path: &Path) -> Result<Vec<Vec<u
     let headers_file = snapshot_path.join(PACKAGED_HEADERS_FILE_NAME);
     if !headers_file.is_file() {
         return Err(format!(
-            "missing packaged bootstrap headers at {}. Re-generate snapshots with `amaru generate-epoch-snapshots`.",
+            "missing packaged bootstrap headers at {}. Re-generate snapshots with `amaru create-snapshots`.",
             headers_file.display()
         )
         .into());
