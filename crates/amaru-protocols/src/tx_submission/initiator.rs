@@ -525,7 +525,7 @@ mod tests {
     async fn serve_transactions() -> anyhow::Result<()> {
         // Create a mempool with some transactions
         let mempool = new_mempool();
-        let txs = create_transactions_in_mempool(mempool.clone(), 6);
+        let txs = create_transactions_in_mempool(mempool.as_ref(), 6);
 
         // Send requests to retrieve transactions and block until they are available.
         // In this case they are immediately available since we pre-populated the mempool.
@@ -660,7 +660,7 @@ mod tests {
     async fn evicted_advertised_txs_yield_a_partial_reply() -> anyhow::Result<()> {
         // The peer asks for an id we did advertise but has since been evicted from our mempool.
         let mempool = new_mempool();
-        let txs = create_transactions_in_mempool(mempool.clone(), 2);
+        let txs = create_transactions_in_mempool(mempool.as_ref(), 2);
 
         // Advertise both txs, then evict tx[0] before the peer requests it.
         let advertise = request_tx_ids(0, 2, Blocking::Yes);
@@ -681,7 +681,7 @@ mod tests {
         // an empty body list) rather than terminate — the wire format and the peer's inbound
         // logic both accept it.
         let mempool = new_mempool();
-        let txs = create_transactions_in_mempool(mempool.clone(), 2);
+        let txs = create_transactions_in_mempool(mempool.as_ref(), 2);
 
         let advertise = request_tx_ids(0, 2, Blocking::Yes);
         let request_both = request_txs(&txs, &[0, 1]);
@@ -699,7 +699,7 @@ mod tests {
     async fn request_txs_must_come_from_requested_ids() -> anyhow::Result<()> {
         // Create a mempool with some transactions
         let mempool = new_mempool();
-        let txs = create_transactions_in_mempool(mempool.clone(), 4);
+        let txs = create_transactions_in_mempool(mempool.as_ref(), 4);
 
         // Send requests to retrieve transactions and block until they are available.
         // In this case they are immediately available since we pre-populated the mempool.
@@ -727,7 +727,7 @@ mod tests {
     #[tokio::test]
     async fn empty_request_txs_is_tolerated() -> anyhow::Result<()> {
         let mempool = new_mempool();
-        let txs = create_transactions_in_mempool(mempool.clone(), 4);
+        let txs = create_transactions_in_mempool(mempool.as_ref(), 4);
 
         let results = vec![request_tx_ids(0, 2, Blocking::Yes), request_txs(&txs, &[])];
 
@@ -749,7 +749,7 @@ mod tests {
     #[tokio::test]
     async fn a_blocking_request_must_be_made_when_all_txs_are_acknowledged() -> anyhow::Result<()> {
         let mempool = new_mempool();
-        let txs = create_transactions_in_mempool(mempool.clone(), 4);
+        let txs = create_transactions_in_mempool(mempool.as_ref(), 4);
 
         let results = vec![
             request_tx_ids(0, 4, Blocking::Yes),
@@ -775,7 +775,7 @@ mod tests {
     #[tokio::test]
     async fn a_non_blocking_request_must_be_made_when_some_txs_are_unacknowledged() -> anyhow::Result<()> {
         let mempool = new_mempool();
-        let txs = create_transactions_in_mempool(mempool.clone(), 4);
+        let txs = create_transactions_in_mempool(mempool.as_ref(), 4);
 
         let results =
             vec![request_tx_ids(0, 4, Blocking::Yes), request_txs(&txs, &[0, 1]), request_tx_ids(2, 4, Blocking::Yes)];
@@ -790,7 +790,7 @@ mod tests {
     #[tokio::test]
     async fn the_responder_cannot_acknowledge_more_than_the_current_unacknowledged_blocking() -> anyhow::Result<()> {
         let mempool = new_mempool();
-        let txs = create_transactions_in_mempool(mempool.clone(), 4);
+        let txs = create_transactions_in_mempool(mempool.as_ref(), 4);
 
         let results = vec![
             request_tx_ids(0, 4, Blocking::Yes),
@@ -817,7 +817,7 @@ mod tests {
     async fn the_responder_cannot_acknowledge_more_than_the_current_unacknowledged_non_blocking() -> anyhow::Result<()>
     {
         let mempool = new_mempool();
-        let txs = create_transactions_in_mempool(mempool.clone(), 4);
+        let txs = create_transactions_in_mempool(mempool.as_ref(), 4);
 
         let results = vec![
             request_tx_ids(0, 4, Blocking::Yes),
@@ -843,7 +843,7 @@ mod tests {
     #[tokio::test]
     async fn requesting_more_than_window_cap_terminates_protocol() -> anyhow::Result<()> {
         let mempool = new_mempool();
-        let txs = create_transactions_in_mempool(mempool.clone(), 10);
+        let txs = create_transactions_in_mempool(mempool.as_ref(), 10);
 
         // Fill the window completely (10 advertised), then ask for one more without acking.
         let results = vec![request_tx_ids(0, 10, Blocking::Yes), request_tx_ids(0, 1, Blocking::No)];

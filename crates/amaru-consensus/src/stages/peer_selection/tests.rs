@@ -24,7 +24,7 @@ use super::*;
 use crate::stages::{
     peer_selection::test_setup::{
         TestPrep, cooldown_instant, first_schedule_id, second_schedule_id, setup, setup_preload, te_cancel_schedule,
-        te_clock, te_schedule, te_send, test_prep, tm_add_stage_starts_with,
+        te_clock, te_random_seed, te_schedule, te_send, test_prep, tm_add_stage_starts_with,
     },
     test_utils::{assert_trace, te_input, te_state, tm_state},
 };
@@ -185,6 +185,7 @@ fn test_adversarial_outbound_connected() {
             te_state("ps-1", &after),
             te_clock(cooldown_instant()),
             te_input("ps-1", &PeerSelectionMsg::CooldownEnded(p.clone())),
+            te_random_seed("ps-1"),
             te_state("ps-1", &state),
         ],
     );
@@ -203,7 +204,10 @@ fn test_cooldown_ended_stale() {
     let state = prep.state.clone();
     let msg = PeerSelectionMsg::CooldownEnded(p);
     let (running, _guards, mut logs) = setup(&prep, msg.clone());
-    assert_trace(&running, &[te_state("ps-1", &state), te_input("ps-1", &msg), te_state("ps-1", &state)]);
+    assert_trace(
+        &running,
+        &[te_state("ps-1", &state), te_input("ps-1", &msg), te_random_seed("ps-1"), te_state("ps-1", &state)],
+    );
     logs.assert_no_remaining_at([Level::INFO, Level::WARN, Level::ERROR]);
 }
 
@@ -228,9 +232,11 @@ fn test_cooldown_ended_triggers_regulate() {
             te_schedule("ps-1", PeerSelectionMsg::CooldownEnded(p.clone()), sid),
             te_state("ps-1", &after_remove),
             te_input("ps-1", &PeerSelectionMsg::CooldownEnded(p.clone())),
+            te_random_seed("ps-1"),
             te_state("ps-1", &state),
             te_clock(cooldown_instant()),
             te_input("ps-1", &PeerSelectionMsg::CooldownEnded(p.clone())),
+            te_random_seed("ps-1"),
             te_state("ps-1", &state),
         ],
     );
@@ -373,6 +379,7 @@ fn test_adversarial_twice_cancels_and_reschedules() {
             te_state("ps-1", &after_second),
             te_clock(cooldown_instant()),
             te_input("ps-1", &PeerSelectionMsg::CooldownEnded(p.clone())),
+            te_random_seed("ps-1"),
             te_state("ps-1", &final_state),
         ],
     );

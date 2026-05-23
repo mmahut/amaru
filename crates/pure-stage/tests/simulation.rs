@@ -219,9 +219,9 @@ fn overrides() {
     running.override_external_effect(1, move |eff: Box<OutputEffect<u32>>| {
         if eff.msg > 2 {
             count2.fetch_add(1, Ordering::Relaxed);
-            OverrideResult::Handled(Box::new(()))
+            OverrideResult::handled(())
         } else {
-            OverrideResult::NoMatch(eff)
+            OverrideResult::no_match(eff)
         }
     });
     running.run_until_blocked_incl_effects(rt.handle()).assert_idle();

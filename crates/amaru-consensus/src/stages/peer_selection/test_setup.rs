@@ -12,21 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::BTreeSet, net::SocketAddr, time::Duration};
+use std::{collections::BTreeSet, time::Duration};
 
-use amaru_kernel::Peer;
-use amaru_ouroboros_traits::validators::blocks::can_validate_blocks::BlockValidationError;
+use amaru_kernel::{Peer, Tip};
 use amaru_protocols::manager::ManagerMessage;
 use pure_stage::{
     DeserializerGuards, Effect, Instant, Name, ScheduleId, ScheduleIds, StageGraph, StageRef,
-    simulation::SimulationRunning, trace_buffer::TraceEntry,
+    simulation::{SimulationRunning, running::OverrideResult},
+    trace_buffer::TraceEntry,
 };
 use tokio::runtime::{Builder, Runtime};
 
 use super::*;
 pub use crate::stages::test_utils::TraceMatch;
 use crate::{
-    effects::{RegisteredRelaySocketAddrsEffect, TipEffect, VolatileTipEffect},
+    effects::{GenerateRandomSeed, RegisteredRelaySocketAddrsEffect, TipEffect, VolatileTipEffect},
     stages::test_utils::{Logs, run_simulation},
 };
 
@@ -92,6 +92,7 @@ pub fn register_guards() -> DeserializerGuards {
         pure_stage::register_data_deserializer::<PeerSelectionMsg>().boxed(),
         pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
         pure_stage::register_data_deserializer::<ScheduleId>().boxed(),
+        pure_stage::register_effect_deserializer::<GenerateRandomSeed>().boxed(),
     ]
 }
 
@@ -121,18 +122,16 @@ pub fn setup_preload(
 
             // Override ledger external effects so the internal "peer-selection/ledger-check"
             // child created on Initialize does not require a real Ledger resource.
-            running.override_external_effect::<VolatileTipEffect>(usize::MAX, |_| {
-                pure_stage::simulation::running::OverrideResult::Handled(Box::new(Option::<amaru_kernel::Tip>::None))
-            });
-            running.override_external_effect::<TipEffect>(usize::MAX, |_| {
-                pure_stage::simulation::running::OverrideResult::Handled(Box::new(amaru_kernel::Tip::origin()))
-            });
+            running
+                .override_external_effect::<VolatileTipEffect>(usize::MAX, |_| OverrideResult::handled(Tip::origin()));
+            running.override_external_effect::<TipEffect>(usize::MAX, |_| OverrideResult::handled(Tip::origin()));
             running.override_external_effect::<RegisteredRelaySocketAddrsEffect>(usize::MAX, |_| {
-                pure_stage::simulation::running::OverrideResult::Handled(Box::new(Ok::<
-                    BTreeSet<SocketAddr>,
-                    BlockValidationError,
-                >(BTreeSet::new())))
+                OverrideResult::handled(Ok(BTreeSet::new()))
             });
+
+            // Make peer selection's random choices fully deterministic in tests.
+            running
+                .override_external_effect::<GenerateRandomSeed>(usize::MAX, |_| OverrideResult::handled([0x42u8; 32]));
         },
     )
 }
@@ -155,4 +154,11 @@ pub fn te_cancel_schedule(at_stage: impl AsRef<str>, schedule_id: ScheduleId) ->
 
 pub fn te_clock(instant: Instant) -> TraceEntry {
     TraceEntry::Clock(instant)
+}
+
+pub fn te_random_seed(at_stage: impl AsRef<str>) -> TraceEntry {
+    TraceEntry::Suspend(Effect::External {
+        at_stage: Name::from(at_stage.as_ref()),
+        effect: Box::new(GenerateRandomSeed),
+    })
 }

@@ -40,7 +40,7 @@ macro_rules! prop_cbor_roundtrip {
     };
 
     ($ty:ty, $strategy:expr) => {
-        prop_cbor_roundtrip!(prop_cbor_roundtrip, $ty, $strategy);
+        $crate::prop_cbor_roundtrip!(prop_cbor_roundtrip, $ty, $strategy);
     };
 }
 

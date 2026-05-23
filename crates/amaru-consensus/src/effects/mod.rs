@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod ledger_effects;
+mod random_effects;
 
 pub use amaru_protocols::metrics_effects::{Metrics, MetricsOps, RecordMetricsEffect, ResourceMeter};
 pub use ledger_effects::{
@@ -20,3 +21,4 @@ pub use ledger_effects::{
     ResourceEraHistory, ResourceHasStakePools, ResourceHeaderValidation, ResourceTxValidation, RollbackBlockEffect,
     TipEffect, ValidateBlockEffect, ValidateHeaderEffect, ValidateTxEffect, VolatileTipEffect,
 };
+pub use random_effects::GenerateRandomSeed;

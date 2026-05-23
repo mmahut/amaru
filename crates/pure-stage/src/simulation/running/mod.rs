@@ -24,7 +24,6 @@ use std::{
 use either::Either::{Left, Right};
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use override_external_effect::OverrideExternalEffect;
-pub use override_external_effect::OverrideResult;
 use parking_lot::Mutex;
 use tokio::{runtime::Handle, select, sync::watch};
 
@@ -177,25 +176,26 @@ impl SimulationRunning {
     ///
     /// If the override result is [`OverrideResult::NoMatch`], the effect is passed to overrides
     /// installed later than this one.
-    pub fn override_external_effect<T: ExternalEffect>(
+    pub fn override_external_effect<T: ExternalEffectAPI>(
         &mut self,
         remaining: usize,
-        mut transform: impl FnMut(Box<T>) -> OverrideResult<Box<T>, Box<dyn ExternalEffect>> + Send + 'static,
+        mut transform: impl FnMut(Box<T>) -> OverrideResult<T> + Send + 'static,
     ) {
         self.overrides.push(OverrideExternalEffect::new(
             remaining,
             Box::new(move |effect| {
+                use override_external_effect::OverrideResult::*;
                 if effect.is::<T>() {
                     // if this casting turns out to be a significant cost, we can split the
                     // overrides by TypeId and run each in an appropriately typed closure
                     #[expect(clippy::expect_used)]
-                    match transform(effect.cast::<T>().expect("checked above")) {
-                        OverrideResult::NoMatch(effect) => OverrideResult::NoMatch(effect as Box<dyn ExternalEffect>),
-                        OverrideResult::Handled(msg) => OverrideResult::Handled(msg),
-                        OverrideResult::Replaced(effect) => OverrideResult::Replaced(effect),
+                    match transform(effect.cast::<T>().expect("checked above")).0 {
+                        NoMatch(effect) => NoMatch(effect as Box<dyn ExternalEffect>),
+                        Handled(msg) => Handled(msg),
+                        Replaced(effect) => Replaced(effect),
                     }
                 } else {
-                    OverrideResult::NoMatch(effect)
+                    NoMatch(effect)
                 }
             }),
         ));
@@ -750,12 +750,13 @@ impl SimulationRunning {
             Effect::External { at_stage, mut effect } => {
                 let mut result = None;
                 for idx in 0..self.overrides.len() {
+                    use override_external_effect::OverrideResult::*;
                     let over = &mut self.overrides[idx];
                     match over.transform(effect) {
-                        OverrideResult::NoMatch(effect2) => {
+                        NoMatch(effect2) => {
                             effect = effect2;
                         }
-                        OverrideResult::Handled(msg) => {
+                        Handled(msg) => {
                             result = Some(msg);
                             // dummy effect value since we moved out of `effect` and need it later in the other case
                             effect = Box::new(());
@@ -764,7 +765,7 @@ impl SimulationRunning {
                             }
                             break;
                         }
-                        OverrideResult::Replaced(effect2) => {
+                        Replaced(effect2) => {
                             effect = effect2;
                             if over.register_use_and_get_removal() {
                                 self.overrides.remove(idx);
@@ -1274,6 +1275,25 @@ impl StageGraphRunning for SimulationRunning {
         Box::pin(async move {
             rx.wait_for(|x| *x).await.ok();
         })
+    }
+}
+
+pub struct OverrideResult<Eff: ExternalEffectAPI>(
+    override_external_effect::OverrideResult<Box<Eff>, Box<dyn ExternalEffect>>,
+);
+
+impl<Eff: ExternalEffectAPI> OverrideResult<Eff> {
+    pub fn no_match(eff: Box<Eff>) -> Self {
+        Self(override_external_effect::OverrideResult::NoMatch(eff))
+    }
+    pub fn handled(response: <Eff as ExternalEffectAPI>::Response) -> Self {
+        Self(override_external_effect::OverrideResult::Handled(Box::new(response)))
+    }
+    pub fn replaced<E>(eff: E) -> Self
+    where
+        E: ExternalEffectAPI<Response = Eff::Response>,
+    {
+        Self(override_external_effect::OverrideResult::Replaced(Box::new(eff)))
     }
 }
 

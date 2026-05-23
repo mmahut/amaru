@@ -136,6 +136,7 @@ pub fn register_guards() -> DeserializerGuards {
         pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
         pure_stage::register_data_deserializer::<MempoolMsg>().boxed(),
         pure_stage::register_data_deserializer::<AdoptChainMsg>().boxed(),
+        pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
         pure_stage::register_data_deserializer::<Option<BlockHeader>>().boxed(),
         pure_stage::register_data_deserializer::<Option<Point>>().boxed(),
         pure_stage::register_data_deserializer::<Result<(), StoreError>>().boxed(),

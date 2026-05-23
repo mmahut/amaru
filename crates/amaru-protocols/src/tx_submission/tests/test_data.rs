@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
 use amaru_kernel::{Hash, Transaction, TransactionBody, TransactionInput, WitnessSet, size::TRANSACTION_BODY};
 use amaru_ouroboros_traits::{Mempool, TxOrigin};
 
@@ -21,7 +19,7 @@ pub fn create_transactions(number: u64) -> Vec<Transaction> {
     (0..number).map(create_transaction).collect()
 }
 
-pub fn create_transactions_in_mempool(mempool: Arc<dyn Mempool<Transaction>>, number: u64) -> Vec<Transaction> {
+pub fn create_transactions_in_mempool(mempool: &dyn Mempool<Transaction>, number: u64) -> Vec<Transaction> {
     let mut txs = vec![];
     for i in 0..number {
         let tx = create_transaction(i);

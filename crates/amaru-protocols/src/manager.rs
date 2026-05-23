@@ -264,6 +264,11 @@ impl ManagerConfig {
         self
     }
 
+    pub fn with_connect_retries(mut self, retries: u16) -> Self {
+        self.connect_retries = retries;
+        self
+    }
+
     pub fn with_accept_interval(mut self, accept_interval: Duration) -> Self {
         self.accept_interval = accept_interval;
         self

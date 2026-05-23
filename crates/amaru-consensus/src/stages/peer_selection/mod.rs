@@ -21,9 +21,9 @@ use amaru_kernel::{BlockHeight, Peer};
 use amaru_ouroboros::{ConnectionDirection, ConnectionId};
 use amaru_protocols::manager::ManagerMessage;
 use pure_stage::{Effects, ScheduleId, StageRef};
-use rand::seq::IteratorRandom;
+use rand::{SeedableRng, rngs::StdRng, seq::IteratorRandom};
 
-use crate::effects::{Ledger, LedgerOps};
+use crate::effects::{GenerateRandomSeed, Ledger, LedgerOps};
 
 const STATIC_PEER_BAN_PERIOD: Duration = Duration::from_secs(10);
 
@@ -142,16 +142,24 @@ impl PeerSelection {
 
     async fn regulate_peers(&mut self, eff: &Effects<PeerSelectionMsg>) {
         let target_upstream_peers = self.target_upstream_peers;
+        let outbound_peers = self.outbound_peers.len();
+
+        if outbound_peers >= target_upstream_peers {
+            return;
+        }
+
+        // NOTE: randomness only enters this way and tests override the effect
+        let seed: [u8; 32] = eff.external(GenerateRandomSeed).await;
+        let mut rng = StdRng::from_seed(seed);
 
         // first refill from static_peers
-        let outbound_peers = self.outbound_peers.len();
         if outbound_peers < target_upstream_peers {
             let candidates = self
                 .static_peers
                 .iter()
                 .filter(|p| !self.outbound_peers.contains_key(p) && !self.cooldown_timers.contains_key(p))
                 .cloned()
-                .choose_multiple(&mut rand::rng(), target_upstream_peers - outbound_peers);
+                .choose_multiple(&mut rng, target_upstream_peers - outbound_peers);
             for peer in candidates {
                 tracing::info!(%peer, was_banned = false, "peer_selection.add_peer");
                 eff.send(&self.manager, ManagerMessage::AddPeer(peer.clone())).await;
@@ -167,7 +175,7 @@ impl PeerSelection {
                 .iter()
                 .filter(|p| !self.outbound_peers.contains_key(p) && !self.cooldown_timers.contains_key(p))
                 .cloned()
-                .choose_multiple(&mut rand::rng(), target_upstream_peers - outbound_peers);
+                .choose_multiple(&mut rng, target_upstream_peers - outbound_peers);
             for peer in candidates {
                 tracing::info!(%peer, was_banned = false, "peer_selection.add_peer");
                 eff.send(&self.manager, ManagerMessage::AddPeer(peer.clone())).await;

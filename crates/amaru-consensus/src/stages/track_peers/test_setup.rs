@@ -177,11 +177,9 @@ pub fn setup_with_ledger_tip(
     setup_base(rt, state, msg, store, Arc::new(MockCanValidateHeaders), |running| {
         // Force the ledger height returned by VolatileTipEffect / TipEffect so we can control defer decisions.
         running.override_external_effect::<VolatileTipEffect>(usize::MAX, {
-            move |_| OverrideResult::Handled(Box::new(Some(ledger_tip)))
+            move |_| OverrideResult::handled(ledger_tip)
         });
-        running.override_external_effect::<TipEffect>(usize::MAX, {
-            move |_| OverrideResult::Handled(Box::new(ledger_tip))
-        });
+        running.override_external_effect::<TipEffect>(usize::MAX, move |_| OverrideResult::handled(ledger_tip));
     })
 }
 
