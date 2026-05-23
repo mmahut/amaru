@@ -127,6 +127,7 @@ pub fn register_guards() -> DeserializerGuards {
         pure_stage::register_effect_deserializer::<SetBlockValidEffect>().boxed(),
         pure_stage::register_effect_deserializer::<HasHeaderEffect>().boxed(),
         pure_stage::register_effect_deserializer::<UnvalidatedAncestorHashesEffect>().boxed(),
+        pure_stage::register_effect_deserializer::<FindBestCandidate>().boxed(),
         pure_stage::register_data_deserializer::<(Vec<HeaderHash>, bool)>().boxed(),
     ]
 }
@@ -179,6 +180,10 @@ pub fn te_has_header(at_stage: &str, hash: HeaderHash) -> TraceEntry {
     TraceEntry::suspend(Effect::external(at_stage, Box::new(HasHeaderEffect::new(hash))))
 }
 
+pub fn te_find_best_candidate(at_stage: &str) -> TraceEntry {
+    TraceEntry::Suspend(Effect::external(at_stage, Box::new(FindBestCandidate)))
+}
+
 pub fn te_load_tip(at_stage: &str, hash: HeaderHash) -> TraceEntry {
     TraceEntry::suspend(Effect::external(at_stage, Box::new(LoadTipEffect::new(hash))))
 }
@@ -189,12 +194,4 @@ pub fn te_set_block_valid(at_stage: &str, hash: HeaderHash, valid: bool) -> Trac
 
 pub fn te_unvalidated_ancestor_hashes(at_stage: &str, start: HeaderHash) -> TraceEntry {
     TraceEntry::suspend(Effect::external(at_stage, Box::new(UnvalidatedAncestorHashesEffect::new(start))))
-}
-
-pub fn te_get_anchor_hash(at_stage: &str) -> TraceEntry {
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(GetAnchorHashEffect::new())))
-}
-
-pub fn te_get_children(at_stage: &str, hash: HeaderHash) -> TraceEntry {
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(GetChildrenEffect::new(hash))))
 }

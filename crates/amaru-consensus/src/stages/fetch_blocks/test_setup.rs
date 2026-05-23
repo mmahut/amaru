@@ -191,14 +191,6 @@ pub fn te_find_missing_blocks(at_stage: &str, start: HeaderHash, limit: usize) -
     TraceEntry::suspend(Effect::external(at_stage, Box::new(FindMissingBlocksEffect::new(start, limit))))
 }
 
-pub fn te_get_anchor_hash(at_stage: &str) -> TraceEntry {
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(GetAnchorHashEffect::new())))
-}
-
-pub fn te_get_children(at_stage: &str, hash: HeaderHash) -> TraceEntry {
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(GetChildrenEffect::new(hash))))
-}
-
 pub fn te_has_block(at_stage: &str, hash: HeaderHash) -> TraceEntry {
     TraceEntry::suspend(Effect::external(at_stage, Box::new(HasBlockEffect::new(hash))))
 }

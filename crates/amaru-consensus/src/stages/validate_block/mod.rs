@@ -151,7 +151,7 @@ async fn roll_back_to_ancestor(
     parent: Point,
 ) -> Result<(Point, Vec<Point>), ValidationFailed> {
     if ledger.contains_volatile_point(&parent).await {
-        tracing::info!(hash = %parent, "ledger contains parent point");
+        tracing::debug!(hash = %parent, "ledger contains parent point");
         ledger
             .rollback(&Peer::new("unknown"), &parent, opentelemetry::Context::current())
             .or_terminate_with(eff, async move |error| {

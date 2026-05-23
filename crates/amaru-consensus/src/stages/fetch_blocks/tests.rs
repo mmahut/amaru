@@ -25,11 +25,9 @@ use tracing::Level;
 
 use super::*;
 use crate::stages::{
-    block_source::BlockSourceMsg,
     fetch_blocks::test_setup::{
-        TestPrep, setup, te_cancel_schedule, te_clock, te_find_missing_blocks, te_get_anchor_hash, te_get_children,
-        te_has_block, te_load_header, te_load_tip, te_schedule, te_store_block, te_unvalidated_ancestor_hashes,
-        test_peer, test_prep,
+        TestPrep, setup, te_cancel_schedule, te_clock, te_find_missing_blocks, te_has_block, te_load_header,
+        te_load_tip, te_schedule, te_store_block, te_unvalidated_ancestor_hashes, test_peer, test_prep,
     },
     test_utils::{assert_trace, te_input, te_send, te_state, te_terminate, te_terminated, tm_state},
 };
@@ -107,14 +105,7 @@ fn test_recover_stored_blocks_validates_downloaded_unvalidated_blocks() {
         &[
             te_state("fb-1", &prep.state),
             te_input("fb-1", &msg),
-            te_get_anchor_hash("fb-1"),
-            te_load_header("fb-1", prep.headers.h0.hash(), false),
-            te_load_header("fb-1", prep.headers.h0.hash(), true),
-            te_get_children("fb-1", prep.headers.h0.hash()),
-            te_load_header("fb-1", prep.headers.h1.hash(), true),
-            te_get_children("fb-1", prep.headers.h1.hash()),
-            te_load_header("fb-1", prep.headers.h2.hash(), true),
-            te_get_children("fb-1", prep.headers.h2.hash()),
+            te_load_header("fb-1", prep.headers.h2.hash(), false),
             te_unvalidated_ancestor_hashes("fb-1", prep.headers.h2.hash()),
             te_load_header("fb-1", prep.headers.h1.hash(), false),
             te_load_tip("fb-1", prep.headers.h0.hash()),
@@ -213,11 +204,6 @@ fn test_block_received() {
         &[
             te_state("fb-1", &prep.state),
             te_input("fb-1", &msg),
-            te_send(
-                "fb-1",
-                "block_source",
-                BlockSourceMsg::BlockReceived { peer: test_peer(), tip: prep.headers.h1.tip() },
-            ),
             te_store_block("fb-1", prep.headers.h1.hash(), TestPrep::raw_block(&prep.headers.h1)),
             te_send("fb-1", "downstream", (prep.headers.h1.tip(), prep.headers.h0.point(), BlockHeight::from(0))),
             te_state("fb-1", &expected),
@@ -256,11 +242,6 @@ fn test_block2_received() {
         &[
             te_state("fb-1", &prep.state),
             te_input("fb-1", &msg),
-            te_send(
-                "fb-1",
-                "block_source",
-                BlockSourceMsg::BlockReceived { peer: test_peer(), tip: prep.headers.h2.tip() },
-            ),
             te_store_block("fb-1", prep.headers.h2.hash(), TestPrep::raw_block(&prep.headers.h2)),
             te_send("fb-1", "downstream", (prep.headers.h2.tip(), prep.headers.h1.point(), BlockHeight::from(0))),
             te_cancel_schedule("fb-1", schedule_id),
@@ -323,18 +304,7 @@ fn test_block_point_mismatch() {
 
     let (running, _guards, mut logs) = setup(&prep, msg.clone());
 
-    assert_trace_contains(
-        &running,
-        &[
-            te_input("fb-1", &msg).into(),
-            te_send(
-                "fb-1",
-                "block_source",
-                BlockSourceMsg::BlockReceived { peer: test_peer(), tip: prep.headers.h1.tip() },
-            )
-            .into(),
-        ],
-    );
+    assert_trace_contains(&running, &[te_input("fb-1", &msg).into(), te_state("fb-1", &prep.state).into()]);
 
     logs.assert_and_remove(Level::WARN, &["block point mismatch"]).assert_no_remaining_at([
         Level::INFO,
@@ -353,21 +323,9 @@ fn test_block_straggler_no_outstanding_missing() {
 
     let (running, _guards, mut logs) = setup(&prep, msg.clone());
 
-    assert_trace_contains(
-        &running,
-        &[
-            te_input("fb-1", &msg).into(),
-            te_send(
-                "fb-1",
-                "block_source",
-                BlockSourceMsg::BlockReceived { peer: test_peer(), tip: prep.headers.h1.tip() },
-            )
-            .into(),
-        ],
-    );
+    assert_trace_contains(&running, &[te_input("fb-1", &msg).into(), te_state("fb-1", &prep.state).into()]);
 
-    logs.assert_and_remove(Level::WARN, &["received block with no outstanding missing blocks"])
-        .assert_no_remaining_at([Level::INFO, Level::WARN, Level::ERROR]);
+    logs.assert_no_remaining_at([Level::INFO, Level::WARN, Level::ERROR]);
 }
 
 #[test]
@@ -385,9 +343,9 @@ fn test_timeout_stale_is_ignored() {
 
     let (running, _guards, mut logs) = setup(&prep, msg.clone());
 
-    assert_trace_contains(&running, &[te_input("fb-1", &msg).into()]);
+    assert_trace_contains(&running, &[te_input("fb-1", &msg).into(), te_state("fb-1", &prep.state).into()]);
 
-    logs.assert_no_remaining_at([Level::ERROR]);
+    logs.assert_no_remaining_at([Level::INFO, Level::WARN, Level::ERROR]);
 }
 
 #[test]

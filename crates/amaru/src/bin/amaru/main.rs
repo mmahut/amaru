@@ -148,6 +148,10 @@ struct Cli {
 
     #[clap(long, action, env("AMARU_COLOR"))]
     color: Option<Color>,
+
+    /// Do not initialize tracing library
+    #[arg(short, long)]
+    quiet: bool,
 }
 
 // TODO(rkuhn): properly measure and design the Tokio runtime setup we need.
@@ -162,7 +166,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = <Cli as FromArgMatches>::from_arg_matches(&matches)?;
 
     // Skip observability setup for dump-traces-schema to avoid polluting stderr
-    let skip_logging = matches!(args.command, Command::DumpTracesSchema(_));
+    let skip_logging = args.quiet || matches!(args.command, Command::DumpTracesSchema(_));
 
     let (metrics, teardown) = if skip_logging {
         (None, Box::new(|| Ok(())) as Box<dyn FnOnce() -> Result<(), Box<dyn std::error::Error>>>)
@@ -176,13 +180,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (Some(m), t)
     };
 
-    if !skip_logging {
-        info!(
-            with_open_telemetry = args.with_open_telemetry,
-            with_json_traces = args.with_json_traces,
-            "Started with global arguments"
-        );
-    }
+    info!(
+        with_open_telemetry = args.with_open_telemetry,
+        with_json_traces = args.with_json_traces,
+        "Started with global arguments"
+    );
 
     let result = match args.command {
         Command::Run(args) => cmd::run::run(args, metrics.unwrap()).await,

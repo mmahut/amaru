@@ -174,7 +174,7 @@ impl SimulationRunning {
     /// When the override is applied, the `transform` function is called with the effect
     /// and the result is used to possibly replace the effect.
     ///
-    /// If the override result is [`OverrideResult::NoMatch`], the effect is passed to overrides
+    /// If the override result is [`OverrideResult::no_match`], the effect is passed to overrides
     /// installed later than this one.
     pub fn override_external_effect<T: ExternalEffectAPI>(
         &mut self,
@@ -749,12 +749,14 @@ impl SimulationRunning {
             }
             Effect::External { at_stage, mut effect } => {
                 let mut result = None;
-                for idx in 0..self.overrides.len() {
+                let mut idx = 0;
+                while idx < self.overrides.len() {
                     use override_external_effect::OverrideResult::*;
                     let over = &mut self.overrides[idx];
                     match over.transform(effect) {
                         NoMatch(effect2) => {
                             effect = effect2;
+                            idx += 1;
                         }
                         Handled(msg) => {
                             result = Some(msg);
@@ -769,8 +771,9 @@ impl SimulationRunning {
                             effect = effect2;
                             if over.register_use_and_get_removal() {
                                 self.overrides.remove(idx);
+                            } else {
+                                idx += 1;
                             }
-                            break;
                         }
                     }
                 }
@@ -1283,12 +1286,17 @@ pub struct OverrideResult<Eff: ExternalEffectAPI>(
 );
 
 impl<Eff: ExternalEffectAPI> OverrideResult<Eff> {
+    /// Don't modify the given effect, it will be passed to later overrides unchanged.
     pub fn no_match(eff: Box<Eff>) -> Self {
         Self(override_external_effect::OverrideResult::NoMatch(eff))
     }
+    /// Replace running the effect with the given response value.
     pub fn handled(response: <Eff as ExternalEffectAPI>::Response) -> Self {
         Self(override_external_effect::OverrideResult::Handled(Box::new(response)))
     }
+    /// Run the given effect instead (which must return the same response type).
+    ///
+    /// The replacement is subject to further overrides (i.e. those registered later).
     pub fn replaced<E>(eff: E) -> Self
     where
         E: ExternalEffectAPI<Response = Eff::Response>,
