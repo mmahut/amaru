@@ -113,6 +113,9 @@ pub mod value_names {
     /// A blockchain point, formatted as slot.hash
     pub const POINT: &str = "SLOT.HEADER_HASH";
 
+    /// A blockchain point, formatted as slot.hash
+    pub const POINT_OR_HASH: &str = "SLOT.HEADER_HASH or HEADER_HASH";
+
     /// A non-negative integer value.
     pub const UINT: &str = "UINT";
 

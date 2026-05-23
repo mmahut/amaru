@@ -14,6 +14,7 @@
 
 mod ledger_effects;
 mod random_effects;
+mod store_effects;
 
 pub use amaru_protocols::metrics_effects::{Metrics, MetricsOps, RecordMetricsEffect, ResourceMeter};
 pub use ledger_effects::{
@@ -22,3 +23,4 @@ pub use ledger_effects::{
     TipEffect, ValidateBlockEffect, ValidateHeaderEffect, ValidateTxEffect, VolatileTipEffect,
 };
 pub use random_effects::GenerateRandomSeed;
+pub use store_effects::{FindBestCandidate, find_best_candidate};

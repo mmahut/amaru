@@ -16,8 +16,9 @@ use std::{cmp::Ordering, collections::BTreeMap};
 
 use amaru_kernel::{BlockHeader, HeaderHash, IsHeader, ORIGIN_HASH, Point, Tip};
 use amaru_protocols::store_effects::Store;
-use anyhow::anyhow;
 use pure_stage::{Effects, OrTerminateWith, StageRef};
+
+use crate::effects::FindBestCandidate;
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SelectChain {
@@ -39,7 +40,7 @@ impl SelectChain {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SelectChainMsg {
-    Initialize,
+    Initialize(HeaderHash),
     TipFromUpstream(Tip, Point),
     BlockValidationResult(Tip, bool),
     // This message must also be preloaded upon startup to get the block-fetching
@@ -49,13 +50,13 @@ pub enum SelectChainMsg {
 
 pub async fn stage(mut state: SelectChain, msg: SelectChainMsg, eff: Effects<SelectChainMsg>) -> SelectChain {
     match msg {
-        SelectChainMsg::Initialize => {
+        SelectChainMsg::Initialize(best_hash) => {
             let store = Store::new(eff);
-            let best_tip = best_tip_from_store(&store).await.unwrap_or(None);
-            state.best_tip = best_tip.map(|(best_tip, to_validate)| {
-                state.tips.insert(best_tip.hash(), to_validate);
-                best_tip
-            });
+            if best_hash != ORIGIN_HASH {
+                state.best_tip = store.load_header(&best_hash).await;
+                let (to_validate, _valid) = store.unvalidated_ancestor_hashes(best_hash).await;
+                state.tips.insert(best_hash, to_validate);
+            }
             state
         }
         SelectChainMsg::TipFromUpstream(tip, parent) => state.handle_tip_from_upstream(tip, parent, eff).await,
@@ -160,18 +161,25 @@ impl SelectChain {
             {
                 tracing::info!(%removed, "best tip candidate invalidated");
                 // need to pick new best tip
-                match best_tip_from_store(&store).await {
-                    Ok(Some((new_best_tip, to_validate))) => {
+                match eff.external(FindBestCandidate).await {
+                    Ok(new_best_tip) if new_best_tip != ORIGIN_HASH => {
                         tracing::debug!(%new_best_tip, "new best tip candidate");
-                        let parent = load_parent_point(&eff, store, &new_best_tip).await;
+                        let new_best_tip = store
+                            .load_header(&new_best_tip)
+                            .or_terminate_with(&eff, async move |_| {
+                                tracing::error!(hash = %new_best_tip, "best candidate does exist");
+                            })
+                            .await;
+                        let parent = load_parent_point(&eff, &store, &new_best_tip).await;
                         if self.may_fetch_blocks {
                             self.may_fetch_blocks = false;
                             eff.send(&self.downstream, (new_best_tip.tip(), parent)).await;
                         }
+                        let (to_validate, _) = store.unvalidated_ancestor_hashes(new_best_tip.hash()).await;
                         self.tips.insert(new_best_tip.hash(), to_validate);
                         self.best_tip = Some(new_best_tip);
                     }
-                    Ok(None) => {
+                    Ok(_) => {
                         self.best_tip = None;
                         tracing::warn!("falling back to origin");
                     }
@@ -222,77 +230,11 @@ impl SelectChain {
     }
 }
 
-/// Return the highest tip candidate that extends the current anchor, together with
-/// the unknown suffix after the last validated ancestor.
-///
-/// Example:
-///
-/// O--A(valid)--B(valid)  anchor_hash
-///                     \
-///                      C(valid)--D(?)--E(?) candidate 1
-///                      \
-///                       H(valid)--I(valid)--J(invalid)  candidate 2, rejected
-///                       \
-///                       K(?)--L(?) candidate 3
-///
-/// The candidates are the reachable leaves below `anchor_hash`: `E`, `J`, and `L`.
-/// The branch ending at `J` is rejected because it is `invalid`.
-/// Between `E` and `L`, the highest tip wins according to `cmp_tip`.
-///
-/// If `L` wins, this returns:
-/// `(L, [K, L])` since `K` and `L` have not-yet-validated blocks.
-pub async fn best_tip_from_store(store: &Store) -> anyhow::Result<Option<(BlockHeader, Vec<HeaderHash>)>> {
-    let anchor_hash = store.get_anchor_hash().await;
-
-    let mut best_candidate = None;
-
-    // ORIGIN_HASH cannot have a block, so we start from its direct children
-    let mut to_visit = if anchor_hash == ORIGIN_HASH {
-        store.get_children(&anchor_hash).await.into_iter().collect()
-    } else {
-        // If the anchor hash is not origin, we have a first best candidate.
-        best_candidate = store.load_header(&anchor_hash).await;
-        if best_candidate.is_none() {
-            return Err(anyhow!("anchor hash {anchor_hash} does not resolve to a stored header"));
-        }
-        vec![anchor_hash]
-    };
-
-    while let Some(hash) = to_visit.pop() {
-        // Visit one reachable header.
-        tracing::debug!(hash = %hash, "visiting startup candidate");
-        let (header, validity) = store
-            .load_header_with_validity(&hash)
-            .await
-            .ok_or_else(|| anyhow!("reachable child hash {hash} does not resolve to a stored header"))?;
-
-        // Don't use this header if its block is invalid
-        if validity == Some(false) {
-            continue;
-        };
-
-        // Continue the traversal with all direct descendants of the current header.
-        let children = store.get_children(&hash).await;
-
-        if cmp_tip(Some(&header), best_candidate.as_ref()).is_gt() {
-            best_candidate = Some(header);
-        }
-        to_visit.extend(children);
-    }
-
-    if let Some(best_candidate) = best_candidate {
-        let (best_missing, _) = store.unvalidated_ancestor_hashes(best_candidate.hash()).await;
-        Ok(Some((best_candidate, best_missing)))
-    } else {
-        Ok(None)
-    }
-}
-
 /// Return the point of the parent of `header`, or `Point::Origin` if it has no parent.
 /// The parent header must be present in the store otherwise the stage is terminated.
 pub async fn load_parent_point<T: Send + Sync + 'static>(
     eff: &Effects<T>,
-    store: Store,
+    store: &Store,
     header: &BlockHeader,
 ) -> Point {
     if let Some(parent) = header.parent() {

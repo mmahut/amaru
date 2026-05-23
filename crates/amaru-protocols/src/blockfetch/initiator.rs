@@ -241,6 +241,10 @@ impl StageState<State, Initiator> for BlockFetchInitiator {
             }
             BlockFetchMessage::RequestRange2 { from, through, id, cr } => {
                 let action = (*proto == State::Idle).then_some(InitiatorAction::RequestRange { from, through });
+                if self.queue.len() > 1 {
+                    tracing::info!(peer = %self.peer, "dropping request for slow peer");
+                }
+                self.queue.truncate(1);
                 self.queue.push_back((from, through, Resp::V2(id, cr)));
                 Ok((action, self))
             }

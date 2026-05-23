@@ -471,6 +471,16 @@ pub trait ExternalEffect: SendData {
     {
         Box::pin(future::ready(Box::new(response) as Box<dyn SendData>))
     }
+
+    /// Helper method for implementers of ExternalEffect that have a synchronous response.
+    fn wrap_sync_f(
+        response: impl FnOnce() -> <Self as ExternalEffectAPI>::Response,
+    ) -> BoxFuture<'static, Box<dyn SendData>>
+    where
+        Self: Sized + ExternalEffectAPI,
+    {
+        Box::pin(future::ready(Box::new(response()) as Box<dyn SendData>))
+    }
 }
 
 impl Display for dyn ExternalEffect {

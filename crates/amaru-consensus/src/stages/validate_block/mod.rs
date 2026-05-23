@@ -151,6 +151,7 @@ async fn roll_back_to_ancestor(
     parent: Point,
 ) -> Result<(Point, Vec<Point>), ValidationFailed> {
     if ledger.contains_volatile_point(&parent).await {
+        tracing::info!(hash = %parent, "ledger contains parent point");
         ledger
             .rollback(&Peer::new("unknown"), &parent, opentelemetry::Context::current())
             .or_terminate_with(eff, async move |error| {
@@ -180,7 +181,7 @@ async fn roll_back_to_ancestor(
             return Err(ConsensusError::BlockBuiltOnInvalidBlock { point: parent, invalid: current_point }.into());
         }
 
-        if current_point <= ledger_tip {
+        if current_point < ledger_tip {
             return Err(ConsensusError::InvalidRollback {
                 peer,
                 rollback_point: current_hash,
@@ -189,7 +190,7 @@ async fn roll_back_to_ancestor(
             .into());
         }
 
-        if ledger.contains_volatile_point(&current_point).await {
+        if current_point == ledger_tip || ledger.contains_volatile_point(&current_point).await {
             forward_points.reverse();
             ledger.rollback(&Peer::new(""), &current_point, opentelemetry::Context::current()).or_terminate_with(eff, async move |error| {
                 tracing::error!(point = %current_point, %error, "ledger volatile DB contains point but rollback failed");

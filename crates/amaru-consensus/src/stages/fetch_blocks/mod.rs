@@ -15,16 +15,16 @@
 use std::time::Duration;
 
 use amaru_kernel::{
-    BlockHeader, BlockHeight, IsHeader, ORIGIN_HASH, Peer, Point, Tip, cardano::network_block::NetworkBlock,
+    BlockHeader, BlockHeight, HeaderHash, IsHeader, ORIGIN_HASH, Peer, Point, Tip, cardano::network_block::NetworkBlock,
 };
 use amaru_ouroboros_traits::{MissingBlocks, MissingBlocksResult};
 use amaru_protocols::{blockfetch::Blocks2, manager::ManagerMessage, store_effects::Store};
-use pure_stage::{Effects, OrTerminateWith, ScheduleId, StageRef};
+use pure_stage::{Effects, OrTerminateWith, ScheduleId, StageRef, TryInStage};
 
 use crate::stages::{
     block_source::BlockSourceMsg,
     peer_selection::PeerSelectionMsg,
-    select_chain::{SelectChainMsg, best_tip_from_store, load_parent_point},
+    select_chain::{SelectChainMsg, load_parent_point},
 };
 
 // TODO make configurable
@@ -105,7 +105,7 @@ impl FetchBlocks {
 
     /// Startup-only recovery: resubmit downloaded blocks whose validity was not
     /// persisted before shutdown, then fetch from the first missing block.
-    pub async fn recover_stored_blocks(&mut self, eff: Effects<FetchBlocksMsg>) {
+    pub async fn recover_stored_blocks(&mut self, eff: Effects<FetchBlocksMsg>, best_hash: HeaderHash) {
         assert!(
             self.missing.is_none(),
             "there shouldn't be any missing blocks when recovering stored blocks: {:?}",
@@ -113,17 +113,18 @@ impl FetchBlocks {
         );
 
         let store = Store::new(eff.clone());
-        let (best_tip, unvalidated) = match best_tip_from_store(&store).await {
-            Ok(Some(candidate)) => candidate,
-            Ok(None) => {
-                eff.send(&self.upstream, SelectChainMsg::FetchNextFrom(Point::Origin)).await;
-                return;
-            }
-            Err(error) => {
-                tracing::error!(%error, "failed to find best tip from store");
-                return eff.terminate().await;
-            }
-        };
+        if best_hash == ORIGIN_HASH {
+            eff.send(&self.upstream, SelectChainMsg::FetchNextFrom(Point::Origin)).await;
+            return;
+        }
+        let best_tip = store
+            .load_header(&best_hash)
+            .await
+            .or_terminate(&eff, async move |_| {
+                tracing::error!(hash = %best_hash, "cannot load header for best candidate");
+            })
+            .await;
+        let unvalidated = store.unvalidated_ancestor_hashes(best_hash).await.0;
 
         self.block_height = best_tip.block_height().max(self.block_height);
         let tip = best_tip.tip();
@@ -138,7 +139,7 @@ impl FetchBlocks {
             let tip = header.tip();
             let block_parent = match parent {
                 Some(p) => p,
-                None => load_parent_point(&eff, store.clone(), &header).await,
+                None => load_parent_point(&eff, &store, &header).await,
             };
             match store.has_block(&hash).await {
                 Ok(true) => {
@@ -220,8 +221,6 @@ impl FetchBlocks {
         };
         let header = BlockHeader::from(&block.header);
         let point = header.point();
-        let tip = header.tip();
-        eff.send(&self.block_source, BlockSourceMsg::BlockReceived { peer: peer.clone(), tip }).await;
         tracing::debug!(%point, "received block");
 
         // check that body belongs to header
@@ -231,13 +230,12 @@ impl FetchBlocks {
             return;
         }
         let Some(missing) = self.missing.as_mut() else {
-            // TODO: eventually accept blocks that could arrive when we don't get them within the timeout
-            // provided that they are valid (parent block exists, no invalid parent).
-            tracing::warn!("received block with no outstanding missing blocks");
+            tracing::debug!(%peer, "received straggler block");
             return;
         };
         if header.parent_hash() != Some(missing.boundary().hash()) {
-            tracing::warn!(expected = %missing.boundary().hash(), actual = %header.parent_hash().unwrap_or(ORIGIN_HASH), "block parent hash mismatch");
+            // this happens for stragglers when fetching from multiple peers
+            tracing::debug!(expected = %missing.boundary().hash(), actual = %header.parent_hash().unwrap_or(ORIGIN_HASH), "block parent hash mismatch");
             return;
         }
         if Some(point) != missing.first() {
@@ -284,20 +282,19 @@ impl FetchBlocks {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FetchBlocksMsg {
     NewTip(Tip, Point),
-    RecoverStoredBlocks,
+    RecoverStoredBlocks(HeaderHash),
     Block(Peer, NetworkBlock),
     Timeout(u64),
 }
 
 pub async fn stage(mut state: FetchBlocks, msg: FetchBlocksMsg, eff: Effects<FetchBlocksMsg>) -> FetchBlocks {
-    if state.cleanup_replies.is_blackhole() {
-        let stage = eff.stage("cleanup_replies", cleanup_replies).await;
-        let cleanup = Cleanup::new(eff.me(), state.block_source.clone(), state.peer_selection.clone());
-        state.cleanup_replies = eff.wire_up(stage, cleanup).await;
-    }
+    eff.ensure_child(&mut state.cleanup_replies, "cleanup_replies", cleanup_replies, || {
+        Cleanup::new(eff.me(), state.block_source.clone(), state.peer_selection.clone())
+    })
+    .await;
     match msg {
         FetchBlocksMsg::NewTip(tip, parent) => state.new_tip(tip, parent, eff).await,
-        FetchBlocksMsg::RecoverStoredBlocks => state.recover_stored_blocks(eff).await,
+        FetchBlocksMsg::RecoverStoredBlocks(best_hash) => state.recover_stored_blocks(eff, best_hash).await,
         FetchBlocksMsg::Block(peer, block) => state.block(peer, block, eff).await,
         FetchBlocksMsg::Timeout(req_id) => state.timeout(req_id, eff).await,
     }

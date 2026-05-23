@@ -140,7 +140,7 @@ impl ManagerMessage {
 ///
 /// ## Design
 ///
-/// All connections are held in [`Manager::connections`] indexed by [`ConnectionId`].
+/// All connections are held in `Manager::connections` indexed by [`ConnectionId`].
 /// For each peer we keep track of the outbound state (which is `None` in case no
 /// outbound connection has been requested) and up to one inbound connection.
 /// If a second connection comes in from the same peer, this new connection will be

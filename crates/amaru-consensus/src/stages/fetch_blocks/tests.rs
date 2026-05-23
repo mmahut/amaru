@@ -98,7 +98,7 @@ fn test_recover_stored_blocks_validates_downloaded_unvalidated_blocks() {
     prep.set_anchor(prep.headers.h0.hash());
     prep.set_validity(prep.headers.h0.hash(), true);
 
-    let msg = FetchBlocksMsg::RecoverStoredBlocks;
+    let msg = FetchBlocksMsg::RecoverStoredBlocks(prep.headers.h2.hash());
 
     let (running, _guards, mut logs) = setup(&prep, msg.clone());
     let expected = prep.state_with_block_height(3);

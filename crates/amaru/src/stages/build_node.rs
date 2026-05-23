@@ -17,6 +17,7 @@ use std::sync::Arc;
 use amaru_consensus::{
     effects::{
         ResourceBlockValidation, ResourceHasStakePools, ResourceHeaderValidation, ResourceMeter, ResourceTxValidation,
+        find_best_candidate,
     },
     validate_header::ValidateHeader,
 };
@@ -122,6 +123,7 @@ pub fn build_node(
     // ledger tip.
     let chain_store = initialize_chain_store(config, ledger_tip)?;
     let ledger_tip = chain_store.load_tip(&ledger_tip.hash()).ok_or(anyhow!("ledger tip header not found"))?;
+    let best_hash = find_best_candidate(chain_store.as_ref())?;
 
     // Make resources
     let validate_header =
@@ -139,7 +141,7 @@ pub fn build_node(
     );
 
     // Build the stage graph and return a reference to the stages that can be connected from outside this function
-    let node_stages = build_stage_graph(config, era_history, global_parameters, ledger_tip, stage_builder);
+    let node_stages = build_stage_graph(config, era_history, global_parameters, ledger_tip, best_hash, stage_builder);
 
     // Open a port to listen for downstream peers
     stage_builder

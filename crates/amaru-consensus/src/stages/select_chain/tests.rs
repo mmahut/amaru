@@ -679,14 +679,12 @@ mod best_tip_from_store_tests {
     use std::sync::Arc;
 
     use amaru_kernel::{
-        BlockHeader, HeaderHash, IsHeader, any_headers_chain, any_headers_chain_with_root, make_header,
+        BlockHeader, HeaderHash, IsHeader, ORIGIN_HASH, any_headers_chain, any_headers_chain_with_root, make_header,
         utils::tests::run_strategy,
     };
     use amaru_ouroboros::{ChainStore, in_memory_consensus_store::InMemConsensusStore};
-    use amaru_protocols::store_effects::Store;
-    use pure_stage::simulation::simulation_builder::run_function_with_resource;
 
-    use crate::stages::select_chain::best_tip_from_store;
+    use crate::effects::find_best_candidate;
 
     #[test]
     fn falls_back_to_best_chain_when_descendant_has_invalid_ancestry() {
@@ -704,7 +702,7 @@ mod best_tip_from_store_tests {
         store.set_block_valid(&b.hash(), true).unwrap();
         store.set_block_valid(&c.hash(), false).unwrap();
 
-        let candidate = run_best_tip_from_store(store.clone());
+        let candidate = run_best_tip_from_store(store.as_ref());
         assert_eq!(candidate, Some((b, vec![])));
     }
 
@@ -724,7 +722,7 @@ mod best_tip_from_store_tests {
         store.set_block_valid(&b.hash(), true).unwrap();
         let d_hash = d.hash();
 
-        let candidate = run_best_tip_from_store(store.clone());
+        let candidate = run_best_tip_from_store(store.as_ref());
         assert_eq!(candidate, Some((d, vec![c.hash(), d_hash])));
     }
 
@@ -751,7 +749,7 @@ mod best_tip_from_store_tests {
         store.set_block_valid(&b.hash(), true).unwrap();
         store.set_block_valid(&c.hash(), false).unwrap();
 
-        let candidate = run_best_tip_from_store(store.clone());
+        let candidate = run_best_tip_from_store(store.as_ref());
         assert_eq!(candidate, Some((e.clone(), vec![e.hash()])));
     }
 
@@ -769,14 +767,22 @@ mod best_tip_from_store_tests {
         store.set_block_valid(&a.hash(), true).unwrap();
         store.set_block_valid(&b.hash(), true).unwrap();
 
-        let candidate = run_best_tip_from_store(store.clone());
+        let candidate = run_best_tip_from_store(store.as_ref());
         assert_eq!(candidate, Some((b, vec![])));
     }
 
     // HELPERS
 
-    fn run_best_tip_from_store(store: Arc<dyn ChainStore<BlockHeader>>) -> Option<(BlockHeader, Vec<HeaderHash>)> {
-        run_function_with_resource(store.clone(), |eff| async { best_tip_from_store(&Store::new(eff)).await.unwrap() })
+    fn run_best_tip_from_store(store: &dyn ChainStore<BlockHeader>) -> Option<(BlockHeader, Vec<HeaderHash>)> {
+        let cand = find_best_candidate(store).unwrap();
+        if cand == ORIGIN_HASH {
+            None
+        } else {
+            let header = store.load_header(&cand).unwrap();
+            let (to_validate, valid) = store.unvalidated_ancestor_hashes(cand);
+            assert!(valid);
+            Some((header, to_validate))
+        }
     }
 }
 
