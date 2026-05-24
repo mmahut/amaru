@@ -184,7 +184,7 @@ impl Display for Tracker {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Me => f.write_str("Me"),
-            SomePeer(p) => f.write_str(&p.to_string()),
+            SomePeer(p) => f.write_str(p.as_ref()),
         }
     }
 }

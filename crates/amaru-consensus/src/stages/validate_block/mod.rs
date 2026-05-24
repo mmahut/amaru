@@ -24,9 +24,36 @@ use crate::{
     stages::{adopt_chain::AdoptChainMsg, block_source::BlockSourceMsg, select_chain::SelectChainMsg},
 };
 
+/// ValidateBlock stage: thin validation dispatcher + result router for the consensus pipeline.
+///
+/// The stage is instantiated via `ValidateBlock::new(manager, select_chain, block_source, current)`
+/// (initializing `max_block_height` to 0) and driven by `ValidateBlockMsg::new(tip, parent, max_block_height)`.
+///
+/// On receipt:
+/// - If `parent == Point::Origin`: log error and `eff.terminate()` (no downstream signals).
+/// - `state.max_block_height = msg.max_block_height.max(state.max_block_height)`.
+/// - If `msg.parent != state.current`: invoke `roll_back_to_ancestor` (which may emit `contains_volatile_point`,
+///   `rollback`, `load_header_with_validity`, etc. effects). On `Err` from the helper: send
+///   `SelectChainMsg::BlockValidationResult(msg.tip, false)` and `BlockSourceMsg::Validation { valid: false, point: msg.tip.point() }`
+///   then return (no adopt). On success, set `current` and (if needed) roll forward over `forward_points`, calling
+///   `validate(...)` on each; any failure during forward sends `...Result(msg.tip, false)` + `Validation { valid: false, point }` (the failing ancestor)
+///   and returns early.
+/// - Always (if still running): call `validate(msg.tip.point(), ...)` (emits `ValidateBlockEffect` via `Ledger`).
+///   - Success: record `LedgerMetrics`, send `SelectChainMsg::BlockValidationResult(msg.tip, true)`,
+///     `BlockSourceMsg::Validation { valid: true, point: msg.tip.point() }`, and
+///     `AdoptChainMsg::new(msg.tip, msg.max_block_height)` to manager; update `state.current = msg.tip.point()`.
+///   - `Err`: log warn "invalid block", send `...Result(msg.tip, false)` + `Validation { valid: false, ... }` (no adopt, no current update).
+///
+/// Validation is never direct; it is always via external effects (handled by `ResourceBlockValidation` etc.).
+/// The stage tracks "current" (ledger tip invariant) and max height but only signals adopt on *final tip success*.
+/// Partial ancestor work (successful rollbacks/forwards) updates local state + metrics but produces no select/block_source/manager messages.
+/// Error signaling for `valid: false` is *not* uniform: some paths send the false messages and continue; others
+/// (ledger failures inside `validate`/`roll_back_to_ancestor`, genesis, certain rollback ops) hit `or_terminate_with` or direct `terminate` and produce no `false` signals (or terminate the stage entirely).
+///
+/// See `validate` and `roll_back_to_ancestor` helpers for details.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ValidateBlock {
-    manager: StageRef<AdoptChainMsg>,
+    adopt_chain: StageRef<AdoptChainMsg>,
     select_chain: StageRef<SelectChainMsg>,
     block_source: StageRef<BlockSourceMsg>,
     /// This is always at the tip of the ledger
@@ -41,7 +68,7 @@ impl ValidateBlock {
         block_source: StageRef<BlockSourceMsg>,
         current: Point,
     ) -> Self {
-        Self { manager, select_chain, block_source, current, max_block_height: BlockHeight::from(0) }
+        Self { adopt_chain: manager, select_chain, block_source, current, max_block_height: BlockHeight::from(0) }
     }
 }
 
@@ -70,6 +97,9 @@ pub async fn stage(mut state: ValidateBlock, msg: ValidateBlockMsg, eff: Effects
     let store = Store::new(eff.clone());
     tracing::debug!(parent = %msg.parent, current = %state.current, tip = %msg.tip.point(), "validating block");
 
+    // NOTE: rollback/roll-forward only ever pass blocks that have already been validated
+    // Therefore, validation results always refer to `msg.tip`.
+
     if msg.parent != state.current {
         // step 1: roll back to some known point
         // (this could be further back than the parent when switching forks)
@@ -92,16 +122,17 @@ pub async fn stage(mut state: ValidateBlock, msg: ValidateBlockMsg, eff: Effects
         let to_do = forward_points.len();
         let mut done = 0;
         for point in forward_points {
-            tracing::debug!(point = %point, "validating block (roll forward)");
+            tracing::debug!(%point, "validating block (roll forward)");
             match validate(point, &ledger, &eff).await {
                 Ok(metrics) => {
                     Metrics::new(&eff).record(metrics.into()).await;
                     state.current = point;
                 }
                 Err(error) => {
-                    tracing::warn!(error = %error, point = %point, "invalid block");
+                    tracing::error!(%error, %point, "invalid block while spooling forward (this may be okay right after node restart)");
                     eff.send(&state.select_chain, SelectChainMsg::BlockValidationResult(msg.tip, false)).await;
-                    eff.send(&state.block_source, BlockSourceMsg::Validation { valid: false, point }).await;
+                    eff.send(&state.block_source, BlockSourceMsg::Validation { valid: false, point: msg.tip.point() })
+                        .await;
                     return state;
                 }
             }
@@ -117,7 +148,7 @@ pub async fn stage(mut state: ValidateBlock, msg: ValidateBlockMsg, eff: Effects
             Metrics::new(&eff).record(metrics.into()).await;
             eff.send(&state.select_chain, SelectChainMsg::BlockValidationResult(msg.tip, true)).await;
             eff.send(&state.block_source, BlockSourceMsg::Validation { valid: true, point: msg.tip.point() }).await;
-            eff.send(&state.manager, AdoptChainMsg::new(msg.tip, msg.max_block_height)).await;
+            eff.send(&state.adopt_chain, AdoptChainMsg::new(msg.tip, state.max_block_height)).await;
             state.current = msg.tip.point();
         }
         Err(error) => {

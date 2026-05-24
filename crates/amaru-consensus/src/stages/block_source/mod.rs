@@ -20,6 +20,58 @@ use tracing::field;
 
 use crate::stages::peer_selection::PeerSelectionMsg;
 
+/// Tracks provenance of blocks received from the network (by `Point`) and
+/// reports peers that provided invalid blocks as adversarial.
+///
+/// This stage is a leaf in the pure_stage graph. It receives *notifications*
+/// (not requests) and performs no serving of blocks/headers, no downstream
+/// block emission, and no interaction with any manager or chain-selection
+/// logic. Its only external effect is sending `PeerSelectionMsg::Adversarial`
+/// to the `invalid_peer_sink` (a `StageRef` to the peer_selection stage,
+/// supplied at construction).
+///
+/// ## State
+/// - `adopted_tip: Tip`: The node's current adopted tip. Updated only via
+///   `AdoptedTip` messages. Serves as the base for pruning.
+/// - `max_tip_distance: u64`: Window size (in block heights). Used **solely**
+///   by `prune()` to discard tracking entries whose height is < `adopted_h - max_tip_distance`.
+///   Has no effect on any serving behavior (none exists here).
+/// - `by_point: BTreeMap<Point, BlockValidity>`: Core tracking map.
+///   - `Pending(h, peers)`: Block at this point has been announced by one or
+///     more peers; awaiting `Validation`.
+///   - `Valid(h)`: Block validated successfully. Further `BlockReceived` for
+///     the same point are ignored.
+///   - `Invalid(h)`: Block was invalid. Any subsequent `BlockReceived` (even
+///     from repeat peers) immediately faults the sender.
+/// - `invalid_peer_sink: StageRef<PeerSelectionMsg>`: The only place this
+///   stage ever sends.
+///
+/// ## Message Handling (`stage()` entry point)
+/// All paths call `prune()` (except pure `AdoptedTip`, which does it directly).
+///
+/// - `BlockSourceMsg::BlockReceived { peer, tip }`:
+///   - If entry is `Invalid(_)`: log and **immediately** send `Adversarial(peer)`.
+///   - If `Pending(_, peers)`: insert the peer into the set (dedup).
+///   - If `Valid(_)`: no-op.
+///   - If absent: insert `Pending(height, {peer})`.
+///   - Then `prune()`.
+///
+/// - `BlockSourceMsg::Validation { valid, point }`:
+///   - Only acts if a `Pending(height, peers)` exists for the point (otherwise no-op).
+///   - If `valid`: transition to `Valid(height)`.
+///   - If `!valid`: send `Adversarial(p)` for every peer in the set, then set `Invalid(height)`.
+///   - Then `prune()`.
+///   - **Ordering assumption**: `Validation` is expected after the corresponding `BlockReceived`(s).
+///
+/// - `BlockSourceMsg::AdoptedTip(tip)`:
+///   - `self.adopted_tip = tip; prune();` (no sends).
+///
+/// ## Pruning
+/// `prune()` retains only entries where `entry.block_height() >= adopted_h - max_tip_distance`.
+/// Called after every `BlockReceived`/`Validation` and on `AdoptedTip`.
+///
+/// Construction: `BlockSource::new(adopted_tip, max_tip_distance, invalid_peer_sink)`.
+/// The `stage()` function is the pure_stage handler.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BlockSource {
     adopted_tip: Tip,

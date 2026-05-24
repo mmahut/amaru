@@ -30,6 +30,74 @@ use crate::stages::{
 // TODO make configurable
 const MAX_MISSING_BLOCKS_PER_BATCH: usize = 25;
 
+/// Block fetch coordinator stage.
+///
+/// This stage drives the retrieval of full blocks for headers that have been selected
+/// by the upstream select_chain stage. It computes missing block ranges via the store,
+/// requests them from the network via the manager (using the block-fetch protocol),
+/// handles arrivals (with straggler protection), stores them, and forwards them
+/// downstream for validation while advancing the chain selection loop. It also
+/// handles startup recovery of blocks that were downloaded but not yet validated
+/// before a prior shutdown.
+///
+/// ## Overview
+/// - Pure actor stage (see `stage()` fn) processing `FetchBlocksMsg`.
+/// - Collaborates with a dynamically ensured child stage (`cleanup_replies`) to safely
+///   handle out-of-order or late block replies without clogging its own mailbox.
+/// - Uses bounded batches (MAX_MISSING_BLOCKS_PER_BATCH=25) for fetch requests.
+/// - Timeout-driven retry (5s) with upstream signaling for continuation.
+///
+/// ## Input messages and behaviour
+/// - `NewTip(tip, parent)`: Update tracked block_height, assert no outstanding missing,
+///   delegate to `request_missing_blocks` which queries store for gaps and (if any)
+///   sends `ManagerMessage::FetchBlocks2` (with cr=child ref for replies) then schedules
+///   a `Timeout(req_id)`.
+/// - `RecoverStoredBlocks(best_hash)`: Startup recovery only. If origin, signal upstream
+///   immediately. Otherwise replay any unvalidated-but-stored blocks downstream for
+///   re-validation (using unvalidated_ancestor_hashes + has_block checks), falling back
+///   to `request_missing_blocks` on first gap. Terminates on store errors.
+/// - `Block(peer, network_block)`: Decode + basic integrity (body_hash match → adversarial
+///   on fail), ordering checks against current `missing` cursor (parent + first point;
+///   stragglers logged and dropped). On match: store block, send `(Tip, parent_boundary, block_height)`
+///   downstream, `shift_one_block` on cursor; if now empty, clear state, cancel timeout,
+///   signal `FetchNextFrom` upstream.
+/// - `Timeout(req_id)`: If matches current, log error, clear missing/timeout, signal
+///   `FetchNextFrom(boundary)` upstream to retry (no direct peer penalty here).
+///
+/// ## Child stages and their protocols
+/// - **cleanup_replies** (dynamic, `StageRef<Blocks2>`, lazily `ensure_child`'d on every
+///   message; factory creates `Cleanup` with self-ref + block_source/peer_selection):
+///   - Receives `Blocks2` replies routed by manager (because `cr` passed in FetchBlocks2).
+///   - `NoBlocks(_)`: ignored (timeout will handle).
+///   - `Block(id, peer, nb)`: decode header (adversarial on fail + return), ALWAYS
+///     `BlockSourceMsg::BlockReceived {peer, tip}` (for stats/selection), forward as
+///     `FetchBlocksMsg::Block` to parent ONLY if id >= curr_id (straggler filter),
+///     update curr_id = max.
+///   - `Done(id)`: advance curr_id to id+1 max (to ignore subsequent old msgs from prior req).
+///   - Purpose (per doc): "Ensure that straggling block replies do not clog the mailbox of the fetch stage."
+///   - In prod starts as blackhole; replaced on first use. Tests inject named mock via `for_tests`.
+///
+/// ## Key state (missing blocks, requests, timeouts)
+/// - `downstream: StageRef<(Tip, Point, BlockHeight)>`: where validated-ready blocks go (contramapped in wiring).
+/// - `req_id: u64`: monotonic, incremented on each new FetchBlocks2; used to pair timeouts and filter in child.
+/// - `missing: Option<MissingBlocks>`: cursor over current batch (from `find_missing_blocks`); supports
+///   `from_to()`, `first()`, `boundary()`, `shift_one_block()`, `is_empty()`, `nb_missing_blocks()`.
+///   Asserted None on NewTip/Recover entry; cleared on completion, timeout, or no-work cases.
+/// - `timeout: Option<ScheduleId>`: the pending 5s timeout for current req; taken/cancelled only on batch success.
+/// - `block_height: BlockHeight`: monotonic max over seen tips; passed with every downstream send (for both live and recovered blocks).
+/// - Other refs: upstream (for FetchNextFrom continuation), manager (requests), block_source (receipts via child), peer_selection (adversarial reports).
+///
+/// ## External interactions (which stages it talks to)
+/// - **select_chain (upstream)**: receives `NewTip`/`RecoverStoredBlocks`; sends `SelectChainMsg::FetchNextFrom(point)` on batch done, no-work, timeout, or recovery complete.
+/// - **manager**: sends `ManagerMessage::FetchBlocks2 {from, through, id, cr: cleanup_replies}` to initiate block fetches (replies flow back via provided child ref).
+/// - **downstream** (typically validate_block_input via contramap in build): sends `(Tip, parent_Point, block_height)` for each block (newly fetched or recovered stored).
+/// - **block_source** (via child only): `BlockReceived {peer, tip}` for every header seen in replies (even stragglers/old).
+/// - **peer_selection**: `Adversarial(peer)` on body-hash mismatch (main) or header decode failure (child).
+/// - **Store** (via effects): `find_missing_blocks`, `has_block`, `load_header`, `store_block`, `unvalidated_ancestor_hashes`, `load_tip` etc. (many via `or_terminate`).
+/// - Time/schedule via Effects: `schedule_after` for `Timeout`, `cancel_schedule`.
+/// - No direct interaction with validate results (one-way downstream); no header validation performed here (assumes requested ranges; minimal structural checks only).
+///
+/// The `stage()` fn ensures the child then dispatches the 4 msg variants to the impl methods and returns updated state. All error paths that cannot continue call `eff.terminate()`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FetchBlocks {
     downstream: StageRef<(Tip, Point, BlockHeight)>,
@@ -320,6 +388,8 @@ impl Cleanup {
 }
 
 /// Ensure that straggling block replies do not clog the mailbox of the fetch stage.
+///
+/// TODO: keep block hashes in LRU to deduplicate incoming blocks without validation or ordering assumption
 async fn cleanup_replies(mut state: Cleanup, msg: Blocks2, eff: Effects<Blocks2>) -> Cleanup {
     match msg {
         // completely ignore empty responses, fetch stage will deal with timeouts

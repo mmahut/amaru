@@ -353,7 +353,7 @@ impl Manager {
                 self.start_connection_stage(eff, peer, conn_id, ConnectionDirection::Outbound).await;
             }
             Err(err) => {
-                tracing::error!(%peer, ?err, "connection failed");
+                tracing::info!(%peer, ?err, "connection failed");
                 self.connect(peer, false, eff).await;
             }
         }

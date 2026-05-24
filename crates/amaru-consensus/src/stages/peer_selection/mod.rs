@@ -18,6 +18,7 @@ use std::{
 };
 
 use amaru_kernel::{BlockHeight, Peer};
+use amaru_observability::trace_span;
 use amaru_ouroboros::{ConnectionDirection, ConnectionId};
 use amaru_protocols::manager::ManagerMessage;
 use pure_stage::{Effects, ScheduleId, StageRef};
@@ -27,6 +28,162 @@ use crate::effects::{GenerateRandomSeed, Ledger, LedgerOps};
 
 const STATIC_PEER_BAN_PERIOD: Duration = Duration::from_secs(10);
 
+/// Peer selection stage for the Amaru consensus node.
+///
+/// This stage is responsible for maintaining the desired number of outbound (upstream)
+/// and inbound (downstream) peer connections. It acts as the decision point that tells
+/// the `Manager` (via `ManagerMessage`) which peers to `AddPeer` or `RemovePeer`/`Disconnect`,
+/// while reacting to connection lifecycle events and adversarial signals.
+///
+/// It maintains two primary peer pools:
+/// - `static_peers` (immutable, configured at construction; preferred for outbound).
+/// - `ledger_candidates` (dynamic BTreeSet, updated via the child ledger-check protocol).
+///
+/// Outbound regulation uses a random refill (via `GenerateRandomSeed` external effect)
+/// preferring static peers then ledger candidates, while skipping any peer currently
+/// tracked in `outbound_peers` or `cooldown_timers`. Inbound connections are accepted
+/// up to `target_downstream_peers` (excess are immediately rejected with a `Disconnect`).
+///
+/// The stage creates (on `Initialize`, with no supervision) a child stage
+/// `"peer-selection/ledger-check"` running `get_ledger_candidates` (backed by `LedgerCheck`
+/// state) that periodically queries the ledger for registered relay addresses and
+/// feeds candidates back via `LedgerCheckCandidates`.
+///
+/// ## State
+///
+/// - `target_upstream_peers`, `target_downstream_peers`: configuration targets.
+/// - `manager`: `StageRef<ManagerMessage>` for all outbound commands.
+/// - `static_peers`, `ledger_candidates`: candidate pools (`BTreeSet<Peer>`).
+/// - `peer_removal_cooldown`: duration for non-static bans.
+/// - `cooldown_timers`: `BTreeMap<Peer, ScheduleId>` for active bans (self-scheduled
+///   `CooldownEnded` messages).
+/// - `inbound_peers`: `BTreeMap<Peer, Connection>` (downstream tracking).
+/// - `outbound_peers`: `BTreeMap<Peer, PeerState>` (`Connecting` or `Connected(Connection)`).
+///
+/// ## Message Handling (core of `stage()` at mod.rs:188)
+///
+/// All behaviour is implemented in the single `match msg` inside `pub async fn stage`.
+/// The stage is purely message-driven; there are no background loops outside scheduled
+/// messages and the child stage.
+///
+/// - **Initialize**: Required at startup. Logs
+///   `"peer_selection.connect_initial"`. For every `static_peers` entry: sends
+///   `ManagerMessage::AddPeer` and records it as `PeerState::Connecting` in
+///   `outbound_peers`. Unconditionally wires a new child stage
+///   `"peer-selection/ledger-check"` (via `eff.stage` + `eff.wire_up` with
+///   `LedgerCheck::new(eff.me())`, no supervision) and sends `()` to kick it off;
+///   "failure in ledger-check shall tear down the node".
+///
+/// - **Adversarial**: Debug-logs. Delegates to
+///   `ban_peer`: removes the peer from `inbound_peers` (if present;
+///   warns `"removing peer (inbound)"`) and/or `outbound_peers` (if present; warns
+///   `"removing peer (outbound)"`, calls `regulate_peers`, marks for removal).
+///   If any removal occurred, sends `ManagerMessage::RemovePeer` to the manager.
+///   Always calls `cool_down` (which computes `STATIC_PEER_BAN_PERIOD` (10s) for
+///   static peers vs. configured cooldown, schedules a self `CooldownEnded` via
+///   `eff.schedule_after`, cancels any prior timer for the same peer, and records
+///   the new `ScheduleId` in `cooldown_timers`).
+///
+/// - **AddPeer**: Manual/test hook. If the peer
+///   has an active cooldown timer, cancels the schedule (`eff.cancel_schedule`) and
+///   records `was_banned = true`. If the peer is not already in `outbound_peers`:
+///   logs `"peer_selection.add_peer"` (with `was_banned`), sends `ManagerMessage::AddPeer`,
+///   and inserts as `Connecting`. Otherwise logs that it is not adding.
+///
+/// - **CooldownEnded**: Removes the peer from
+///   `cooldown_timers` (idempotent for stale messages). Unconditionally calls
+///   `regulate_peers` (which may trigger `GenerateRandomSeed` + `AddPeer` sends).
+///
+/// - **Connected**:
+///   - `Inbound`: If `inbound_peers.len() >= target_downstream_peers`, logs
+///     `"rejecting inbound connection: too many peers"`, sends `ManagerMessage::Disconnect`,
+///     and returns early (no insert). Otherwise inserts (or replaces a prior
+///     connection for the same peer, sending `Disconnect` for the old one).
+///   - `Outbound`: Inserts/updates as `PeerState::Connected(conn)`. If replacing
+///     a prior `Connected` state, warns and sends `Disconnect` for the old conn.
+///     (Transitions `Connecting` → `Connected` from successful manager attempts.)
+///
+/// - **Disconnected**:
+///   - `Inbound`: Removes from `inbound_peers` only on exact `ConnectionId` match
+///     (via `Entry::Occupied` guard).
+///   - `Outbound` + `will_retry == true`: No-op (early match guard; state unchanged,
+///     no effects, no regulation, no cooldown).
+///   - `Outbound` + `will_retry == false`: Removes only if present as exactly
+///     `PeerState::Connected` with matching id; then calls `regulate_peers`.
+///     (Connecting-state peers with `!will_retry` reach the arm but the inner
+///     `let PeerState::Connected` guard fails silently.)
+///
+/// - **ConnectFailed**: Removes the peer from
+///   `outbound_peers` (any `PeerState`), then calls `regulate_peers`.
+///
+/// - **LedgerCheckCandidates**:
+///   Replaces `ledger_candidates` wholesale, then calls `regulate_peers`.
+///
+/// ## Helper Methods
+///
+/// - `ban_peer`: Core removal + ban logic (used only by `Adversarial`).
+/// - `cool_down`: Computes ban period, schedules `CooldownEnded`,   cancels prior timer for the peer.
+/// - `regulate_peers`: Core outbound refill logic (see below).
+///
+/// ## Ledger-Check Child Protocol
+///
+/// `LedgerCheck` holds `last_height`, `cadence` (60s), `min_height_change` (3000),
+/// and a `StageRef<PeerSelectionMsg>` back to the parent. The child fn
+/// `get_ledger_candidates` (instrumented) is kicked with `()`:
+/// - Uses `Ledger::new(eff.clone())` (from `crate::effects`).
+/// - Queries `volatile_tip().block_height()`.
+/// - If insufficient height delta: `reschedule_check`.
+/// - Queries `registered_relay_socket_addrs()`, maps to `Peer::from_addr`.
+/// - On error: warns `"failed to get ledger entries"`, reschedules.
+/// - On success: sends `PeerSelectionMsg::LedgerCheckCandidates(...)` to parent
+///   (via the captured `stage` ref), updates `last_height`, reschedules.
+/// - `reschedule_check` always does `eff.schedule_after((), cadence)`.
+///
+/// The child is created exactly once on `Initialize` and communicates back only
+/// via the `LedgerCheckCandidates` message.
+///
+/// ## Regulation, Schedules, and Effects
+///
+/// `regulate_peers` (called from `CooldownEnded`, outbound non-retry disconnect,
+/// `ConnectFailed`, `LedgerCheckCandidates`, and outbound removal inside `ban_peer`)
+/// early-returns if `outbound_peers.len() >= target_upstream_peers`. Otherwise it
+/// obtains a seed via `eff.external(GenerateRandomSeed)`, builds an `StdRng`, and
+/// does two passes (statics first, then ledger_candidates):
+/// - Filters candidates to those absent from `outbound_peers` and `cooldown_timers`.
+/// - `choose_multiple` up to the deficit.
+/// - For each: logs `"peer_selection.add_peer"`, sends `ManagerMessage::AddPeer`,
+///   inserts as `Connecting`.
+///
+/// Schedules (via `Effects`):
+/// - Cooldown `CooldownEnded(Peer)` messages (from `cool_down`).
+/// - Child-internal `()` triggers (60s cadence, conditional on height delta).
+///
+/// Other effects used: `eff.send` (to manager and child), `eff.schedule_after`,
+/// `eff.cancel_schedule`, `eff.stage`/`eff.wire_up`, `eff.me()`, `eff.external`,
+/// and `Ledger` (via effects facade).
+///
+/// ## Logging, Errors, and Invariants
+///
+/// - Structured logs at `info!`/`warn!`/`debug!` for key transitions (e.g.,
+///   `peer_selection.connect_initial`, `add_peer` with `was_banned`, inbound
+///   rejection, removals with `is_static`, outbound replacement warnings).
+/// - Ledger child errors are logged at `warn!` but do not crash the parent
+///   (just reschedule with no candidate update).
+/// - Stale messages are tolerated (e.g., `CooldownEnded` for absent peers still
+///   runs `regulate_peers`; duplicate `AddPeer` is a no-op after logging).
+/// - Map invariants: `cooldown_timers` entries are created only in `cool_down`,
+///   removed in `CooldownEnded`/`AddPeer` (with cancel), and filtered in
+///   `regulate_peers`. Inbound/outbound maps are updated only on exact id matches
+///   in disconnect paths. `outbound_peers` length is the primary signal for
+///   regulation. `static_peers` is never mutated after `new`.
+/// - `Connection` and `PeerState` are simple value types for tracking duplex
+///   capability and lifecycle.
+///
+/// The stage is exercised via `test_setup.rs` (which overrides ledger effects and
+/// `GenerateRandomSeed` for determinism, uses virtual child stages, and provides
+/// trace helpers) and `tests.rs` (covering Initialize, every `PeerSelectionMsg`
+/// arm, double-adversarial timer replacement, regulate preference/skipping,
+/// will_retry vs. normal disconnect, inbound caps, etc.).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PeerSelection {
     target_upstream_peers: usize,
@@ -232,20 +389,47 @@ pub async fn stage(mut state: PeerSelection, msg: PeerSelectionMsg, eff: Effects
                 eff.send(&state.manager, ManagerMessage::Disconnect(peer, connection.id)).await;
                 return state;
             }
+            let span = trace_span!(
+                amaru::protocols::peer_selection::CONNECTED,
+                peer = &peer,
+                conn_id = connection.id.as_u64(),
+                direction = ConnectionDirection::Inbound,
+                full_duplex_capable = connection.full_duplex_capable,
+                full_duplex = connection.full_duplex,
+            )
+            .entered();
             let old = state.inbound_peers.insert(peer.clone(), connection);
             if let Some(conn) = old {
                 tracing::info!(%peer, ?conn, "inbound connection replaced by peer");
+                drop(span);
                 eff.send(&state.manager, ManagerMessage::Disconnect(peer, conn.id)).await;
             }
         }
         PeerSelectionMsg::Connected(peer, connection, ConnectionDirection::Outbound) => {
+            let span = trace_span!(
+                amaru::protocols::peer_selection::CONNECTED,
+                peer = &peer,
+                conn_id = connection.id.as_u64(),
+                direction = ConnectionDirection::Inbound,
+                full_duplex_capable = connection.full_duplex_capable,
+                full_duplex = connection.full_duplex,
+            )
+            .entered();
             let old = state.outbound_peers.insert(peer.clone(), PeerState::Connected(connection));
             if let Some(PeerState::Connected(conn)) = old {
                 tracing::warn!(%peer, ?conn, "connected outbound while still connected");
+                drop(span);
                 eff.send(&state.manager, ManagerMessage::Disconnect(peer, conn.id)).await;
             }
         }
         PeerSelectionMsg::Disconnected(peer, conn_id, ConnectionDirection::Inbound, _) => {
+            let _span = trace_span!(
+                amaru::protocols::peer_selection::DISCONNECTED,
+                peer = &peer,
+                conn_id = conn_id.as_u64(),
+                direction = ConnectionDirection::Inbound,
+            )
+            .entered();
             if let Entry::Occupied(entry) = state.inbound_peers.entry(peer)
                 && entry.get().id == conn_id
             {
@@ -258,7 +442,15 @@ pub async fn stage(mut state: PeerSelection, msg: PeerSelectionMsg, eff: Effects
                 && let PeerState::Connected(conn) = entry.get()
                 && conn.id == conn_id
             {
+                let span = trace_span!(
+                    amaru::protocols::peer_selection::DISCONNECTED,
+                    peer = peer,
+                    conn_id = conn_id.as_u64(),
+                    direction = ConnectionDirection::Inbound,
+                )
+                .entered();
                 entry.remove();
+                drop(span);
                 state.regulate_peers(&eff).await;
             }
         }
