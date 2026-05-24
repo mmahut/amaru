@@ -841,7 +841,7 @@
           "type": "string"
         },
         "conn_id": {
-          "type": "string"
+          "type": "integer"
         },
         "direction": {
           "type": "string"
@@ -875,7 +875,7 @@
           "type": "string"
         },
         "conn_id": {
-          "type": "string"
+          "type": "integer"
         },
         "direction": {
           "type": "string"

@@ -368,7 +368,7 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 | field | type | required |
 | --- | --- | --- |
 | `peer` | `string` | ✓ |
-| `conn_id` | `string` | ✓ |
+| `conn_id` | `integer` | ✓ |
 | `direction` | `string` | ✓ |
 | `full_duplex_capable` | `boolean` | ✓ |
 | `full_duplex` | `boolean` | ✓ |
@@ -380,7 +380,7 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 | field | type | required |
 | --- | --- | --- |
 | `peer` | `string` | ✓ |
-| `conn_id` | `string` | ✓ |
+| `conn_id` | `integer` | ✓ |
 | `direction` | `string` | ✓ |
 | `reason` | `string` |  |
 

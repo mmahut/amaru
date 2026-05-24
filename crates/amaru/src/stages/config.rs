@@ -21,7 +21,7 @@ use amaru_protocols::tx_submission::ResponderParams;
 use amaru_stores::rocksdb::RocksDbConfig;
 use anyhow::Context;
 
-use crate::DEFAULT_PEER_REMOVAL_COOLDOWN_SECS;
+use crate::{DEFAULT_DOWNSTREAM_PEERS, DEFAULT_PEER_REMOVAL_COOLDOWN_SECS, DEFAULT_UPSTREAM_PEERS};
 
 /// Configuration for the Amaru node, including storage options, network settings, and other parameters.
 pub struct Config {
@@ -33,7 +33,6 @@ pub struct Config {
     pub network: NetworkName,
     pub network_magic: NetworkMagic,
     pub listen_address: String,
-    pub max_downstream_peers: usize,
     pub max_extra_ledger_snapshots: MaxExtraLedgerSnapshots,
     pub migrate_chain_db: bool,
     pub submit_api_address: Option<String>,
@@ -90,12 +89,11 @@ impl Default for Config {
             ledger_store: RocksDbConfig::new(PathBuf::from("./ledger.db")),
             chain_store: StoreType::RocksDb(RocksDbConfig::new(PathBuf::from("./chain.db"))),
             upstream_peers: vec![],
-            target_upstream_peers: 3,
-            target_downstream_peers: 10,
+            target_upstream_peers: DEFAULT_UPSTREAM_PEERS,
+            target_downstream_peers: DEFAULT_DOWNSTREAM_PEERS,
             network: NetworkName::Preprod,
             network_magic: NetworkMagic::PREPROD,
             listen_address: "0.0.0.0:3000".to_string(),
-            max_downstream_peers: 10,
             max_extra_ledger_snapshots: MaxExtraLedgerSnapshots::default(),
             migrate_chain_db: false,
             submit_api_address: None,

@@ -19,7 +19,8 @@ use std::{
 };
 
 use amaru::{
-    DEFAULT_LISTEN_ADDRESS, DEFAULT_NETWORK, DEFAULT_PEER_ADDRESS, default_chain_dir, default_ledger_dir,
+    DEFAULT_DOWNSTREAM_PEERS, DEFAULT_LISTEN_ADDRESS, DEFAULT_NETWORK, DEFAULT_PEER_ADDRESS, DEFAULT_UPSTREAM_PEERS,
+    default_chain_dir, default_ledger_dir,
     metrics::track_system_metrics,
     stages::{
         build_node::build_and_run_node,
@@ -71,14 +72,23 @@ pub struct Args {
     )]
     listen_address: String,
 
-    /// The maximum number of downstream peers to connect to.
+    /// The number of upstream peers to connect to.
     #[arg(
         long,
         value_name = amaru::value_names::UINT,
-        env = amaru::env_vars::MAX_DOWNSTREAM_PEERS,
-        default_value_t = 10
+        env = amaru::env_vars::UPSTREAM_PEERS,
+        default_value_t = DEFAULT_UPSTREAM_PEERS,
     )]
-    max_downstream_peers: usize,
+    upstream_peers: usize,
+
+    /// The maximum number of downstream peers allowed to connect.
+    #[arg(
+        long,
+        value_name = amaru::value_names::UINT,
+        env = amaru::env_vars::DOWNSTREAM_PEERS,
+        default_value_t = DEFAULT_DOWNSTREAM_PEERS,
+    )]
+    downstream_peers: usize,
 
     /// The maximum number of additional ledger snapshots to keep around.
     ///
@@ -304,7 +314,6 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         chain_dir = %chain_dir.to_string_lossy(),
         ledger_dir = %ledger_dir.to_string_lossy(),
         listen_address = args.listen_address,
-        max_downstream_peers = args.max_downstream_peers,
         max_extra_ledger_snapshots = %args.max_extra_ledger_snapshots,
         migrate_chain_db = args.migrate_chain_db,
         network = %args.network,
@@ -327,10 +336,11 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         ledger_store: RocksDbConfig::new(ledger_dir).with_shared_env(),
         chain_store: StoreType::RocksDb(RocksDbConfig::new(chain_dir).with_shared_env()),
         upstream_peers: args.peer_address,
+        target_upstream_peers: args.upstream_peers,
+        target_downstream_peers: args.downstream_peers,
         network: args.network,
         network_magic: args.network.to_network_magic(),
         listen_address: args.listen_address,
-        max_downstream_peers: args.max_downstream_peers,
         max_extra_ledger_snapshots: args.max_extra_ledger_snapshots,
         migrate_chain_db: args.migrate_chain_db,
         submit_api_address: args.submit_api_address,
