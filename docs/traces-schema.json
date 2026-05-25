@@ -834,6 +834,71 @@
       "description": "A peer was removed from the manager",
       "public": true
     },
+    "amaru::protocols::peer_selection::CONNECTED": {
+      "type": "object",
+      "properties": {
+        "peer": {
+          "type": "string"
+        },
+        "conn_id": {
+          "type": "integer"
+        },
+        "direction": {
+          "type": "string"
+        },
+        "full_duplex_capable": {
+          "type": "boolean"
+        },
+        "full_duplex": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "peer",
+        "conn_id",
+        "direction",
+        "full_duplex_capable",
+        "full_duplex"
+      ],
+      "optional": [],
+      "additionalProperties": false,
+      "name": "connected",
+      "level": "TRACE",
+      "target": "amaru::protocols::peer_selection",
+      "description": "A connection has been established and the handshake completed successfully.",
+      "public": true
+    },
+    "amaru::protocols::peer_selection::DISCONNECTED": {
+      "type": "object",
+      "properties": {
+        "peer": {
+          "type": "string"
+        },
+        "conn_id": {
+          "type": "integer"
+        },
+        "direction": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "peer",
+        "conn_id",
+        "direction"
+      ],
+      "optional": [
+        "reason"
+      ],
+      "additionalProperties": false,
+      "name": "disconnected",
+      "level": "TRACE",
+      "target": "amaru::protocols::peer_selection",
+      "description": "A connection has been terminated (graceful disconnect, error, handshake refusal, or network error).",
+      "public": true
+    },
     "amaru::stores::consensus::ROLL_FORWARD_CHAIN": {
       "type": "object",
       "properties": {

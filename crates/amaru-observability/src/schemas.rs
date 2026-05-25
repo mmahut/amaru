@@ -625,6 +625,26 @@ define_schemas! {
             }
         }
 
+        peer_selection {
+            /// A connection has been established and the handshake completed successfully.
+            public CONNECTED {
+                required peer: String
+                required conn_id: u64
+                required direction: String
+                required full_duplex_capable: bool
+                required full_duplex: bool
+            }
+
+            /// A connection has been terminated (graceful disconnect, error, handshake refusal,
+            /// or network error).
+            public DISCONNECTED {
+                required peer: String
+                required conn_id: u64
+                required direction: String
+                optional reason: String
+            }
+        }
+
         chainsync {
             initiator {
                 /// Handle chain sync initiator stage messages

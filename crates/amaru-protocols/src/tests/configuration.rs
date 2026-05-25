@@ -67,25 +67,13 @@ impl Configuration {
     }
 
     pub(super) fn with_best_chain_of_length(mut self, chain_length: usize) -> Self {
-        initialize_chain_store(chain_length, self.chain_store.clone()).unwrap();
+        initialize_chain_store(chain_length, self.chain_store.as_ref()).unwrap();
         self.chain_length = chain_length;
         self
     }
 
-    #[expect(dead_code)]
-    pub(super) fn with_chain_store(mut self, chain_store: Arc<dyn ChainStore<BlockHeader>>) -> Self {
-        self.chain_store = chain_store;
-        self
-    }
-
-    #[expect(dead_code)]
-    pub(super) fn with_mempool(mut self, mempool: Arc<InMemoryMempool<Transaction>>) -> Self {
-        self.mempool = mempool;
-        self
-    }
-
     pub(super) fn with_txs(self, txs_nb: u64) -> Self {
-        create_transactions_in_mempool(self.mempool.clone(), txs_nb);
+        create_transactions_in_mempool(self.mempool.as_ref(), txs_nb);
         self
     }
 
@@ -115,7 +103,7 @@ pub const INITIATOR_BLOCKS_NB: usize = 4;
 
 /// Initialize the chain store with a chain of headers.
 /// The responder chain is longer than the initiator chain to force the initiator to catch up.
-fn initialize_chain_store(chain_length: usize, chain_store: Arc<dyn ChainStore<BlockHeader>>) -> anyhow::Result<()> {
+fn initialize_chain_store(chain_length: usize, chain_store: &dyn ChainStore<BlockHeader>) -> anyhow::Result<()> {
     // Use the same root header for both initiator and responder
     let origin_hash: HeaderHash =
         amaru_kernel::Hash::from_str("4df4505d862586f9e2c533c5fbb659f04402664db1b095aba969728abfb77301")?;

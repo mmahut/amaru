@@ -15,16 +15,18 @@
 use std::path::PathBuf;
 
 use amaru::{DEFAULT_NETWORK, default_chain_dir};
-use amaru_kernel::{NetworkName, Point};
+use amaru_kernel::NetworkName;
 use amaru_stores::rocksdb::{RocksDbConfig, consensus::RocksDBStore};
+
+use crate::cmd::PointOrHash;
 
 #[derive(Debug, clap::Parser)]
 pub struct Args {
-    /// The epoch to reset to
+    /// The blocks from which to remove the validation status
     #[arg(
-        value_name = amaru::value_names::POINT,
+        value_name = amaru::value_names::POINT_OR_HASH,
     )]
-    blocks: Vec<Point>,
+    blocks: Vec<PointOrHash>,
 
     /// The path to the chain store database to remove the validation status from
     #[arg(
@@ -56,9 +58,9 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let chain_store = RocksDBStore::open(&RocksDbConfig::new(chain_dir))?;
 
-    for block in args.blocks {
-        tracing::info!(%block, "removing block validation status");
-        chain_store.remove_block_valid(&block.hash())?;
+    for PointOrHash(hash) in args.blocks {
+        tracing::info!(%hash, "removing block validation status");
+        chain_store.remove_block_valid(&hash)?;
     }
 
     Ok(())

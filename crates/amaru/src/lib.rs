@@ -48,6 +48,10 @@ pub const DEFAULT_LISTEN_ADDRESS: &str = "0.0.0.0:3000";
 
 pub const DEFAULT_CONFIG_DIR: &str = "data";
 
+pub const DEFAULT_PEER_REMOVAL_COOLDOWN_SECS: u64 = 600; // 10 minutes
+pub const DEFAULT_UPSTREAM_PEERS: usize = 3;
+pub const DEFAULT_DOWNSTREAM_PEERS: usize = 10;
+
 const SNAPSHOTS_PATH: &str = "snapshots";
 const BOOTSTRAP_PATH: &str = "crates/amaru/config/bootstrap";
 static BOOTSTRAP_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/config/bootstrap");
@@ -121,6 +125,9 @@ pub mod value_names {
     /// A blockchain point, formatted as slot.hash
     pub const POINT: &str = "SLOT.HEADER_HASH";
 
+    /// A blockchain point, formatted as slot.hash
+    pub const POINT_OR_HASH: &str = "SLOT.HEADER_HASH or HEADER_HASH";
+
     /// A non-negative integer value.
     pub const UINT: &str = "UINT";
 
@@ -154,8 +161,11 @@ pub mod env_vars {
     /// --listen-address
     pub const LISTEN_ADDRESS: &str = "AMARU_LISTEN_ADDRESS";
 
-    /// --max-downstream-peers
-    pub const MAX_DOWNSTREAM_PEERS: &str = "AMARU_MAX_DOWNSTREAM_PEERS";
+    /// --downstream-peers
+    pub const DOWNSTREAM_PEERS: &str = "AMARU_DOWNSTREAM_PEERS";
+
+    /// --upstream-peers
+    pub const UPSTREAM_PEERS: &str = "AMARU_UPSTREAM_PEERS";
 
     /// --max-extra-ledger-snapshots
     pub const MAX_EXTRA_LEDGER_SNAPSHOTS: &str = "AMARU_MAX_EXTRA_LEDGER_SNAPSHOTS";
@@ -174,6 +184,9 @@ pub mod env_vars {
 
     /// --peer-address
     pub const PEER_ADDRESS: &str = "AMARU_PEER_ADDRESS";
+
+    /// --peer-removal-cooldown-secs
+    pub const PEER_REMOVAL_COOLDOWN_SECS: &str = "AMARU_PEER_REMOVAL_COOLDOWN_SECS";
 
     /// --pid-file
     pub const PID_FILE: &str = "AMARU_PID_FILE";

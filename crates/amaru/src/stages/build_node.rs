@@ -17,13 +17,12 @@ use std::sync::Arc;
 use amaru_consensus::{
     effects::{
         ResourceBlockValidation, ResourceHasStakePools, ResourceHeaderValidation, ResourceMeter, ResourceTxValidation,
+        find_best_candidate,
     },
     validate_header::ValidateHeader,
 };
-use amaru_kernel::{
-    BlockHeader, ConsensusParameters, EraHistory, GlobalParameters, ORIGIN_HASH, Peer, Point, Transaction,
-};
-use amaru_mempool::InMemoryMempool;
+use amaru_kernel::{BlockHeader, ConsensusParameters, EraHistory, GlobalParameters, ORIGIN_HASH, Point, Transaction};
+use amaru_mempool::{InMemoryMempool, MempoolConfig};
 use amaru_metrics::METRICS_METER_NAME;
 use amaru_network::connection::TokioConnections;
 use amaru_ouroboros::{ChainStore, ConnectionsResource, HasStakeDistribution, MempoolMsg, ResourceMempool};
@@ -93,7 +92,7 @@ impl NodeRunning {
 /// 2. Initialize the chain store and its tip (make it equal to the ledger tip, because it could be further along than the ledger tip after a node stop).
 /// 3. Prepare resources for the stages graph.
 /// 4. Build the stages graph.
-/// 5. Register static peers and preload a message to start connecting to them.
+/// 5. The stage graph preloads `peer_selection` to connect to configured upstream peers.
 /// 6. Register a listener for downstream connections.
 ///
 /// Return a refererence to the `Manager` stage to have the possibility to send internal messages for
@@ -124,37 +123,37 @@ pub fn build_node(
     // ledger tip.
     let chain_store = initialize_chain_store(config, ledger_tip)?;
     let ledger_tip = chain_store.load_tip(&ledger_tip.hash()).ok_or(anyhow!("ledger tip header not found"))?;
+    let best_hash = find_best_candidate(chain_store.as_ref())?;
 
     // Make resources
     let validate_header =
         make_validate_header(global_parameters, era_history, chain_store.clone(), ledger.get_stake_distribution()?);
 
     // Register resources
-    register_resources(stage_builder, chain_store, global_parameters, ledger, validate_header, meter_provider);
+    register_resources(
+        stage_builder,
+        chain_store,
+        global_parameters,
+        ledger,
+        validate_header,
+        meter_provider,
+        config.mempool.clone(),
+    );
 
     // Build the stage graph and return a reference to the stages that can be connected from outside this function
-    let node_stages = build_stage_graph(config, era_history, global_parameters, ledger_tip, stage_builder);
+    let node_stages = build_stage_graph(config, era_history, global_parameters, ledger_tip, best_hash, stage_builder);
 
     // Open a port to listen for downstream peers
     stage_builder
         .preload(node_stages.manager_stage.clone(), [ManagerMessage::Listen(config.listen_address()?)])
         .map_err(|e| anyhow!(format!("{e:?}")))?;
 
-    // Connect to upstream peers
-    for peer in &config.upstream_peers {
-        let Ok(_) =
-            stage_builder.preload(node_stages.manager_stage.clone(), [ManagerMessage::AddPeer(Peer::new(peer))])
-        else {
-            tracing::warn!("supplied more peers than can be initially connected");
-            break;
-        };
-    }
-
     Ok(node_stages)
 }
 
 /// Register the resources required by the external effects invoked by the stages in the stage graph.
 /// It is possible to override those resources later on.
+#[allow(clippy::too_many_arguments)]
 fn register_resources(
     stage_graph: &mut impl StageGraph,
     chain_store: Arc<dyn ChainStore<BlockHeader>>,
@@ -162,6 +161,7 @@ fn register_resources(
     ledger: Ledger,
     validate_header: ValidateHeader,
     meter_provider: Option<SdkMeterProvider>,
+    mempool_config: MempoolConfig,
 ) {
     stage_graph.resources().put::<ResourceHeaderStore>(chain_store);
     stage_graph.resources().put::<ResourceParameters>(global_parameters.clone());
@@ -170,7 +170,7 @@ fn register_resources(
     stage_graph.resources().put::<ResourceHeaderValidation>(Arc::new(validate_header));
     stage_graph.resources().put::<ResourceTxValidation>(ledger.get_tx_validation());
     stage_graph.resources().put::<ConnectionsResource>(Arc::new(TokioConnections::new(65535)));
-    stage_graph.resources().put::<ResourceMempool<Transaction>>(Arc::new(InMemoryMempool::default()));
+    stage_graph.resources().put::<ResourceMempool<Transaction>>(Arc::new(InMemoryMempool::new(mempool_config)));
 
     if let Some(provider) = meter_provider {
         let meter = provider.meter(METRICS_METER_NAME);

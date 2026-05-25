@@ -77,12 +77,12 @@ async fn test_connect_initiator_reconnection_on_responder_restart() -> anyhow::R
 
     // start an initiator with a responder that will be slow right after connection, so that
     // the initiator doesn't start synchronizing right away
-    let responder_configuration = Configuration::responder().with_slow_manager();
-    let (responder, addr, _) = start_responder_with_configuration(responder_configuration.clone()).await?;
+    let (responder, addr, _) =
+        start_responder_with_configuration(Configuration::responder().with_slow_manager()).await?;
     let (initiator, initiator_done) = start_initiator_with_configuration(
         Configuration::initiator()
             .with_addr(addr)
-            .with_reconnect_delay(Duration::from_millis(500))
+            .with_reconnect_delay(Duration::from_millis(1000))
             .with_processing_wait(Duration::from_millis(100)),
     )
     .await?;
@@ -217,7 +217,8 @@ async fn start_initiator_with_configuration(
         ChainSyncStageState::new(initiator_stage.sender(), configuration.processing_wait, notify.clone()),
     );
 
-    let manager_config = ManagerConfig::default().with_reconnect_delay(configuration.reconnect_delay);
+    let manager_config =
+        ManagerConfig::default().with_reconnect_delay(configuration.reconnect_delay).with_connect_retries(10);
     let initiator_manager = create_manager(manager_config, chainsync_stage.without_state());
     let initiator_stage = initiator_network.wire_up(initiator_stage, initiator_manager);
     let initiator_sender = initiator_network.input(initiator_stage);
@@ -298,5 +299,12 @@ fn era_history() -> Arc<EraHistory> {
 }
 
 fn create_manager(config: ManagerConfig, chainsync_stage: StageRef<ChainSyncInitiatorMsg>) -> Manager {
-    Manager::new(NetworkMagic::PREPROD, config, era_history(), chainsync_stage, StageRef::blackhole())
+    Manager::new(
+        NetworkMagic::PREPROD,
+        config,
+        era_history(),
+        chainsync_stage,
+        StageRef::blackhole(),
+        StageRef::blackhole(),
+    )
 }

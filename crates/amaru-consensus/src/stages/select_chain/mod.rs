@@ -16,9 +16,76 @@ use std::{cmp::Ordering, collections::BTreeMap};
 
 use amaru_kernel::{BlockHeader, HeaderHash, IsHeader, ORIGIN_HASH, Point, Tip};
 use amaru_protocols::store_effects::Store;
-use anyhow::anyhow;
 use pure_stage::{Effects, OrTerminateWith, StageRef};
 
+use crate::effects::FindBestCandidate;
+
+/// Chain selection / fork choice stage.
+///
+/// This stage is responsible for:
+/// - Tracking pending unvalidated tip candidates (forks) received from upstream (track_peers).
+/// - Selecting the "best" candidate according to Ouroboros Praos rules (see `cmp_tip`).
+/// - Deciding when to push a `(Tip, Point)` to the downstream fetch/validation pipeline.
+/// - Reacting to block validation results to advance or prune candidates.
+/// - Bootstrapping from the persistent chain store on startup.
+///
+/// It is wired with a single `downstream: StageRef<(Tip, Point)>` (the input to the fetch_blocks stage).
+/// The stage is driven purely by messages; it uses `Store` effects (via `Effects`) for header/validity/ancestor queries
+/// and one external effect (`FindBestCandidate`) when the current best is invalidated.
+///
+/// Key internal state:
+/// - `tips`: maps known tip hashes to the (oldest-first) list of yet-to-be-validated ancestor hashes on that branch.
+/// - `best_tip`: the current best `BlockHeader` (or `None`); updated only on strictly better candidates per `cmp_tip`.
+/// - `may_fetch_blocks`: "Whether the downstream stage has sent a FetchNextFrom message that has not yet been responded to."
+///   Starts `false` (see `new()`); controls whether a newly superior tip triggers an immediate send.
+///
+/// This stage must be preloaded at graph construction time with `Initialize(...)` (current best from store); if there is
+/// no FetchBlocks stage connected (e.g. in tests) it also needs `FetchNextFrom(Point::Origin)` (to kick off fetching) —
+/// see `SelectChainMsg` docs and `test_setup::setup`.
+///
+/// ## Input message effects
+///
+/// - **Initialize(best_hash: HeaderHash)**:
+///   - If `best_hash != ORIGIN_HASH`: loads the header (sets as `best_tip`), queries `unvalidated_ancestor_hashes`,
+///     and inserts the result into `tips`. (No send to downstream; `may_fetch_blocks` untouched.)
+///   - Otherwise: no-op (leaves empty state).
+///   - Always returns the (mutated) state. Preloaded at startup for non-empty stores.
+///
+/// - **TipFromUpstream(tip: Tip, parent: Point)**:
+///   - Loads the header+validity via store (terminates with error log if missing or already validated).
+///   - Inserts/extends a `tips` entry: special-cases `parent == Origin`; extends an existing pending chain;
+///     or (for new forks) queries store ancestors (only if the prefix is valid) and inserts the fragment.
+///     Ignores (with info log) tips depending on invalid blocks.
+///   - If the new tip is now tracked in `tips` *and* is strictly better than `best_tip` per `cmp_tip`:
+///     logs "new best tip candidate"; **if** `may_fetch_blocks` then sets it `false` and `eff.send(&downstream, (tip, parent))`;
+///     unconditionally updates `best_tip`.
+///   - (When `!may_fetch_blocks`, a better tip updates state silently; downstream learns only on its next `FetchNextFrom`.)
+///
+/// - **BlockValidationResult(point: Tip, valid: bool)**:
+///   - Terminates (error) if header not present in store.
+///   - Persists the validity result via `set_block_valid` (terminates on store error).
+///   - If `valid`: for every pending chain, drains the prefix up through the now-validated hash (advances all branches).
+///   - If `!valid`: prunes every `tips` entry whose first (unvalidated) element is this hash; `removed` count logged at warn if >0.
+///     If the current `best_tip` is no longer present in `tips` (i.e., its branch was pruned): logs "best tip candidate invalidated",
+///     calls `eff.external(FindBestCandidate)`, and on success (non-origin): loads the new header + parent point,
+///     **if** `may_fetch_blocks` then sets `false` + sends `(new_best.tip(), parent)` to downstream, inserts its unvalidated ancestors into `tips`,
+///     and sets `best_tip`. Falls back to `best_tip = None` (warn "falling back to origin") on ORIGIN result; terminates on external error.
+///   - (Validation results from the downstream validate_block stage are the primary way pending chains make forward progress or are discarded.)
+///
+/// - **FetchNextFrom(point: Point)**:
+///   - Computes current `best_tip.point()` (or Origin).
+///   - If a `best_tip` exists and differs from the requested `point`: loads its header + parent point (via `load_tip`/`load_parent_point` paths; terminates on failure),
+///     logs "resuming block fetching", and **unconditionally** `eff.send(&downstream, (best_tip.tip(), parent))`.
+///     (Note: does **not** touch `may_fetch_blocks`.)
+///   - Else (no best, or point matches current best): sets `may_fetch_blocks = true` (signals "we will push future superior tips").
+///   - Comment notes this is preloaded at startup (typically Origin) to start the fetch/validate pipeline even for non-empty stores.
+///   - This is the primary mechanism by which `may_fetch_blocks` is set `true`; the flag is only cleared immediately before the two "new best arrived" send sites.
+///
+/// The stage also defines supporting items used internally:
+/// - `load_parent_point(...)`: helper to compute a header's parent `Point` (or Origin), terminating on missing parent.
+/// - `cmp_tip(...)`: the core fork-choice comparator (height primary; VRF/opcert/slot≤5 tiebreakers per the linked Ouroboros Praos spec). Extensively unit-tested in `tests.rs`.
+///
+/// All sends to downstream use the exact payload `(Tip, Point)`. The stage makes heavy use of `Store::new(eff)` + `or_terminate_with` for resilience.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SelectChain {
     downstream: StageRef<(Tip, Point)>,
@@ -39,7 +106,7 @@ impl SelectChain {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SelectChainMsg {
-    Initialize,
+    Initialize(HeaderHash),
     TipFromUpstream(Tip, Point),
     BlockValidationResult(Tip, bool),
     // This message must also be preloaded upon startup to get the block-fetching
@@ -49,21 +116,26 @@ pub enum SelectChainMsg {
 
 pub async fn stage(mut state: SelectChain, msg: SelectChainMsg, eff: Effects<SelectChainMsg>) -> SelectChain {
     match msg {
-        SelectChainMsg::Initialize => {
+        SelectChainMsg::Initialize(best_hash) => {
             let store = Store::new(eff);
-            let best_tip = best_tip_from_store(&store).await.unwrap_or(None);
-            state.best_tip = best_tip.map(|(best_tip, to_validate)| {
-                state.tips.insert(best_tip.hash(), to_validate);
-                best_tip
-            });
-            state
+            if best_hash != ORIGIN_HASH {
+                state.best_tip = store.load_header(&best_hash).await;
+                // NOTE: validity has been checked by build_node already
+                let (to_validate, _valid) = store.unvalidated_ancestor_hashes(best_hash).await;
+                state.tips.insert(best_hash, to_validate);
+            }
         }
-        SelectChainMsg::TipFromUpstream(tip, parent) => state.handle_tip_from_upstream(tip, parent, eff).await,
+        SelectChainMsg::TipFromUpstream(tip, parent) => {
+            state.handle_tip_from_upstream(tip, parent, eff).await;
+        }
         SelectChainMsg::BlockValidationResult(point, valid) => {
-            state.handle_block_validation_result(point, valid, eff).await
+            state.handle_block_validation_result(point, valid, eff).await;
         }
-        SelectChainMsg::FetchNextFrom(point) => state.handle_fetch_next_from(point, eff).await,
+        SelectChainMsg::FetchNextFrom(point) => {
+            state.handle_fetch_next_from(point, eff).await;
+        }
     }
+    state
 }
 
 impl SelectChain {
@@ -71,7 +143,7 @@ impl SelectChain {
     ///
     /// The `tip` and `parent` refer to headers that are guaranteed to be stored in the chain store
     /// by the track_peers stage.
-    async fn handle_tip_from_upstream(mut self, tip: Tip, parent: Point, eff: Effects<SelectChainMsg>) -> SelectChain {
+    async fn handle_tip_from_upstream(&mut self, tip: Tip, parent: Point, eff: Effects<SelectChainMsg>) {
         let store = Store::new(eff.clone());
 
         let Some((header, valid)) = store.load_header_with_validity(&tip.hash()).await else {
@@ -111,23 +183,17 @@ impl SelectChain {
         }
 
         if self.tips.contains_key(&tip.hash()) && cmp_tip(Some(&header), self.best_tip.as_ref()) == Ordering::Greater {
-            let best_tip = self.best_tip.map(|h| h.point()).unwrap_or(Point::Origin);
-            tracing::debug!(tip = %tip.point(), height = %tip.block_height(), %best_tip, "new best tip candidate");
+            let best_tip = self.best_tip.take().map(|h| h.point()).unwrap_or(Point::Origin);
+            tracing::debug!(tip = %tip.point(), height = %tip.block_height(), previous = %best_tip, "new best tip candidate");
             if self.may_fetch_blocks {
                 self.may_fetch_blocks = false;
                 eff.send(&self.downstream, (tip, parent)).await;
             }
             self.best_tip = Some(header);
         }
-        self
     }
 
-    async fn handle_block_validation_result(
-        mut self,
-        tip: Tip,
-        valid: bool,
-        eff: Effects<SelectChainMsg>,
-    ) -> SelectChain {
+    async fn handle_block_validation_result(&mut self, tip: Tip, valid: bool, eff: Effects<SelectChainMsg>) {
         let store = Store::new(eff.clone());
         if !store.has_header(&tip.hash()).await {
             tracing::error!(%tip, "header not found while trying to store block validation result");
@@ -148,46 +214,56 @@ impl SelectChain {
                     v.drain(0..=idx);
                 }
             });
-        } else {
-            // remove all tips depending on the invalid block
-            // (if a peer sends further headers on this chain, we will ignore them)
-            let prev_tips = self.tips.len();
-            self.tips.retain(|_k, v| v.first() != Some(&tip.hash()));
-            let removed = prev_tips - self.tips.len();
-
-            if let Some(best_tip) = &self.best_tip
-                && !self.tips.contains_key(&best_tip.hash())
-            {
-                tracing::info!(%removed, "best tip candidate invalidated");
-                // need to pick new best tip
-                match best_tip_from_store(&store).await {
-                    Ok(Some((new_best_tip, to_validate))) => {
-                        tracing::debug!(%new_best_tip, "new best tip candidate");
-                        let parent = load_parent_point(&eff, store, &new_best_tip).await;
-                        if self.may_fetch_blocks {
-                            self.may_fetch_blocks = false;
-                            eff.send(&self.downstream, (new_best_tip.tip(), parent)).await;
-                        }
-                        self.tips.insert(new_best_tip.hash(), to_validate);
-                        self.best_tip = Some(new_best_tip);
-                    }
-                    Ok(None) => {
-                        self.best_tip = None;
-                        tracing::warn!("falling back to origin");
-                    }
-                    Err(e) => {
-                        tracing::error!("{e:?}");
-                        return eff.terminate().await;
-                    }
-                }
-            } else if removed > 0 {
-                tracing::warn!(%removed, "chain fork(s) removed due to invalid block");
-            }
+            return;
         }
-        self
+
+        // INVALID CASE
+        //
+        // remove all tips depending on the invalid block
+        // (if a peer sends further headers on this chain, we will ignore them)
+        let prev_tips = self.tips.len();
+        self.tips.retain(|_k, v| v.first() != Some(&tip.hash()));
+        let removed = prev_tips - self.tips.len();
+
+        if let Some(best_tip) = &self.best_tip
+            && !self.tips.contains_key(&best_tip.hash())
+        {
+            tracing::info!(%removed, "best tip candidate invalidated");
+            // need to pick new best tip
+            match eff.external(FindBestCandidate).await {
+                Ok(new_best_tip) if new_best_tip != ORIGIN_HASH => {
+                    tracing::debug!(%new_best_tip, "new best tip candidate");
+                    let new_best_tip = store
+                        .load_header(&new_best_tip)
+                        .or_terminate_with(&eff, async move |_| {
+                            tracing::error!(hash = %new_best_tip, "best candidate does exist");
+                        })
+                        .await;
+                    let parent = load_parent_point(&eff, &store, &new_best_tip).await;
+                    if self.may_fetch_blocks {
+                        self.may_fetch_blocks = false;
+                        eff.send(&self.downstream, (new_best_tip.tip(), parent)).await;
+                    }
+                    let (to_validate, _) = store.unvalidated_ancestor_hashes(new_best_tip.hash()).await;
+                    self.tips.insert(new_best_tip.hash(), to_validate);
+                    self.best_tip = Some(new_best_tip);
+                }
+                Ok(_) => {
+                    self.best_tip = None;
+                    tracing::warn!("falling back to origin");
+                }
+                Err(e) => {
+                    tracing::error!("{e:?}");
+                    return eff.terminate().await;
+                }
+            }
+        } else if removed > 0 {
+            tracing::warn!(%removed, "chain fork(s) removed due to invalid block");
+        }
     }
 
-    async fn handle_fetch_next_from(mut self, point: Point, eff: Effects<SelectChainMsg>) -> SelectChain {
+    async fn handle_fetch_next_from(&mut self, point: Point, eff: Effects<SelectChainMsg>) {
+        assert!(!self.may_fetch_blocks, "received FetchNextFrom while not having responded to previous one");
         // During startup with non-empty chain store, best_tip will be different from origin and
         // the incoming `point` will be origin, leading to sending the best tip to the downstream stage.
         let best_tip = self.best_tip.as_ref().map(|h| h.point()).unwrap_or(Point::Origin);
@@ -218,73 +294,6 @@ impl SelectChain {
         } else {
             self.may_fetch_blocks = true;
         }
-        self
-    }
-}
-
-/// Return the highest tip candidate that extends the current anchor, together with
-/// the unknown suffix after the last validated ancestor.
-///
-/// Example:
-///
-/// O--A(valid)--B(valid)  anchor_hash
-///                     \
-///                      C(valid)--D(?)--E(?) candidate 1
-///                      \
-///                       H(valid)--I(valid)--J(invalid)  candidate 2, rejected
-///                       \
-///                       K(?)--L(?) candidate 3
-///
-/// The candidates are the reachable leaves below `anchor_hash`: `E`, `J`, and `L`.
-/// The branch ending at `J` is rejected because it is `invalid`.
-/// Between `E` and `L`, the highest tip wins according to `cmp_tip`.
-///
-/// If `L` wins, this returns:
-/// `(L, [K, L])` since `K` and `L` have not-yet-validated blocks.
-pub async fn best_tip_from_store(store: &Store) -> anyhow::Result<Option<(BlockHeader, Vec<HeaderHash>)>> {
-    let anchor_hash = store.get_anchor_hash().await;
-
-    let mut best_candidate = None;
-
-    // ORIGIN_HASH cannot have a block, so we start from its direct children
-    let mut to_visit = if anchor_hash == ORIGIN_HASH {
-        store.get_children(&anchor_hash).await.into_iter().collect()
-    } else {
-        // If the anchor hash is not origin, we have a first best candidate.
-        best_candidate = store.load_header(&anchor_hash).await;
-        if best_candidate.is_none() {
-            return Err(anyhow!("anchor hash {anchor_hash} does not resolve to a stored header"));
-        }
-        vec![anchor_hash]
-    };
-
-    while let Some(hash) = to_visit.pop() {
-        // Visit one reachable header.
-        tracing::debug!(hash = %hash, "visiting startup candidate");
-        let (header, validity) = store
-            .load_header_with_validity(&hash)
-            .await
-            .ok_or_else(|| anyhow!("reachable child hash {hash} does not resolve to a stored header"))?;
-
-        // Don't use this header if its block is invalid
-        if validity == Some(false) {
-            continue;
-        };
-
-        // Continue the traversal with all direct descendants of the current header.
-        let children = store.get_children(&hash).await;
-
-        if cmp_tip(Some(&header), best_candidate.as_ref()).is_gt() {
-            best_candidate = Some(header);
-        }
-        to_visit.extend(children);
-    }
-
-    if let Some(best_candidate) = best_candidate {
-        let (best_missing, _) = store.unvalidated_ancestor_hashes(best_candidate.hash()).await;
-        Ok(Some((best_candidate, best_missing)))
-    } else {
-        Ok(None)
     }
 }
 
@@ -292,7 +301,7 @@ pub async fn best_tip_from_store(store: &Store) -> anyhow::Result<Option<(BlockH
 /// The parent header must be present in the store otherwise the stage is terminated.
 pub async fn load_parent_point<T: Send + Sync + 'static>(
     eff: &Effects<T>,
-    store: Store,
+    store: &Store,
     header: &BlockHeader,
 ) -> Point {
     if let Some(parent) = header.parent() {

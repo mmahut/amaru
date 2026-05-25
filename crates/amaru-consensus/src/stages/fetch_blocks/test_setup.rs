@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use amaru_kernel::{
-    BlockHeader, HeaderHash, Point, RawBlock, TESTNET_ERA_HISTORY, Tip,
+    BlockHeader, HeaderHash, Peer, Point, RawBlock, TESTNET_ERA_HISTORY, Tip,
     cardano::network_block::{make_block_with_header, make_encoded_block, make_network_block},
 };
 use amaru_ouroboros_traits::{ChainStore, MissingBlocks, StoreError, in_memory_consensus_store::InMemConsensusStore};
@@ -25,19 +25,21 @@ use amaru_protocols::store_effects::{
     UnvalidatedAncestorHashesEffect,
 };
 use pure_stage::{
-    DeserializerGuards, Effect, Instant, Name, ScheduleId, ScheduleIds, StageGraph, StageRef, TerminationReason,
-    simulation::{SimulationBuilder, SimulationRunning},
-    trace_buffer::{TraceBuffer, TraceEntry},
+    DeserializerGuards, Effect, Instant, Name, ScheduleId, ScheduleIds, StageGraph, StageRef,
+    simulation::SimulationRunning, trace_buffer::TraceEntry,
 };
 use tokio::runtime::{Builder, Runtime};
-use tracing::Level;
-use tracing_subscriber::util::SubscriberInitExt;
 
 use super::*;
 use crate::stages::{
+    block_source::BlockSourceMsg,
     select_chain::SelectChainMsg,
-    test_utils::{BufferWriter, Logs},
+    test_utils::{Logs, run_simulation},
 };
+
+pub fn test_peer() -> Peer {
+    Peer::new("test-peer")
+}
 
 pub fn make_block_header(block_number: u64, slot: u64, parent: Option<HeaderHash>) -> BlockHeader {
     let header = amaru_kernel::make_header(block_number, slot, parent);
@@ -121,9 +123,12 @@ impl TestPrep {
 pub fn register_guards() -> DeserializerGuards {
     vec![
         pure_stage::register_data_deserializer::<FetchBlocks>().boxed(),
+        pure_stage::register_data_deserializer::<Cleanup>().boxed(),
         pure_stage::register_data_deserializer::<FetchBlocksMsg>().boxed(),
         pure_stage::register_data_deserializer::<SelectChainMsg>().boxed(),
         pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
+        pure_stage::register_data_deserializer::<amaru_kernel::Peer>().boxed(),
+        pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
         pure_stage::register_data_deserializer::<amaru_kernel::cardano::network_block::NetworkBlock>().boxed(),
         pure_stage::register_data_deserializer::<(Tip, Point, BlockHeight)>().boxed(),
         pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
@@ -145,9 +150,12 @@ pub fn test_prep() -> TestPrep {
     let downstream = StageRef::named_for_tests("downstream");
     let upstream = StageRef::named_for_tests("upstream");
     let manager = StageRef::named_for_tests("manager");
+    let block_source = StageRef::named_for_tests("block_source");
+    let peer_selection = StageRef::named_for_tests("peer_selection");
     let cleanup_replies = StageRef::named_for_tests("cleanup_replies");
 
-    let state = FetchBlocks::for_tests(downstream, upstream, manager, cleanup_replies.clone());
+    let state =
+        FetchBlocks::for_tests(downstream, upstream, manager, block_source, peer_selection, cleanup_replies.clone());
 
     TestPrep {
         state,
@@ -159,41 +167,28 @@ pub fn test_prep() -> TestPrep {
 }
 
 pub fn setup(prep: &TestPrep, msg: FetchBlocksMsg) -> (SimulationRunning, DeserializerGuards, Logs) {
-    let writer = BufferWriter::new();
-    let mut logs = writer.clone();
-
-    let sub = tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
-        .with_ansi(false)
-        .with_writer(move || writer.clone())
-        .set_default();
-    logs.set_guard(sub);
-
     let guards = register_guards();
 
-    let mut network = SimulationBuilder::default().with_trace_buffer(TraceBuffer::new_shared(100, 1000000));
-    network.resources().put::<ResourceHeaderStore>(prep.store.clone());
-
-    let fb = network.stage("fb", stage);
-    let fb = network.wire_up(fb, prep.state.clone());
-    network.preload(&fb, [msg]).unwrap();
-
-    let mut running = network.run();
-    running.run_until_blocked_incl_effects(prep.rt.handle());
-
-    (running, guards, logs.logs())
+    run_simulation(
+        prep.rt.handle(),
+        guards,
+        |network| {
+            let fb = network.stage("fb", stage);
+            let fb = network.wire_up(fb, prep.state.clone());
+            network.preload(&fb, [msg]).unwrap();
+        },
+        |resources| {
+            resources.put::<ResourceHeaderStore>(prep.store.clone());
+        },
+        |_running| {
+            // No additional external effect overrides needed for basic fetch_blocks tests.
+            // Virtual child stages are enabled by default in run_simulation.
+        },
+    )
 }
 
 pub fn te_find_missing_blocks(at_stage: &str, start: HeaderHash, limit: usize) -> TraceEntry {
     TraceEntry::suspend(Effect::external(at_stage, Box::new(FindMissingBlocksEffect::new(start, limit))))
-}
-
-pub fn te_get_anchor_hash(at_stage: &str) -> TraceEntry {
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(GetAnchorHashEffect::new())))
-}
-
-pub fn te_get_children(at_stage: &str, hash: HeaderHash) -> TraceEntry {
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(GetChildrenEffect::new(hash))))
 }
 
 pub fn te_has_block(at_stage: &str, hash: HeaderHash) -> TraceEntry {
@@ -223,14 +218,6 @@ pub fn te_store_block(at_stage: &str, hash: HeaderHash, block: amaru_kernel::Raw
     TraceEntry::suspend(Effect::external(at_stage, Box::new(StoreBlockEffect::new(&hash, block))))
 }
 
-pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl pure_stage::SendData) -> TraceEntry {
-    TraceEntry::suspend(pure_stage::Effect::send(from, to, Box::new(msg)))
-}
-
-pub fn te_terminate(at_stage: impl AsRef<str>) -> TraceEntry {
-    TraceEntry::suspend(Effect::Terminate { at_stage: Name::from(at_stage.as_ref()) })
-}
-
 pub fn te_schedule(at_stage: impl AsRef<str>, msg: impl pure_stage::SendData, schedule_id: ScheduleId) -> TraceEntry {
     TraceEntry::suspend(Effect::Schedule {
         at_stage: Name::from(at_stage.as_ref()),
@@ -245,19 +232,4 @@ pub fn te_cancel_schedule(at_stage: impl AsRef<str>, schedule_id: ScheduleId) ->
 
 pub fn te_clock(instant: Instant) -> TraceEntry {
     TraceEntry::Clock(instant)
-}
-
-pub fn te_terminated(at_stage: impl AsRef<str>, reason: TerminationReason) -> TraceEntry {
-    TraceEntry::Terminated { stage: Name::from(at_stage.as_ref()), reason }
-}
-
-#[track_caller]
-pub fn assert_trace(running: &SimulationRunning, expected: &[TraceEntry]) {
-    let mut tb = running.trace_buffer().lock();
-    let trace = tb
-        .iter_entries()
-        .filter_map(|(_, e)| (!matches!(e, TraceEntry::Resume { .. })).then_some(e))
-        .collect::<Vec<_>>();
-    tb.clear();
-    pretty_assertions::assert_eq!(trace, expected);
 }
