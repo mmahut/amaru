@@ -501,7 +501,7 @@ impl RewardsSummary {
     // treasury... So it won't be present from our snapshot labeled 176 since it happened BEFORE the
     // beginning of the epoch 177.
     pub fn with_unclaimed_refunds(mut self, db: &impl Snapshot) -> Result<Self, StoreError> {
-        let leftovers = PoolsEpochTransitionUpdates::new(db, self.epoch + 3)?.refunds().try_fold(
+        let leftovers = PoolsEpochTransitionUpdates::new(db.iter_pools()?, self.epoch + 3).refunds().try_fold(
             0,
             |leftovers, (account, refund)| {
                 // TODO: Multi-get here?

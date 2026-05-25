@@ -59,6 +59,11 @@ impl<V> Registrations<V> {
         let inner = &self.0;
         inner.1.as_ref().unwrap_or(&inner.0)
     }
+
+    pub fn into_last(self) -> V {
+        let inner = self.0;
+        inner.1.unwrap_or(inner.0)
+    }
 }
 
 impl<V> IntoIterator for Registrations<V> {
@@ -99,62 +104,31 @@ impl<K: Ord, V> DiffEpochReg<K, V> {
         }
     }
 
-    // See 'register' for details.
+    /// See [`Self::register`] for details.
     pub fn unregister(&mut self, k: K, epoch: Epoch) {
         self.unregistered.insert(k, epoch);
     }
-}
 
-/// Captures the outcome of folding over a sequence of DiffEpochReg. The 'Undetermined' case
-/// indicates that it isn't possible to conclude anything from the sequence and more information
-/// (from the stable storage) is needed to obtain the current state of the item `V`.
-#[derive(Debug, PartialEq)]
-pub enum Fold<'a, V> {
-    Registered(&'a V),
-    Unregistered,
-    Undetermined,
-}
-
-impl<'a, V> Fold<'a, V> {
-    /// View the result of a sequence of 'DiffEpochReg' from a given epoch and for a particular
-    /// key. This is used to determine whether the current sequence of diffs is enough to know the
-    /// current (as per the given epoch) state of the tracked values.
-    pub fn for_epoch<K: Ord + 'a>(
-        epoch: Epoch,
-        key: &K,
-        iterator: impl Iterator<Item = (Epoch, &'a DiffEpochReg<K, V>)>,
-    ) -> Self {
-        let fold = iterator.fold(DiffEpochReg::default(), |mut state, step| {
-            if step.0 < epoch {
-                if let Some(registrations) = step.1.registered.get(key) {
-                    state.register(key, registrations.last());
-                }
-
-                if let Some(retirement) = step.1.unregistered.get(key)
-                    && retirement <= &epoch
-                {
-                    state.unregister(key, *retirement);
-                }
-            }
-
-            state
-        });
-
-        if fold.unregistered.contains_key(key) {
-            return Fold::Unregistered;
+    /// Merge two states together, assuming that the other state is the most recent.
+    ///
+    /// # Warning
+    ///
+    /// Both states MUST belong to the same epoch. This isn't suitable for combining states across
+    /// epoch boundaries.
+    pub fn evolve(&mut self, most_recent: Self) {
+        for (k, v) in most_recent.unregistered {
+            self.unregister(k, v)
         }
 
-        if let Some(registrations) = fold.registered.get(key) {
-            return Fold::Registered(registrations.last());
+        for (k, v) in most_recent.registered {
+            self.register(k, v.into_last())
         }
-
-        Fold::Undetermined
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, btree_map};
+    use std::collections::BTreeMap;
 
     use proptest::prelude::*;
 
@@ -274,113 +248,6 @@ mod tests {
                 assert!(epoch >= Epoch::from(current_epoch));
                 epoch.into()
             });
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn prop_equivalent_to_simpler_model(msgs in any_message_sequence()) {
-            #[derive(Debug, Default)]
-            struct Model {
-                epoch: Epoch,
-                current: BTreeMap<char, u8>,
-                future: BTreeMap<char, u8>,
-                retiring: BTreeMap<char, Epoch>,
-            }
-
-            // Process messages through the model implementation
-            let model = msgs.iter().fold(Model::default(), |mut model, (epoch, blk)| {
-                // Apply transition rules on epoch boundary.
-                if epoch > &model.epoch {
-                    model.current.append(&mut model.future);
-                    let mut ks = Vec::new();
-                    for (k, retirement) in model.retiring.iter() {
-                        if retirement <= epoch {
-                            model.current.remove(k);
-                            ks.push(*k);
-                        }
-                    }
-                    for k in ks {
-                        model.retiring.remove(&k);
-                    }
-                }
-
-                for msg in blk {
-                    match msg {
-                        Message::Register(k, v) => {
-                            model.retiring.remove(k);
-                            if let btree_map::Entry::Vacant(entry) = model.current.entry(*k)  {
-                                entry.insert(*v);
-                            } else {
-                                model.future.insert(*k, *v);
-                            }
-                        }
-                        Message::Unregister(k, e) => {
-                            model.retiring.insert(*k, Epoch::from(*e));
-                        }
-                    }
-                }
-
-                model
-            });
-
-            // Process messages through the real implementation
-            let real = msgs.iter().fold(Vec::new(), |mut real, (epoch, blk)| {
-                let mut diff = DiffEpochReg::default();
-                for msg in blk {
-                    match msg {
-                        Message::Register(k, v) => diff.register(*k, *v),
-                        Message::Unregister(k, e) => diff.unregister(*k, Epoch::from(*e)),
-                    }
-                }
-                real.push((*epoch, diff));
-                real
-            });
-
-            // Compare real & model
-            for (k, v) in model.current.iter() {
-                let fold = Fold::for_epoch(
-                    model.epoch,
-                    k,
-                    real.iter().map(|(epoch, diff)| (*epoch, diff))
-                );
-
-                // NOTE: when we only register a value once, the real implementation cannot
-                // properly determine whether its a genuine new registration or a re-registration.
-                if fold != Fold::Undetermined {
-                    assert_eq!(
-                        fold,
-                        Fold::Registered(v),
-                        "model = {model:?}\nreal = {real:?}"
-                    );
-                }
-            }
-
-            for (k, e) in model.retiring.iter() {
-                let fold = Fold::for_epoch(
-                    model.epoch,
-                    k,
-                    real.iter().map(|(epoch, diff)| (*epoch, diff))
-                );
-
-                assert_eq!(
-                    fold,
-                    Fold::Undetermined,
-                    "model = {model:?}\nreal = {real:?}"
-                );
-
-                let fold = Fold::for_epoch(
-                    *e,
-                    k,
-                    real.iter().map(|(epoch, diff)| (*epoch, diff))
-                );
-
-                assert_eq!(
-                    fold,
-                    Fold::Unregistered,
-                    "model = {model:?}\nreal = {real:?}"
-                );
-            }
         }
     }
 }

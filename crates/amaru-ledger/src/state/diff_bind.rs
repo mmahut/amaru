@@ -80,12 +80,51 @@ pub enum RegisterError<K> {
 }
 
 #[derive(thiserror::Error, Debug)]
+pub enum MergeError<K> {
+    #[error("key is already registered")]
+    AlreadyRegistered(K),
+}
+
+#[derive(thiserror::Error, Debug)]
 pub enum BindError<K> {
     #[error("key is already unregistered")]
     AlreadyUnregistered(K),
 }
 
 impl<K: Ord, L, R, V> DiffBind<K, L, R, V> {
+    /// Merge two states together, assuming that the other is a more recent update.
+    pub fn evolve(&mut self, most_recent: Self) -> Result<&mut Self, MergeError<K>> {
+        for key in most_recent.unregistered {
+            self.unregister(key);
+        }
+
+        for (key, bind) in most_recent.registered {
+            if self.registered.contains_key(&key) && bind.value.is_some() {
+                return Err(MergeError::AlreadyRegistered(key));
+            }
+
+            self.unregistered.remove(&key);
+
+            match self.registered.entry(key) {
+                Entry::Vacant(e) => {
+                    e.insert(bind);
+                }
+
+                Entry::Occupied(mut e) => {
+                    if !matches!(&bind.left, &Resettable::Unchanged) {
+                        e.get_mut().left = bind.left;
+                    }
+
+                    if !matches!(&bind.right, &Resettable::Unchanged) {
+                        e.get_mut().right = bind.right;
+                    }
+                }
+            };
+        }
+
+        Ok(self)
+    }
+
     pub fn register(&mut self, key: K, value: V, left: Option<L>, right: Option<R>) -> Result<(), RegisterError<K>> {
         if self.registered.contains_key(&key) {
             return Err(RegisterError::AlreadyRegistered(key));

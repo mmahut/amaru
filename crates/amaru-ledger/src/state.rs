@@ -369,8 +369,13 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 db.pots()?.treasury + effective_rewards.delta_treasury(),
             )?;
 
-            let (pools_updates, governance_updates) =
-                epoch_transition::begin_epoch(&*db, next_epoch, &self.era_history, ratification_context)?;
+            let (pools_updates, governance_updates) = epoch_transition::begin_epoch(
+                &*db,
+                &self.volatile,
+                next_epoch,
+                &self.era_history,
+                ratification_context,
+            )?;
 
             drop(db); // Dropping the *mutable reference*, not the *actual database* :)
 

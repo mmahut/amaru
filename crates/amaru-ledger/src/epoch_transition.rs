@@ -17,7 +17,7 @@ use amaru_observability::info_span;
 
 use crate::{
     governance::ratification::RatificationContext,
-    state::StateError,
+    state::{StateError, volatile_db::VolatileDB},
     store::{ReadStore, StoreError},
 };
 
@@ -46,7 +46,8 @@ pub fn end_epoch(db: &impl ReadStore, computed_rewards: Rewards<Computed>) -> Re
 }
 
 pub fn begin_epoch<'distr>(
-    db: &impl ReadStore,
+    immutable_db: &impl ReadStore,
+    _volatile_db: &VolatileDB,
     epoch: Epoch,
     era_history: &EraHistory,
     ratification_context: RatificationContext<'distr>,
@@ -59,16 +60,16 @@ pub fn begin_epoch<'distr>(
         // pool were to re-register, they would automatically be granted the stake associated to
         // their past delegates.
 
-        // Tick pools to compute their new state at the epoch boundary. Notice
-        // how we tick with the _current epoch_ however, but we take the snapshot before
-        // the tick since the actions are only effective once the epoch is crossed.
-        let pools_updates = PoolsEpochTransitionUpdates::new(db, epoch)?;
+        // Compute the updates to perform on pools at the epoch boundary. This uses information
+        // from both the immutable store and the volatile database, since we compute the updates
+        // before they are "stable" and safe to store.
+        let pools_updates = PoolsEpochTransitionUpdates::new(immutable_db.iter_pools()?, epoch);
 
         // Ratify and enact proposals at the epoch boundary. Note that this does not modify the
         // immutable store in any fashion (db is read-only here) but produces a series of
         // governance updates to be applied to the database once stable; and use in-memory in the
         // meantime.
-        let governance_updates = GovernanceUpdates::new(db, era_history, ratification_context)?;
+        let governance_updates = GovernanceUpdates::new(immutable_db, era_history, ratification_context)?;
 
         Ok((pools_updates, governance_updates))
     })
