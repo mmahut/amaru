@@ -761,42 +761,25 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             || {
                 // NOTE: Rolling back to the tip of the immutable
                 //
-                // On start-up where the consensus layer will typically ask the ledger to rollback
-                // to the last known point, which ought to be the tip of the (immutable) database.
-                //
-                // Said differently, if the volatile db is empty, the rollback point MUST be the
-                // tip of the immutable.
-                let tip = match self.volatile_tip() {
-                    Some(volatile_tip) => volatile_tip.point(),
-                    None => {
-                        let immutable_tip = self.immutable_tip();
+                // All rollback points within the volatile part are handled by `VolatileDB`, but there is one more
+                // legal rollback target, which is the `immutable_tip()`, in which case the VolatileDB is cleared.
+                let immutable_tip = self.immutable_tip();
+                if *to == immutable_tip {
+                    self.volatile.clear();
+                    return Ok(());
+                }
+                if *to < immutable_tip {
+                    return Err(BackwardError::UnknownRollbackPoint { rollback_point: *to, tip: immutable_tip });
+                }
+                let tip = self.volatile_tip().map(|t| t.point()).unwrap_or(immutable_tip);
 
-                        if &immutable_tip != to {
-                            return Err(BackwardError::UnknownRollbackPoint {
-                                rollback_point: *to,
-                                tip: immutable_tip,
-                            });
-                        }
-
-                        immutable_tip
-                    }
-                };
-
-                // Would still be caught by the next check, but this is a special case for which we
-                // can provide a better error.
-                if to > &tip {
+                if *to > tip {
                     return Err(BackwardError::RollbackPointInFuture { rollback_point: *to, tip });
                 }
-
-                if to == &tip {
-                    self.volatile.clear();
-                    Ok(())
-                } else {
-                    self.volatile.rollback_to(to).map_err(|rollback_point| BackwardError::UnknownRollbackPoint {
-                        rollback_point: *rollback_point,
-                        tip,
-                    })
-                }
+                self.volatile.rollback_to(to).map_err(|rollback_point| BackwardError::UnknownRollbackPoint {
+                    rollback_point: *rollback_point,
+                    tip,
+                })
             },
         )
     }
