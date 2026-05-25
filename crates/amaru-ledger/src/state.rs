@@ -788,10 +788,15 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                     return Err(BackwardError::RollbackPointInFuture { rollback_point: *to, tip });
                 }
 
-                self.volatile.rollback_to(to).map_err(|rollback_point| BackwardError::UnknownRollbackPoint {
-                    rollback_point: *rollback_point,
-                    tip,
-                })
+                if to == &tip {
+                    self.volatile.clear();
+                    Ok(())
+                } else {
+                    self.volatile.rollback_to(to).map_err(|rollback_point| BackwardError::UnknownRollbackPoint {
+                        rollback_point: *rollback_point,
+                        tip,
+                    })
+                }
             },
         )
     }

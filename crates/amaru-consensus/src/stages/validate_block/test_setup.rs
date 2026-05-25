@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::BTreeSet, fmt, net::SocketAddr, sync::Arc};
+use std::{collections::BTreeSet, net::SocketAddr, sync::Arc};
 
 use amaru_kernel::{
-    BlockHeader, HeaderHash, IsHeader, Point, TESTNET_ERA_HISTORY, Tip, make_header, make_header_with_op_cert_seq,
+    BlockHeader, BlockHeight, HeaderHash, IsHeader, Point, TESTNET_ERA_HISTORY, Tip, make_header,
+    make_header_with_op_cert_seq,
 };
 use amaru_metrics::ledger::LedgerMetrics;
 use amaru_ouroboros_traits::{
@@ -28,21 +29,22 @@ use amaru_protocols::store_effects::{
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use pure_stage::{
-    DeserializerGuards, Effect, Name, StageGraph, StageRef, TerminationReason,
-    simulation::{SimulationBuilder, SimulationRunning},
-    trace_buffer::{TraceBuffer, TraceEntry},
+    DeserializerGuards, Effect, Name, StageGraph, StageRef, TerminationReason, simulation::SimulationRunning,
+    trace_buffer::TraceEntry,
 };
 use tokio::runtime::{Builder, Runtime};
-use tracing::Level;
-use tracing_subscriber::util::SubscriberInitExt;
 
 use super::*;
+pub use crate::stages::test_utils::assert_trace;
 use crate::{
     effects::{
         ContainsPointEffect, RecordMetricsEffect, ResourceBlockValidation, ResourceHasStakePools, RollbackBlockEffect,
         TipEffect, ValidateBlockEffect,
     },
-    stages::test_utils::{BufferWriter, Logs},
+    stages::{
+        block_source::BlockSourceMsg,
+        test_utils::{Logs, TraceMatch, run_simulation},
+    },
 };
 
 pub fn make_block_header(block_number: u64, slot: u64, parent: Option<HeaderHash>) -> BlockHeader {
@@ -67,7 +69,6 @@ pub fn make_block_header_with_op_cert_seq(
 ///     - h2a: block 3, slot 10, parent h1 (fork at h1)
 ///       - h3a: block 4, slot 11, parent h2a (fork tip)
 #[derive(Clone)]
-#[allow(dead_code)] // h2a, h3a reserved for fork tests
 pub struct HeaderTree {
     pub h0: BlockHeader,
     pub h1: BlockHeader,
@@ -77,7 +78,6 @@ pub struct HeaderTree {
     pub h3a: BlockHeader,
 }
 
-#[allow(dead_code)] // fork reserved for fork-specific tests
 impl HeaderTree {
     pub fn new() -> Self {
         let h0 = make_block_header(1, 1, None);
@@ -91,10 +91,6 @@ impl HeaderTree {
 
     pub fn main(&self) -> [&BlockHeader; 4] {
         [&self.h0, &self.h1, &self.h2, &self.h3]
-    }
-
-    pub fn fork(&self) -> [&BlockHeader; 3] {
-        [&self.h0, &self.h1, &self.h2a]
     }
 
     pub fn all(&self) -> [&BlockHeader; 6] {
@@ -218,14 +214,11 @@ impl HasStakePools for MockBlockValidator {
 pub struct TestPrep {
     pub state: ValidateBlock,
     pub rt: Runtime,
-    pub manager: StageRef<AdoptChainMsg>,
-    pub select_chain: StageRef<SelectChainMsg>,
     pub headers: HeaderTree,
     pub store: Arc<InMemConsensusStore<BlockHeader>>,
     pub block_validator: Arc<MockBlockValidator>,
 }
 
-#[allow(dead_code)] // set_validity, set_best_chain reserved for future tests
 impl TestPrep {
     pub fn set_current(&mut self, current: Point) {
         self.state.current = current;
@@ -257,10 +250,6 @@ impl TestPrep {
         self.store.set_block_valid(&hash, valid).unwrap();
     }
 
-    pub fn set_best_chain(&self, hash: HeaderHash) {
-        self.store.set_best_chain_hash(&hash).unwrap();
-    }
-
     pub fn roll_forward_chain(&self, point: Point) {
         self.store.roll_forward_chain(&point).unwrap();
     }
@@ -272,6 +261,7 @@ pub fn register_guards() -> DeserializerGuards {
         pure_stage::register_data_deserializer::<ValidateBlockMsg>().boxed(),
         pure_stage::register_data_deserializer::<SelectChainMsg>().boxed(),
         pure_stage::register_data_deserializer::<AdoptChainMsg>().boxed(),
+        pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
         pure_stage::register_data_deserializer::<Tip>().boxed(),
         pure_stage::register_data_deserializer::<amaru_kernel::cardano::network_block::NetworkBlock>().boxed(),
         pure_stage::register_data_deserializer::<Option<(BlockHeader, Option<bool>)>>().boxed(),
@@ -292,15 +282,14 @@ pub fn register_guards() -> DeserializerGuards {
 pub fn test_prep() -> TestPrep {
     let manager = StageRef::named_for_tests("manager");
     let select_chain = StageRef::named_for_tests("select_chain");
+    let block_source = StageRef::named_for_tests("block_source");
     let block_validator = Arc::new(MockBlockValidator::new(Point::Origin));
 
-    let state = ValidateBlock::new(manager.clone(), select_chain.clone(), Point::Origin);
+    let state = ValidateBlock::new(manager.clone(), select_chain.clone(), block_source.clone(), Point::Origin);
 
     TestPrep {
         state,
         rt: Builder::new_current_thread().build().unwrap(),
-        manager,
-        select_chain,
         headers: HeaderTree::new(),
         store: Arc::new(InMemConsensusStore::new()),
         block_validator,
@@ -308,137 +297,69 @@ pub fn test_prep() -> TestPrep {
 }
 
 pub fn setup(prep: &TestPrep, msg: ValidateBlockMsg) -> (SimulationRunning, DeserializerGuards, Logs) {
-    let writer = BufferWriter::new();
-    let mut logs = writer.clone();
-
-    let sub = tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
-        .with_ansi(false)
-        .with_writer(move || writer.clone())
-        .set_default();
-    logs.set_guard(sub);
-
     let guards = register_guards();
 
-    let mut network = SimulationBuilder::default().with_trace_buffer(TraceBuffer::new_shared(100, 1000000));
-    network.resources().put::<ResourceHeaderStore>(prep.store.clone());
-    network.resources().put::<ResourceBlockValidation>(prep.block_validator.clone());
-    network.resources().put::<ResourceHasStakePools>(prep.block_validator.clone());
-
-    let vb = network.stage("vb", stage);
-    let vb = network.wire_up(vb, prep.state.clone());
-    network.preload(&vb, [msg]).unwrap();
-
-    let mut running = network.run();
-    running.run_until_blocked_incl_effects(prep.rt.handle());
-
-    (running, guards, logs.logs())
-}
-
-pub fn te_validate_block(at_stage: &str, peer: &Peer, point: Point) -> TraceMatch<'static> {
-    let ctx = opentelemetry::Context::current();
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(ValidateBlockEffect::new(peer, &point, ctx)))).into()
-}
-
-pub fn te_record_metrics(at_stage: &str) -> TraceMatch<'_> {
-    TraceMatch::Property(
-        Box::new(move |e| {
-            if let TraceEntry::Suspend(Effect::External { at_stage: at, effect }) = e {
-                at.as_str() == at_stage && effect.is::<RecordMetricsEffect>()
-            } else {
-                false
-            }
-        }),
-        format!("record metrics effect at stage {at_stage}"),
+    run_simulation(
+        prep.rt.handle(),
+        guards,
+        |network| {
+            let vb = network.stage("vb", stage);
+            let vb = network.wire_up(vb, prep.state.clone());
+            network.preload(&vb, [msg]).unwrap();
+        },
+        |resources| {
+            resources.put::<ResourceHeaderStore>(prep.store.clone());
+            resources.put::<ResourceBlockValidation>(prep.block_validator.clone());
+            resources.put::<ResourceHasStakePools>(prep.block_validator.clone());
+        },
+        |_running| {
+            // No special external effect overrides needed for most validate_block tests.
+            // Virtual child stages are enabled by default.
+        },
     )
 }
 
-pub fn te_ledger_contains(at_stage: &str, point: &Point) -> TraceMatch<'static> {
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(ContainsPointEffect::new(point)))).into()
+pub fn te_validate_block(at_stage: &str, peer: &Peer, point: Point) -> TraceEntry {
+    let ctx = opentelemetry::Context::current();
+    TraceEntry::suspend(Effect::external(at_stage, Box::new(ValidateBlockEffect::new(peer, &point, ctx))))
 }
 
-pub fn te_ledger_tip(at_stage: &str) -> TraceMatch<'static> {
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(TipEffect))).into()
+pub fn te_ledger_contains(at_stage: &str, point: &Point) -> TraceEntry {
+    TraceEntry::suspend(Effect::external(at_stage, Box::new(ContainsPointEffect::new(point))))
 }
 
-pub fn te_get_anchor_hash(at_stage: &str) -> TraceMatch<'static> {
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(GetAnchorHashEffect::new()))).into()
-}
-
-pub fn te_load_header_with_validity(at_stage: &str, hash: HeaderHash) -> TraceMatch<'static> {
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(LoadHeaderWithValidityEffect::new(hash)))).into()
-}
-
-pub fn te_load_from_best_chain(at_stage: &str, point: Point) -> TraceMatch<'static> {
-    TraceEntry::suspend(Effect::external(at_stage, Box::new(LoadFromBestChainEffect::new(point)))).into()
-}
-
-pub fn te_rollback_ledger(at_stage: &str, point: &Point) -> TraceMatch<'static> {
+pub fn te_rollback_ledger(at_stage: &str, point: &Point) -> TraceEntry {
     TraceEntry::suspend(Effect::external(
         at_stage,
         Box::new(RollbackBlockEffect::new(&Peer::new("unknown"), point, opentelemetry::Context::current())),
     ))
-    .into()
 }
 
-pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl pure_stage::SendData) -> TraceMatch<'static> {
-    TraceEntry::suspend(pure_stage::Effect::send(from, to, Box::new(msg))).into()
+pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl pure_stage::SendData) -> TraceEntry {
+    TraceEntry::suspend(pure_stage::Effect::send(from, to, Box::new(msg)))
 }
 
-pub fn te_terminate(at_stage: impl AsRef<str>) -> TraceMatch<'static> {
-    TraceEntry::suspend(Effect::Terminate { at_stage: Name::from(at_stage.as_ref()) }).into()
+pub fn te_terminate(at_stage: impl AsRef<str>) -> TraceEntry {
+    TraceEntry::suspend(Effect::Terminate { at_stage: Name::from(at_stage.as_ref()) })
 }
 
-pub fn te_terminated(at_stage: impl AsRef<str>, reason: TerminationReason) -> TraceMatch<'static> {
-    TraceEntry::Terminated { stage: Name::from(at_stage.as_ref()), reason }.into()
+pub fn te_terminated(at_stage: impl AsRef<str>, reason: TerminationReason) -> TraceEntry {
+    TraceEntry::Terminated { stage: Name::from(at_stage.as_ref()), reason }
 }
 
-pub enum TraceMatch<'a> {
-    Literal(TraceEntry),
-    Property(Box<dyn Fn(&TraceEntry) -> bool + 'a>, String),
-}
-impl From<TraceEntry> for TraceMatch<'static> {
-    fn from(entry: TraceEntry) -> Self {
-        TraceMatch::Literal(entry)
-    }
-}
-impl<'a> PartialEq<TraceEntry> for TraceMatch<'a> {
-    fn eq(&self, other: &TraceEntry) -> bool {
-        match self {
-            TraceMatch::Literal(literal) => literal == other,
-            TraceMatch::Property(predicate, _) => predicate(other),
-        }
-    }
-}
-impl<'a> PartialEq<TraceMatch<'a>> for TraceEntry {
-    fn eq(&self, other: &TraceMatch<'a>) -> bool {
-        match other {
-            TraceMatch::Literal(literal) => self == literal,
-            TraceMatch::Property(predicate, _) => predicate(self),
-        }
-    }
-}
-impl<'a> fmt::Debug for TraceMatch<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TraceMatch::Literal(literal) => fmt::Debug::fmt(literal, f),
-            TraceMatch::Property(_predicate, description) => f.write_str(description),
-        }
-    }
-}
-
-#[track_caller]
-pub fn assert_trace<'a>(running: &SimulationRunning, expected: &[TraceMatch<'a>]) {
-    let mut tb = running.trace_buffer().lock();
-    for e in tb.iter_entries() {
-        if let TraceEntry::InvalidBytes(bytes, value) = e.1 {
-            panic!("invalid bytes: {bytes:?}\n\nvalue: {value:?}");
-        }
-    }
-    let trace = tb
-        .iter_entries()
-        .filter_map(|(_, e)| (!matches!(e, TraceEntry::Resume { .. })).then_some(e))
-        .collect::<Vec<_>>();
-    tb.clear();
-    pretty_assertions::assert_eq!(trace, expected);
+/// Returns a TraceMatch that matches any RecordMetricsEffect for the given stage.
+/// Use this (instead of a te_record_metrics literal) in assert_trace_contains / assert_trace_match
+/// lists because the exact LedgerMetrics payload can vary.
+pub fn tm_record_metrics(at_stage: &str) -> TraceMatch<'static> {
+    let stage_name = Name::from(at_stage);
+    TraceMatch::Property(
+        Box::new(move |entry: &TraceEntry| {
+            if let TraceEntry::Suspend(Effect::External { at_stage, effect }) = entry {
+                if at_stage == &stage_name { effect.cast_ref::<RecordMetricsEffect>().is_some() } else { false }
+            } else {
+                false
+            }
+        }),
+        format!("RecordMetricsEffect(at_stage: {at_stage})"),
+    )
 }

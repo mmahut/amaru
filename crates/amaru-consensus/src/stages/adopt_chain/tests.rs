@@ -137,6 +137,7 @@ fn test_extension_adopts_and_sends() {
             te_clock("ac-1"),
             te_send("ac-1", "mempool", MempoolMsg::NewTip(tip)),
             te_send("ac-1", "downstream", ManagerMessage::NewTip(tip)),
+            te_send("ac-1", "block_source", BlockSourceMsg::AdoptedTip(tip)),
             te_state("ac-1", &expected),
         ],
     );
@@ -187,6 +188,7 @@ fn test_fork_switch_adopts_and_sends() {
             te_clock("ac-1"),
             te_send("ac-1", "mempool", MempoolMsg::NewTip(tip)),
             te_send("ac-1", "downstream", ManagerMessage::NewTip(tip)),
+            te_send("ac-1", "block_source", BlockSourceMsg::AdoptedTip(tip)),
             te_state("ac-1", &expected),
         ],
     );
@@ -230,6 +232,7 @@ fn test_fork_switch_opcert_hacked() {
             te_clock("ac-1"),
             te_send("ac-1", "mempool", MempoolMsg::NewTip(tip)),
             te_send("ac-1", "downstream", ManagerMessage::NewTip(tip)),
+            te_send("ac-1", "block_source", BlockSourceMsg::AdoptedTip(tip)),
             te_state("ac-1", &expected),
         ],
     );

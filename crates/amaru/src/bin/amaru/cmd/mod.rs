@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
+use std::{fmt, ops::Deref, str::FromStr};
 
-use amaru_kernel::NetworkName;
+use amaru_kernel::{HeaderHash, NetworkName, Point};
 use pallas_network::facades::PeerClient;
 
 pub(crate) mod bootstrap;
@@ -26,6 +26,7 @@ pub(crate) mod import_headers;
 pub(crate) mod import_ledger_state;
 pub(crate) mod import_nonces;
 pub(crate) mod migrate_chain_db;
+pub(crate) mod remove_chain;
 pub(crate) mod remove_validation_status;
 pub(crate) mod reset_to_epoch;
 pub(crate) mod run;
@@ -60,3 +61,20 @@ impl fmt::Display for WorkerError {
 }
 
 impl std::error::Error for WorkerError {}
+
+#[derive(Debug, Clone)]
+struct PointOrHash(HeaderHash);
+impl FromStr for PointOrHash {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<Point>().map(|p| p.hash()).or_else(|_| s.parse::<HeaderHash>().map_err(|e| e.to_string())).map(Self)
+    }
+}
+impl Deref for PointOrHash {
+    type Target = HeaderHash;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}

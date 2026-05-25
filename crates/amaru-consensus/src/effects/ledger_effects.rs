@@ -24,8 +24,6 @@ use amaru_protocols::store_effects::ResourceHeaderStore;
 use opentelemetry::trace::FutureExt;
 use pure_stage::{BoxFuture, Effects, ExternalEffect, ExternalEffectAPI, Resources, SendData, Void};
 
-use crate::errors::{ConsensusError, ValidationFailed};
-
 /// Ledger operations available to a stage.
 /// This trait can have mock implementations for unit testing a stage.
 pub trait LedgerOps: Send + Sync {
@@ -49,13 +47,13 @@ pub trait LedgerOps: Send + Sync {
         peer: &Peer,
         point: &Point,
         ctx: opentelemetry::Context,
-    ) -> BoxFuture<'static, anyhow::Result<(), ValidationFailed>>;
+    ) -> BoxFuture<'static, anyhow::Result<(), BlockValidationError>>;
 
-    fn contains_point(&self, point: &Point) -> BoxFuture<'static, bool>;
+    fn contains_volatile_point(&self, point: &Point) -> BoxFuture<'static, bool>;
 
-    fn tip(&self) -> BoxFuture<'static, Tip>;
+    fn immutable_tip(&self) -> BoxFuture<'static, Tip>;
 
-    fn volatile_tip(&self) -> BoxFuture<'static, Option<Tip>>;
+    fn volatile_tip(&self) -> BoxFuture<'static, Tip>;
 
     /// Get the registered relay socket addresses from the stable store.
     ///
@@ -104,19 +102,19 @@ impl LedgerOps for Ledger {
         peer: &Peer,
         point: &Point,
         ctx: opentelemetry::Context,
-    ) -> BoxFuture<'static, anyhow::Result<(), ValidationFailed>> {
+    ) -> BoxFuture<'static, anyhow::Result<(), BlockValidationError>> {
         self.effects.external(RollbackBlockEffect::new(peer, point, ctx))
     }
 
-    fn contains_point(&self, point: &Point) -> BoxFuture<'static, bool> {
+    fn contains_volatile_point(&self, point: &Point) -> BoxFuture<'static, bool> {
         self.effects.external(ContainsPointEffect::new(point))
     }
 
-    fn tip(&self) -> BoxFuture<'static, Tip> {
+    fn immutable_tip(&self) -> BoxFuture<'static, Tip> {
         self.effects.external(TipEffect)
     }
 
-    fn volatile_tip(&self) -> BoxFuture<'static, Option<Tip>> {
+    fn volatile_tip(&self) -> BoxFuture<'static, Tip> {
         self.effects.external(VolatileTipEffect)
     }
 
@@ -267,15 +265,13 @@ impl ExternalEffect for RollbackBlockEffect {
                 .get::<ResourceBlockValidation>()
                 .expect("RollbackBlockEffect requires a ResourceBlockValidation resource")
                 .clone();
-            validator
-                .rollback_block(&self.point)
-                .map_err(|e| ValidationFailed::new(&self.peer, ConsensusError::RollbackBlockFailed(self.point, e)))
+            validator.rollback_block(&self.point)
         })
     }
 }
 
 impl ExternalEffectAPI for RollbackBlockEffect {
-    type Response = anyhow::Result<(), ValidationFailed>;
+    type Response = anyhow::Result<(), BlockValidationError>;
 }
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -322,9 +318,10 @@ impl ExternalEffect for TipEffect {
                 .expect("TipEffect requires a ResourceHeaderStore resource")
                 .clone();
             let point = ledger.tip();
+            #[expect(clippy::panic)]
             store.load_tip(&point.hash()).unwrap_or_else(|| {
                 tracing::error!(?point, "ledger tip header not found in chain store, falling back to origin");
-                Tip::origin()
+                panic!("internal storage corruption, mismatch between ledger and chain store");
             })
         })
     }
@@ -345,13 +342,24 @@ impl ExternalEffect for VolatileTipEffect {
                 .get::<ResourceBlockValidation>()
                 .expect("VolatileTipPointEffect requires a ResourceBlockValidation resource")
                 .clone();
-            ledger.volatile_tip()
+            let store = resources
+                .get::<ResourceHeaderStore>()
+                .expect("TipEffect requires a ResourceHeaderStore resource")
+                .clone();
+            ledger.volatile_tip().unwrap_or_else(|| {
+                let point = ledger.tip();
+                #[expect(clippy::panic)]
+                store.load_tip(&point.hash()).unwrap_or_else(|| {
+                    tracing::error!(%point, "ledger tip header not found in chain store, falling back to origin");
+                    panic!("internal storage corruption, mismatch between ledger and chain store");
+                })
+            })
         })
     }
 }
 
 impl ExternalEffectAPI for VolatileTipEffect {
-    type Response = Option<Tip>;
+    type Response = Tip;
 }
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]

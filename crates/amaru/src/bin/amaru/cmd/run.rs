@@ -19,7 +19,8 @@ use std::{
 };
 
 use amaru::{
-    DEFAULT_LISTEN_ADDRESS, DEFAULT_NETWORK, DEFAULT_PEER_ADDRESS, default_chain_dir, default_ledger_dir,
+    DEFAULT_DOWNSTREAM_PEERS, DEFAULT_LISTEN_ADDRESS, DEFAULT_NETWORK, DEFAULT_PEER_ADDRESS, DEFAULT_UPSTREAM_PEERS,
+    default_chain_dir, default_ledger_dir,
     metrics::track_system_metrics,
     stages::{
         build_node::build_and_run_node,
@@ -71,14 +72,23 @@ pub struct Args {
     )]
     listen_address: String,
 
-    /// The maximum number of downstream peers to connect to.
+    /// The number of upstream peers to connect to.
     #[arg(
         long,
         value_name = amaru::value_names::UINT,
-        env = amaru::env_vars::MAX_DOWNSTREAM_PEERS,
-        default_value_t = 10
+        env = amaru::env_vars::UPSTREAM_PEERS,
+        default_value_t = DEFAULT_UPSTREAM_PEERS,
     )]
-    max_downstream_peers: usize,
+    upstream_peers: usize,
+
+    /// The maximum number of downstream peers allowed to connect.
+    #[arg(
+        long,
+        value_name = amaru::value_names::UINT,
+        env = amaru::env_vars::DOWNSTREAM_PEERS,
+        default_value_t = DEFAULT_DOWNSTREAM_PEERS,
+    )]
+    downstream_peers: usize,
 
     /// The maximum number of additional ledger snapshots to keep around.
     ///
@@ -139,6 +149,15 @@ pub struct Args {
         num_args(0..),
     )]
     peer_address: Vec<String>,
+
+    /// After removing a misbehaving upstream peer, wait this many seconds before allowing it to be re-added.
+    #[arg(
+        long,
+        value_name = amaru::value_names::UINT,
+        env = amaru::env_vars::PEER_REMOVAL_COOLDOWN_SECS,
+        default_value_t = amaru::DEFAULT_PEER_REMOVAL_COOLDOWN_SECS,
+    )]
+    peer_removal_cooldown_secs: u64,
 
     /// Path to the PID file managed by Amaru.
     #[arg(
@@ -295,7 +314,6 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         chain_dir = %chain_dir.to_string_lossy(),
         ledger_dir = %ledger_dir.to_string_lossy(),
         listen_address = args.listen_address,
-        max_downstream_peers = args.max_downstream_peers,
         max_extra_ledger_snapshots = %args.max_extra_ledger_snapshots,
         migrate_chain_db = args.migrate_chain_db,
         network = %args.network,
@@ -305,6 +323,7 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         trace_buffer_min_entries,
         trace_buffer_max_size,
         trace_dump_path = %trace_dump_path.as_deref().map(|p| p.display().to_string()).unwrap_or_else(|| "disabled".to_string()),
+        peer_removal_cooldown_secs = args.peer_removal_cooldown_secs,
         mempool_max_bytes = ?mempool.max_bytes,
         tx_submission_max_window = tx_submission_params.max_window.get(),
         tx_submission_fetch_batch_bytes = tx_submission_params.fetch_batch_bytes.get(),
@@ -317,16 +336,18 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         ledger_store: RocksDbConfig::new(ledger_dir).with_shared_env(),
         chain_store: StoreType::RocksDb(RocksDbConfig::new(chain_dir).with_shared_env()),
         upstream_peers: args.peer_address,
+        target_upstream_peers: args.upstream_peers,
+        target_downstream_peers: args.downstream_peers,
         network: args.network,
         network_magic: args.network.to_network_magic(),
         listen_address: args.listen_address,
-        max_downstream_peers: args.max_downstream_peers,
         max_extra_ledger_snapshots: args.max_extra_ledger_snapshots,
         migrate_chain_db: args.migrate_chain_db,
         submit_api_address: args.submit_api_address,
         trace_buffer_min_entries,
         trace_buffer_max_size,
         trace_dump_path,
+        peer_removal_cooldown_secs: args.peer_removal_cooldown_secs,
         mempool,
         tx_submission_responder_params: tx_submission_params,
         ..Config::default()

@@ -24,7 +24,6 @@ use std::{
 use either::Either::{Left, Right};
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use override_external_effect::OverrideExternalEffect;
-pub use override_external_effect::OverrideResult;
 use parking_lot::Mutex;
 use tokio::{runtime::Handle, select, sync::watch};
 
@@ -88,6 +87,12 @@ pub struct SimulationRunning {
     terminate: watch::Sender<bool>,
     termination: watch::Receiver<bool>,
     external_effects: FuturesUnordered<BoxFuture<'static, (Name, Box<dyn SendData>)>>,
+    /// When true, AddStage/WireStage effects (dynamic child stage creation via `eff.stage` + `eff.wire_up`)
+    /// succeed for the parent (responses are delivered, effects traced) but no real child stage is
+    /// materialized in the simulation. Subsequent sends to the child's StageRef are dropped (NotFound).
+    /// This is intended for testing parent stage orchestration logic without having to implement
+    /// or override effects for the child stages.
+    virtual_child_stages: bool,
 }
 
 impl SimulationRunning {
@@ -122,6 +127,7 @@ impl SimulationRunning {
             terminate,
             termination,
             external_effects: FuturesUnordered::new(),
+            virtual_child_stages: false,
         }
     }
 
@@ -168,30 +174,60 @@ impl SimulationRunning {
     /// When the override is applied, the `transform` function is called with the effect
     /// and the result is used to possibly replace the effect.
     ///
-    /// If the override result is [`OverrideResult::NoMatch`], the effect is passed to overrides
+    /// If the override result is [`OverrideResult::no_match`], the effect is passed to overrides
     /// installed later than this one.
-    pub fn override_external_effect<T: ExternalEffect>(
+    pub fn override_external_effect<T: ExternalEffectAPI>(
         &mut self,
         remaining: usize,
-        mut transform: impl FnMut(Box<T>) -> OverrideResult<Box<T>, Box<dyn ExternalEffect>> + Send + 'static,
+        mut transform: impl FnMut(Box<T>) -> OverrideResult<T> + Send + 'static,
     ) {
         self.overrides.push(OverrideExternalEffect::new(
             remaining,
             Box::new(move |effect| {
+                use override_external_effect::OverrideResult::*;
                 if effect.is::<T>() {
                     // if this casting turns out to be a significant cost, we can split the
                     // overrides by TypeId and run each in an appropriately typed closure
                     #[expect(clippy::expect_used)]
-                    match transform(effect.cast::<T>().expect("checked above")) {
-                        OverrideResult::NoMatch(effect) => OverrideResult::NoMatch(effect as Box<dyn ExternalEffect>),
-                        OverrideResult::Handled(msg) => OverrideResult::Handled(msg),
-                        OverrideResult::Replaced(effect) => OverrideResult::Replaced(effect),
+                    match transform(effect.cast::<T>().expect("checked above")).0 {
+                        NoMatch(effect) => NoMatch(effect as Box<dyn ExternalEffect>),
+                        Handled(msg) => Handled(msg),
+                        Replaced(effect) => Replaced(effect),
                     }
                 } else {
-                    OverrideResult::NoMatch(effect)
+                    NoMatch(effect)
                 }
             }),
         ));
+    }
+
+    /// Enables or disables "virtual child stages" mode for dynamic stage creation.
+    ///
+    /// When enabled, any `AddStage` / `WireStage` effects (originating from a parent stage
+    /// calling the `Effects::stage(...)` and `Effects::wire_up(...)` APIs) will be handled such that:
+    ///
+    /// - The parent stage receives the successful responses (`AddStageResponse(name)` then `Unit`).
+    /// - The corresponding `Effect::AddStage` / `Effect::WireStage` entries (and their matching
+    ///   `StageResponse` resumes) are recorded in the trace buffer.
+    /// - The would-be child's initial state is still pushed to the trace (`push_state`).
+    /// - **No actual child `StageData` is inserted** into the running simulation.
+    ///
+    /// Any later `Send` or `Call` from the parent (or anyone) targeting the `StageRef` returned
+    /// by the virtual `wire_up` will be treated as delivery to a non-existent stage: the message
+    /// is dropped and the sender is resumed as if the send had been accepted
+    /// (see `DeliverMessageResult::NotFound` handling).
+    ///
+    /// This mode is intended to allow testing of a parent stage's logic that involves spawning
+    /// child stages (e.g. supervision, initialization hand-off, regulating peers via a helper
+    /// stage) without requiring the child stage's full implementation or external-effect
+    /// overrides. The parent's orchestration, the names it chooses, the messages it sends to
+    /// the (virtual) child, and any subsequent behavior of the parent can still be asserted
+    /// via the trace and log capture.
+    ///
+    /// The mode can be toggled at any time; it primarily affects processing inside
+    /// [`Self::handle_effect`] (and therefore the `run_until_blocked*` family).
+    pub fn use_virtual_child_stages(&mut self, enabled: bool) {
+        self.virtual_child_stages = enabled;
     }
 
     /// Get the current simulation time.
@@ -430,6 +466,22 @@ impl SimulationRunning {
     pub fn run_until_blocked_or_time(&mut self, time: Instant) -> Blocked {
         loop {
             match self.run_until_sleeping_or_blocked() {
+                Blocked::Sleeping { next_wakeup } => {
+                    if !self.skip_to_next_wakeup(Some(time)) {
+                        return Blocked::Sleeping { next_wakeup };
+                    }
+                }
+                blocked => return blocked,
+            }
+        }
+    }
+
+    pub fn run_until_blocked_or_time_incl_effects(&mut self, time: Instant, rt: &Handle) -> Blocked {
+        loop {
+            match self.run_until_sleeping_or_blocked() {
+                Blocked::Busy { external_effects, .. } if external_effects > 0 => {
+                    rt.block_on(self.await_external_effect());
+                }
                 Blocked::Sleeping { next_wakeup } => {
                     if !self.skip_to_next_wakeup(Some(time)) {
                         return Blocked::Sleeping { next_wakeup };
@@ -697,13 +749,16 @@ impl SimulationRunning {
             }
             Effect::External { at_stage, mut effect } => {
                 let mut result = None;
-                for idx in 0..self.overrides.len() {
+                let mut idx = 0;
+                while idx < self.overrides.len() {
+                    use override_external_effect::OverrideResult::*;
                     let over = &mut self.overrides[idx];
                     match over.transform(effect) {
-                        OverrideResult::NoMatch(effect2) => {
+                        NoMatch(effect2) => {
                             effect = effect2;
+                            idx += 1;
                         }
-                        OverrideResult::Handled(msg) => {
+                        Handled(msg) => {
                             result = Some(msg);
                             // dummy effect value since we moved out of `effect` and need it later in the other case
                             effect = Box::new(());
@@ -712,12 +767,13 @@ impl SimulationRunning {
                             }
                             break;
                         }
-                        OverrideResult::Replaced(effect2) => {
+                        Replaced(effect2) => {
                             effect = effect2;
                             if over.register_use_and_get_removal() {
                                 self.overrides.remove(idx);
+                            } else {
+                                idx += 1;
                             }
-                            break;
                         }
                     }
                 }
@@ -765,20 +821,29 @@ impl SimulationRunning {
                     .assert_stage("which cannot wire a stage");
                 let transition = resume_wire_stage_internal(data, run).expect("wire stage effect is always runnable");
                 let tombstone = tombstone.try_cast::<CanSupervise>().err();
-                self.stages.insert(
-                    name.clone(),
-                    StageOrAdapter::Stage(StageData {
-                        name,
-                        mailbox: VecDeque::new(),
-                        tombstones: VecDeque::new(),
-                        state: StageState::Idle(initial_state),
-                        transition: (transition)(self.effect.clone()),
-                        waiting: Some(StageEffect::Receive),
-                        senders: VecDeque::new(),
-                        supervised_by: at_stage,
-                        tombstone,
-                    }),
-                );
+
+                if self.virtual_child_stages {
+                    // Virtual mode: parent has been successfully resumed (via resume_wire_stage_internal),
+                    // the effect and the child's intended initial state are recorded in the trace,
+                    // but we deliberately do not materialize a runnable child stage.
+                    // Sends to the returned StageRef will later be NotFound (dropped).
+                    tracing::debug!(parent = %at_stage, child = %name, "wire_up completed in virtual-child mode (no stage inserted)");
+                } else {
+                    self.stages.insert(
+                        name.clone(),
+                        StageOrAdapter::Stage(StageData {
+                            name,
+                            mailbox: VecDeque::new(),
+                            tombstones: VecDeque::new(),
+                            state: StageState::Idle(initial_state),
+                            transition: (transition)(self.effect.clone()),
+                            waiting: Some(StageEffect::Receive),
+                            senders: VecDeque::new(),
+                            supervised_by: at_stage,
+                            tombstone,
+                        }),
+                    );
+                }
             }
             Effect::Contramap { at_stage, original, new_name } => {
                 let name = stage_name(&mut self.stage_count, new_name.as_str());
@@ -1096,20 +1161,24 @@ impl SimulationRunning {
             self.runnable.push_back((name, response));
         })?;
 
-        self.stages.insert(
-            name.clone(),
-            StageOrAdapter::Stage(StageData {
-                name,
-                mailbox: VecDeque::new(),
-                tombstones: VecDeque::new(),
-                state: StageState::Idle(initial_state),
-                transition: (transition)(self.effect.clone()),
-                waiting: Some(StageEffect::Receive),
-                senders: VecDeque::new(),
-                supervised_by: at_stage.name().clone(),
-                tombstone,
-            }),
-        );
+        if self.virtual_child_stages {
+            tracing::debug!(parent = %at_stage.name(), child = %name, "resume_wire_stage in virtual-child mode (no stage inserted)");
+        } else {
+            self.stages.insert(
+                name.clone(),
+                StageOrAdapter::Stage(StageData {
+                    name,
+                    mailbox: VecDeque::new(),
+                    tombstones: VecDeque::new(),
+                    state: StageState::Idle(initial_state),
+                    transition: (transition)(self.effect.clone()),
+                    waiting: Some(StageEffect::Receive),
+                    senders: VecDeque::new(),
+                    supervised_by: at_stage.name().clone(),
+                    tombstone,
+                }),
+            );
+        }
         Ok(())
     }
 
@@ -1209,6 +1278,30 @@ impl StageGraphRunning for SimulationRunning {
         Box::pin(async move {
             rx.wait_for(|x| *x).await.ok();
         })
+    }
+}
+
+pub struct OverrideResult<Eff: ExternalEffectAPI>(
+    override_external_effect::OverrideResult<Box<Eff>, Box<dyn ExternalEffect>>,
+);
+
+impl<Eff: ExternalEffectAPI> OverrideResult<Eff> {
+    /// Don't modify the given effect, it will be passed to later overrides unchanged.
+    pub fn no_match(eff: Box<Eff>) -> Self {
+        Self(override_external_effect::OverrideResult::NoMatch(eff))
+    }
+    /// Replace running the effect with the given response value.
+    pub fn handled(response: <Eff as ExternalEffectAPI>::Response) -> Self {
+        Self(override_external_effect::OverrideResult::Handled(Box::new(response)))
+    }
+    /// Run the given effect instead (which must return the same response type).
+    ///
+    /// The replacement is subject to further overrides (i.e. those registered later).
+    pub fn replaced<E>(eff: E) -> Self
+    where
+        E: ExternalEffectAPI<Response = Eff::Response>,
+    {
+        Self(override_external_effect::OverrideResult::Replaced(Box::new(eff)))
     }
 }
 

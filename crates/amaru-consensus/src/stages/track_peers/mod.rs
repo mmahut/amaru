@@ -22,7 +22,6 @@ use amaru_kernel::{
 use amaru_observability::trace_span;
 use amaru_protocols::{
     chainsync::{self, ChainSyncInitiatorMsg, HeaderContent},
-    manager::ManagerMessage,
     store_effects::Store,
 };
 pub use defer_req_next::DeferReqNextMsg;
@@ -30,6 +29,7 @@ use pure_stage::{Effects, Instant, StageRef};
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+use super::peer_selection::PeerSelectionMsg;
 use crate::{
     effects::{Ledger, LedgerOps},
     errors::{ConsensusError, InvalidHeaderParentData, InvalidHeaderPoint},
@@ -38,11 +38,7 @@ use crate::{
 /// Block height of the furthest ledger-applied state: volatile tip if present, otherwise stable tip.
 pub(super) async fn ledger_applied_block_height<T: pure_stage::SendData + Sync>(eff: &Effects<T>) -> BlockHeight {
     let ledger = Ledger::new(eff.clone());
-    let tip = match ledger.volatile_tip().await {
-        Some(tip) => tip,
-        None => ledger.tip().await,
-    };
-    tip.block_height()
+    ledger.volatile_tip().await.block_height()
 }
 
 /// This is the state of the [`stage`] that tracks peers from whom we are receiving headers.
@@ -50,12 +46,114 @@ pub(super) async fn ledger_applied_block_height<T: pure_stage::SendData + Sync>(
 /// It maintains the currently communicated tip as well as the highest advertised tip for each peer.
 /// With this information, it validates incoming headers for protocol conformance and ensures that
 /// they are stored in the chain store. When a new header is stored, its [`Tip`] is sent to the
-/// `downstream` stage. The `manager` stage is used to remove peers that have violated the protocol.
+/// `downstream` stage. The `peer_selection` stage removes misbehaving peers and applies cooldown policy.
+///
+/// The stage is driven exclusively by `TrackPeersMsg::FromUpstream` (the only variant). All
+/// external interaction occurs via `pure_stage::Effects` (sends, dynamic child `stage`/`wire_up`,
+/// `clock`, and `schedule_after`) plus the `Ledger` and `Store` effect abstractions (for
+/// `volatile_tip`/`validate_header` and `load_tip`/`has_header`/`store_header`).
+///
+/// # Construction
+/// - Created via [`TrackPeers::new`] with an `EraHistory`, `StageRef`s for peer_selection and
+///   downstream, the `consensus_security_parameter` (k-like value), and `defer_req_next_poll_ms`.
+/// - The `defer_req_next` child ref starts as `StageRef::blackhole()` and is materialized lazily
+///   (see below).
+///
+/// # Message Handling (TrackPeersMsg)
+///
+/// Only one top-level variant exists:
+///
+/// - `TrackPeersMsg::FromUpstream(ChainSyncInitiatorMsg { peer, conn_id: _, handler, msg })`:
+///   delegates to `handle_from_upstream`. `conn_id` is ignored in
+///   all paths. The inner `InitiatorResult` cases are:
+///
+///   - `Initialize`: logs at INFO "initializing chainsync" (mod.rs:282-283). No state change.
+///     (Tests: `test_new_peer`, `test_initialize_existing_peer`.)
+///
+///   - `IntersectFound(current, tip)`: performs `Store::load_tip(current.hash())` (external effect).
+///     If missing → WARN + `handler` ← `Done` + early return (no insert).
+///     If present → INFO "intersect found" + insert `PerPeer { current: loaded_tip, highest: tip }`.
+///     (Tests: `test_intersect_found_*`.)
+///
+///   - `IntersectNotFound(tip)`: INFO "intersect not found" + `handler` ← `Done` + `upstream.remove(&peer)`.
+///     (Tests: `test_intersect_not_found_*`.)
+///
+///   - `RollForward(header_content, tip)`: TRACE log. Decodes via `decode_header` (only Conway
+///     supported; errors → ERROR + remove + `peer_selection` ← `Adversarial` + return).
+///     Computes `min_ledger_height = header.block_height() - consensus_security_parameter`.
+///     Conditionally refreshes cached `ledger_applied_block_height` (via helper +
+///     `eff.clock()`, rate-limited to 5s or initial, mod.rs:316-322; uses `VolatileTipEffect`).
+///     Chooses `RollForwardMode`:
+///     - If ledger height < min → DEBUG "track_peers.defer_request_next" + `DeferTrailingRequestNext`.
+///     - Else → `PipelineRequestNext`.
+///       Then calls `execute_roll_forward`.
+///
+///   - `RollBackward(current, tip)`: INFO "roll backward" + *always* `handler` ← `RequestNext`.
+///     Then `Store::load_tip` + `roll_backward` update (or on error: ERROR +
+///     remove + `Adversarial`). (Tests: `test_roll_backward_*`.)
+///
+/// # Roll-Forward Execution & Modes
+///
+/// `execute_roll_forward` (called for both modes):
+/// - `PipelineRequestNext`: sends `RequestNext` to handler *before* validation (pipelining).
+/// - `DeferTrailingRequestNext`: *skips* the early send.
+/// - Always: creates `Ledger`/`Store`, calls `validate_header` (era check via `era_history.slot_to_era_tag`,
+///   parent/height/slot monotonicity vs. `per_peer.current`, plus `ledger.validate_header`; on any
+///   error → ERROR + remove + `Adversarial` + return, mod.rs:133-182).
+/// - On success: `roll_forward` (updates `current`/`highest`; `has_header`? no-op : `store_header`;
+///   returns `Some(new_tip)` only on actual store) (mod.rs:184-202). On store success → send
+///   `(tip, parent_point)` to `downstream`. On store error → remove + `Adversarial`.
+/// - *Only* for `DeferTrailingRequestNext` (and only after success): `ensure_defer_req_next_stage` +
+///   `Register { handler, min_ledger_height }` to the child (mod.rs:267-270).
+///
+/// # The Defer Child Stage ("defer_req_next")
+///
+/// Lazily created exactly once (`ensure_defer_req_next_stage`):
+/// - `eff.stage("track_peers/defer_req_next", defer_req_next::stage)` + `wire_up` + store the ref +
+///   initial `Poll`.
+/// - Protocol (`DeferReqNextMsg`):
+///   - `Register { handler, min_ledger_height }`: appends to `pending` vec (no immediate dispatch).
+///   - `Poll`: `dispatch_ready` (queries `ledger_applied_block_height` via shared helper, sends
+///     `InitiatorMessage::RequestNext` to every handler where current ledger >= min_h, retains
+///     others) then `eff.schedule_after(Poll, Duration::from_millis(poll_interval_ms.max(1)))`.
+///     Self-perpetuating polling loop once started.
+/// - State: `DeferReqNext { poll_interval_ms, pending: Vec<(StageRef, BlockHeight)> }`.
+///   Created with the configured poll ms (default 200 in tests).
+/// - Used exclusively to throttle `RequestNext` until the ledger has applied far enough
+///   (security parameter purpose). The child is never terminated. (Tests: `test_roll_forward_defers_*`
+///   using `setup_with_ledger_tip` + security_param=0 + `tm_add_stage`/`tm_wire_stage_state`/
+///   `assert_trace_does_not_contain` for immediate `RequestNext`.)
+///
+/// # External Effects, Scheduling, and Other Behaviours
+/// - **Ledger**: `volatile_tip` (for applied height, via helper) + `validate_header` (with current span context).
+/// - **Store**: `load_tip`, `has_header`, `store_header`.
+/// - **Clock**: `eff.clock()` for 5s rate-limiting of height refreshes (mod.rs:317).
+/// - **Scheduling**: Only inside the child (`schedule_after` for recurring `Poll`).
+/// - **Sends** (via `eff.send`):
+///   - To per-peer `handler`: `RequestNext` (pipelined or deferred) or `Done` (intersect stop).
+///   - To `peer_selection`: only `Adversarial(peer)` on misbehaviour/errors.
+///   - To `downstream`: `(Tip, Point)` (new tip + parent) on actual new-header store.
+///   - To child: `Poll` (init), `Register`.
+/// - No connection tracking beyond the `upstream` map + passed `handler` refs. No explicit
+///   timeouts. No `terminate` on the stage itself.
+/// - Logging levels: INFO (init/intersect/rollback), DEBUG (new/already-stored/defer decision),
+///   TRACE (roll-forward entry), ERROR (failures), WARN (unknown intersect point).
+///
+/// # State Transitions
+/// - `upstream` inserts on successful `IntersectFound` or test helper; mutates `current`/`highest`
+///   on successful roll forward/backward; removes on any error or `IntersectNotFound`.
+/// - Cached `ledger_applied_block_height` / `ledger_last_checked_at` updated opportunistically.
+/// - `defer_req_next` transitions from blackhole → wired ref exactly once (on first defer decision).
+///
+/// The stage is exercised exclusively via simulation harness in `test_setup.rs` (resource
+/// injection for stores/validation, external effect overrides for ledger tip control,
+/// `TraceEntry`/`TraceMatch` for effects and sends, `run_simulation` + `preload` of
+/// `FromUpstream` msgs) and the tests in `tests.rs`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TrackPeers {
     era_history: EraHistory,
     upstream: BTreeMap<Peer, PerPeer>,
-    manager: StageRef<ManagerMessage>,
+    peer_selection: StageRef<PeerSelectionMsg>,
     downstream: StageRef<(Tip, Point)>,
     consensus_security_parameter: u64,
     /// Lazily populated via [`Effects::stage`](pure_stage::Effects::stage) on first deferred `RequestNext`.
@@ -96,7 +194,7 @@ pub async fn stage(mut state: TrackPeers, msg: TrackPeersMsg, eff: Effects<Track
 impl TrackPeers {
     pub fn new(
         era_history: EraHistory,
-        manager: StageRef<ManagerMessage>,
+        peer_selection: StageRef<PeerSelectionMsg>,
         downstream: StageRef<(Tip, Point)>,
         consensus_security_parameter: u64,
         defer_req_next_poll_ms: u64,
@@ -104,7 +202,7 @@ impl TrackPeers {
         Self {
             era_history,
             upstream: BTreeMap::new(),
-            manager,
+            peer_selection,
             downstream,
             consensus_security_parameter,
             defer_req_next: StageRef::blackhole(),
@@ -138,10 +236,10 @@ impl TrackPeers {
         &self,
         peer: &Peer,
         variant: EraName,
-        header: BlockHeader,
+        header: &BlockHeader,
         tip: Tip,
         ledger: &Ledger,
-    ) -> Result<(BlockHeader, Point), ConsensusError> {
+    ) -> Result<Point, ConsensusError> {
         let era_name = self.era_history.slot_to_era_tag(header.slot())?;
         if era_name != variant {
             return Err(ConsensusError::EraNameMismatch { from_raw_header: variant, from_slot: era_name });
@@ -179,10 +277,10 @@ impl TrackPeers {
         // TODO: check that slot time is within the permissible clock skew
 
         ledger
-            .validate_header(&header, Span::current().context())
+            .validate_header(header, Span::current().context())
             .await
             .map_err(|e| ConsensusError::InvalidHeader(header.point(), e))?;
-        Ok((header, per_peer.current.point()))
+        Ok(per_peer.current.point())
     }
 
     async fn roll_forward(
@@ -197,12 +295,11 @@ impl TrackPeers {
         };
         per_peer.current = header.tip();
         per_peer.highest = tip;
-        let tip = header.tip();
         if store.has_header(&header.hash()).await {
             Ok(None)
         } else {
             store.store_header(&header).await.map_err(|e| ConsensusError::StoreHeaderFailed(header.hash(), e))?;
-            Ok(Some(tip))
+            Ok(Some(per_peer.current))
         }
     }
 
@@ -241,35 +338,33 @@ impl TrackPeers {
 
         let ledger = Ledger::new(eff.clone());
         let store = Store::new(eff.clone());
-        let header = self.validate_header(&peer, variant, header, tip, &ledger).await;
-        let (header, parent) = match header {
-            Ok(header) => header,
+        let result = self.validate_header(&peer, variant, &header, tip, &ledger).await;
+        let parent = match result {
+            Ok(parent) => parent,
             Err(error) => {
                 tracing::error!(%error, %peer, "chain_sync.validate_header.failed");
                 self.upstream.remove(&peer);
-                eff.send(&self.manager, ManagerMessage::RemovePeer(peer)).await;
+                eff.send(&self.peer_selection, PeerSelectionMsg::Adversarial(peer)).await;
                 return;
             }
         };
 
-        let tip_point = header.point();
-        let tip = self.roll_forward(&peer, header, tip, &store).await;
-        let tip = match tip {
-            Ok(tip) => tip,
+        let current_point = header.point();
+        match self.roll_forward(&peer, header, tip, &store).await {
+            Ok(Some(tip)) => {
+                tracing::debug!(%peer, tip = %tip.point(), "roll forward with new header");
+                eff.send(&self.downstream, (tip, parent)).await;
+            }
+            Ok(None) => {
+                tracing::debug!(%peer, tip = %current_point, "roll forward, header already stored");
+            }
             Err(error) => {
                 tracing::error!(%error, %peer, "chain_sync.store_header.failed");
                 self.upstream.remove(&peer);
-                eff.send(&self.manager, ManagerMessage::RemovePeer(peer)).await;
+                eff.send(&self.peer_selection, PeerSelectionMsg::Adversarial(peer)).await;
                 return;
             }
         };
-
-        if let Some(tip) = tip {
-            tracing::debug!(%peer, tip = %tip.point(), "roll forward with new header");
-            eff.send(&self.downstream, (tip, parent)).await;
-        } else {
-            tracing::debug!(%peer, tip = %tip_point, "roll forward, header already stored");
-        }
 
         if let RollForwardMode::DeferTrailingRequestNext { min_ledger_height } = mode {
             self.ensure_defer_req_next_stage(&eff).await;
@@ -287,6 +382,7 @@ impl TrackPeers {
         use amaru_protocols::chainsync::InitiatorResult::*;
         match msg {
             Initialize => {
+                // FIXME record this connection and create a mechanism for removing upon disconnect
                 tracing::info!(%peer,"initializing chainsync");
             }
             IntersectFound(current, tip) => {
@@ -314,7 +410,7 @@ impl TrackPeers {
                     Err(error) => {
                         tracing::error!(%error, %peer, "chain_sync.decode_header.failed");
                         self.upstream.remove(&peer);
-                        eff.send(&self.manager, ManagerMessage::RemovePeer(peer)).await;
+                        eff.send(&self.peer_selection, PeerSelectionMsg::Adversarial(peer)).await;
                         return;
                     }
                 };
@@ -351,7 +447,7 @@ impl TrackPeers {
                 if let Err(error) = self.roll_backward(&peer, current, tip, &store).await {
                     tracing::error!(%error, %peer, "chain_sync.roll_backward.failed");
                     self.upstream.remove(&peer);
-                    eff.send(&self.manager, ManagerMessage::RemovePeer(peer)).await;
+                    eff.send(&self.peer_selection, PeerSelectionMsg::Adversarial(peer)).await;
                 }
             }
         }

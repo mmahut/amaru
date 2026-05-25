@@ -27,17 +27,19 @@ pub async fn slow_manager_stage(manager: Manager, msg: ManagerMessage, eff: Effe
     match msg {
         ManagerMessage::AddPeer(_) => {}
         ManagerMessage::ConnectionDied(_, _, _) => {}
-        ManagerMessage::Connect(_) => {}
         ManagerMessage::Accepted(_, _) => {
             // Wait for some time before proceeding to simulate a slow manager
             tracing::info!("slow manager: waiting after accepting connection");
             eff.wait(Duration::from_secs(3)).await;
         }
         ManagerMessage::RemovePeer(_) => {}
+        ManagerMessage::Disconnect(_, _) => {}
+        ManagerMessage::HandshakeComplete { .. } => {}
         ManagerMessage::FetchBlocks { .. } => {}
         ManagerMessage::Listen(_) => {}
         ManagerMessage::NewTip(_) => {}
         ManagerMessage::FetchBlocks2 { .. } => {}
+        ManagerMessage::ConnectionResult(..) => {}
     }
     manager::stage(manager, msg, eff).await
 }

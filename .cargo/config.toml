@@ -9,6 +9,8 @@ deny-amaru = "deny check licenses --config .cargo/deny.toml"
 
 [env]
 CLIPPY_CONF_DIR = ".cargo"
+# TODO: currently required for kernel prop tests, should use boxed Arbitrary to avoid this
+RUST_MIN_STACK = { value = "10000000", force = true }
 
 [build]
 rustflags = [

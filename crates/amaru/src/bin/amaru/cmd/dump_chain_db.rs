@@ -15,11 +15,14 @@
 use std::{error::Error, fmt::Display, path::PathBuf};
 
 use amaru::{DEFAULT_NETWORK, default_chain_dir};
-use amaru_kernel::{BlockHeader, IsHeader, NetworkName, Point, to_cbor, utils::string::ListToString};
-use amaru_ouroboros::{DiagnosticChainStore, ReadOnlyChainStore};
+use amaru_consensus::effects::find_best_candidate;
+use amaru_kernel::{BlockHeader, HeaderHash, IsHeader, NetworkName, to_cbor, utils::string::ListToString};
+use amaru_ouroboros::{ChildTipsMode, DiagnosticChainStore, ReadOnlyChainStore};
 use amaru_stores::rocksdb::{RocksDbConfig, consensus::RocksDBStore};
 use clap::Parser;
 use tracing::info;
+
+use crate::cmd::PointOrHash;
 
 #[derive(Debug, Parser)]
 pub struct Args {
@@ -55,8 +58,14 @@ pub struct Args {
     #[arg(short, long)]
     best_chain: bool,
 
+    #[arg(short, long, value_name = amaru::value_names::POINT_OR_HASH)]
+    ancestors: Option<PointOrHash>,
+
     #[arg(short, long)]
-    ancestors: Option<Point>,
+    find_best_candidate: bool,
+
+    #[arg(short, long, value_name = amaru::value_names::POINT_OR_HASH)]
+    children: Option<PointOrHash>,
 }
 
 pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
@@ -93,12 +102,25 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
         print_best_chain(&db);
     }
     if let Some(ancestors) = args.ancestors {
-        print_ancestors(&db, ancestors);
+        print_ancestors(&db, *ancestors);
     }
+
+    #[expect(clippy::print_stdout)]
+    #[expect(clippy::unwrap_used)]
+    if args.find_best_candidate {
+        let cand = find_best_candidate(&db).unwrap();
+        println!("The best candidate hash is: {}", cand);
+    }
+
+    if let Some(hash) = args.children {
+        print_children(&db, *hash);
+    }
+
     Ok(())
 }
 
 #[expect(clippy::print_stdout)]
+#[expect(clippy::unwrap_used)]
 pub fn print_best_chain(db: &impl ReadOnlyChainStore<BlockHeader>) {
     println!();
     let best_chain = db.retrieve_best_chain();
@@ -107,7 +129,7 @@ pub fn print_best_chain(db: &impl ReadOnlyChainStore<BlockHeader>) {
     println!();
     println!("The best chain length is: {}", best_chain.len());
     println!("The best chain anchor is: {}", db.get_anchor_hash());
-    println!("The best chain tip is: {}", db.get_best_chain_hash());
+    println!("The best chain tip is: {}", db.load_tip(&db.get_best_chain_hash()).unwrap().point());
 }
 
 #[expect(clippy::print_stdout)]
@@ -125,21 +147,33 @@ pub fn print_iterator<K: Display, V: Display>(title: &str, iterator: impl Iterat
 }
 
 #[expect(clippy::print_stdout)]
-pub fn print_ancestors(db: &impl ReadOnlyChainStore<BlockHeader>, point: Point) {
+pub fn print_ancestors(db: &impl ReadOnlyChainStore<BlockHeader>, hash: HeaderHash) {
     println!();
-    let ancestors = db.ancestors_with_validity(point.hash());
-    println!("The ancestors of {} are:", point);
+    let ancestors = db.ancestors_with_validity(hash);
+    println!("The ancestors of {} are:", hash);
     let mut count = 0;
     println!();
     for (ancestor, valid) in ancestors {
-        let valid_str = match valid {
-            Some(true) => "valid",
-            Some(false) => "invalid",
-            None => "-",
-        };
-        println!("{} {}", ancestor.point(), valid_str);
+        println!("{} {}", ancestor.point(), valid_str(valid));
         count += 1;
     }
     println!();
     println!("The ancestors length is: {}", count);
+}
+
+fn valid_str(valid: Option<bool>) -> &'static str {
+    match valid {
+        Some(true) => "valid",
+        Some(false) => "invalid",
+        None => "-",
+    }
+}
+
+#[expect(clippy::print_stdout)]
+#[expect(clippy::unwrap_used)]
+pub fn print_children(db: &impl ReadOnlyChainStore<BlockHeader>, hash: HeaderHash) {
+    for child in db.child_tips(&hash, ChildTipsMode::All) {
+        let (_header, valid) = db.load_header_with_validity(&child.hash()).unwrap();
+        println!("{} {}", child.point(), valid_str(valid))
+    }
 }

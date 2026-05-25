@@ -136,6 +136,7 @@ pub fn register_guards() -> DeserializerGuards {
         pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
         pure_stage::register_data_deserializer::<MempoolMsg>().boxed(),
         pure_stage::register_data_deserializer::<AdoptChainMsg>().boxed(),
+        pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
         pure_stage::register_data_deserializer::<Option<BlockHeader>>().boxed(),
         pure_stage::register_data_deserializer::<Option<Point>>().boxed(),
         pure_stage::register_data_deserializer::<Result<(), StoreError>>().boxed(),
@@ -156,9 +157,10 @@ pub fn register_guards() -> DeserializerGuards {
 
 pub fn test_prep(consensus_security_param: u64) -> TestPrep {
     let downstream = StageRef::named_for_tests("downstream");
+    let block_source = StageRef::named_for_tests("block_source");
     let mempool = StageRef::named_for_tests("mempool");
     let headers = HeaderTree::new();
-    let state = AdoptChain::new(downstream, mempool, consensus_security_param, Tip::origin());
+    let state = AdoptChain::new(downstream, block_source, mempool, consensus_security_param, Tip::origin());
     TestPrep {
         state,
         rt: Builder::new_current_thread().build().unwrap(),

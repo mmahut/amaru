@@ -20,6 +20,12 @@ pub struct Peer {
     pub name: String,
 }
 
+impl AsRef<str> for Peer {
+    fn as_ref(&self) -> &str {
+        &self.name
+    }
+}
+
 impl Display for Peer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)

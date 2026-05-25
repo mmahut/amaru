@@ -12,21 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use amaru_consensus::stages::{
     adopt_chain::{self, AdoptChain},
+    block_source::{self, BlockSource},
     fetch_blocks::{self, FetchBlocks, FetchBlocksMsg},
     mempool::{self, MempoolStageState},
+    peer_selection::{self, PeerSelection, PeerSelectionMsg},
     select_chain::{self, SelectChain, SelectChainMsg},
     track_peers::{self, TrackPeers, TrackPeersMsg},
     validate_block::{self, ValidateBlock, ValidateBlockMsg},
 };
-use amaru_kernel::{EraHistory, GlobalParameters, Tip};
+use amaru_kernel::{EraHistory, GlobalParameters, HeaderHash, Peer, Tip};
 use amaru_ouroboros::MempoolMsg;
 use amaru_protocols::{
     manager,
-    manager::{Manager, ManagerConfig, ManagerMessage},
+    manager::{Manager, ManagerConfig, ManagerMessage, PeerSelectionNotify},
 };
 use pure_stage::{StageGraph, StageRef};
 
@@ -48,15 +50,48 @@ pub fn build_stage_graph(
     era_history: &EraHistory,
     global_parameters: &GlobalParameters,
     ledger_tip: Tip,
+    best_hash: HeaderHash,
     stage_graph: &mut impl StageGraph,
 ) -> NodeStages {
     let manager = stage_graph.stage("manager", manager::stage);
+    let peer_selection = stage_graph.stage("peer_selection", peer_selection::stage);
+    let peer_selection_ref = peer_selection.sender();
+
+    let static_peers: BTreeSet<Peer> = config.upstream_peers.iter().map(|s| Peer::new(s)).collect();
+    let peer_selection = stage_graph.wire_up(
+        peer_selection,
+        PeerSelection::new(
+            manager.sender(),
+            static_peers,
+            config.target_upstream_peers,
+            config.target_downstream_peers,
+            config.peer_removal_cooldown_secs,
+        ),
+    );
+
+    let peer_selection_notify =
+        stage_graph.contramap(&peer_selection_ref, "peer_selection_notify", |n: PeerSelectionNotify| match n {
+            PeerSelectionNotify::Connected { peer, conn_id, direction, full_duplex_capable, full_duplex } => {
+                PeerSelectionMsg::Connected(
+                    peer,
+                    peer_selection::Connection::new(conn_id, full_duplex_capable, full_duplex),
+                    direction,
+                )
+            }
+            PeerSelectionNotify::Disconnected { peer, conn_id, direction, will_retry } => {
+                PeerSelectionMsg::Disconnected(peer, conn_id, direction, will_retry)
+            }
+            PeerSelectionNotify::ConnectFailed { peer } => PeerSelectionMsg::ConnectFailed(peer),
+        });
+
     let track_peers = stage_graph.stage("track_peers", track_peers::stage);
     let select_chain = stage_graph.stage("select_chain", select_chain::stage);
     let fetch_blocks = stage_graph.stage("fetch_blocks", fetch_blocks::stage);
     let validate_block = stage_graph.stage("validate_block", validate_block::stage);
     let adopt_chain = stage_graph.stage("adopt_chain", adopt_chain::stage);
     let mempool_stage = stage_graph.stage("mempool", mempool::stage);
+    let block_source_stage = stage_graph.stage("block_source", block_source::stage);
+    let block_source_sender = block_source_stage.sender();
 
     let k = {
         #[expect(clippy::expect_used)]
@@ -65,40 +100,75 @@ pub fn build_stage_graph(
             .try_into()
             .expect("consensus security param will not be larger than u64::MAX")
     };
+
+    // Wire mempool (from main) — kept for its own use even if not passed to adopt_chain in this resolution
     let mempool_stage = stage_graph.wire_up(mempool_stage, MempoolStageState::default()).without_state();
-    let adopt_chain =
-        stage_graph.wire_up(adopt_chain, AdoptChain::new(manager.sender(), mempool_stage.clone(), k, ledger_tip));
+
+    // Keep branch's peer_selection integration for block_source and adopt_chain/fetch_blocks
+    let _block_source = stage_graph.wire_up(
+        block_source_stage,
+        BlockSource::new(ledger_tip, config.block_source_max_tip_distance, peer_selection_ref.clone()),
+    );
+
+    let adopt_chain = stage_graph.wire_up(
+        adopt_chain,
+        AdoptChain::new(manager.sender(), block_source_sender.clone(), mempool_stage.clone(), k, ledger_tip),
+    );
 
     let validate_block = stage_graph.wire_up(
         validate_block,
-        ValidateBlock::new(adopt_chain.without_state(), select_chain.sender(), ledger_tip.point()),
+        ValidateBlock::new(
+            adopt_chain.without_state(),
+            select_chain.sender(),
+            block_source_sender.clone(),
+            ledger_tip.point(),
+        ),
     );
     let validate_block_input =
         stage_graph.contramap(validate_block, "validate_block_input", |(tip, parent, max_block_height)| {
             ValidateBlockMsg::new(tip, parent, max_block_height)
         });
 
-    let fetch_blocks = stage_graph
-        .wire_up(fetch_blocks, FetchBlocks::new(validate_block_input, select_chain.sender(), manager.sender()));
+    let fetch_blocks = stage_graph.wire_up(
+        fetch_blocks,
+        FetchBlocks::new(
+            validate_block_input,
+            select_chain.sender(),
+            manager.sender(),
+            block_source_sender,
+            peer_selection_ref.clone(),
+        ),
+    );
+    // Include main's useful RecoverStoredBlocks preload
     #[expect(clippy::expect_used)]
     stage_graph
-        .preload(&fetch_blocks, [FetchBlocksMsg::RecoverStoredBlocks])
+        .preload(&fetch_blocks, [FetchBlocksMsg::RecoverStoredBlocks(best_hash)])
         .expect("fetch blocks recovery message must be preloaded");
+
     let fetch_blocks_input =
         stage_graph.contramap(fetch_blocks, "fetch_blocks_input", |(tip, parent)| FetchBlocksMsg::NewTip(tip, parent));
 
     let select_chain = stage_graph.wire_up(select_chain, SelectChain::new(fetch_blocks_input));
     #[expect(clippy::expect_used)]
-    stage_graph.preload(&select_chain, [SelectChainMsg::Initialize]).expect("initialization message must be preloaded");
+    stage_graph
+        .preload(&select_chain, [SelectChainMsg::Initialize(best_hash)])
+        .expect("initialization message must be preloaded");
     let select_chain_input = stage_graph
         .contramap(select_chain, "select_chain_input", |(tip, parent)| SelectChainMsg::TipFromUpstream(tip, parent));
 
     let track_peers = stage_graph.wire_up(
         track_peers,
-        TrackPeers::new(era_history.clone(), manager.sender(), select_chain_input, k, config.defer_req_next_poll_ms),
+        TrackPeers::new(era_history.clone(), peer_selection_ref, select_chain_input, k, config.defer_req_next_poll_ms),
     );
     let track_peers_input = stage_graph.contramap(track_peers, "track_peers_input", TrackPeersMsg::FromUpstream);
 
+    // Keep branch's peer_selection initialization preload (core to the peer_selection work)
+    #[expect(clippy::expect_used)]
+    stage_graph
+        .preload(&peer_selection, [PeerSelectionMsg::Initialize])
+        .expect("initialization message must be preloaded");
+
+    // Manager creation — use main's style with tx_submission_params (now supported in our extended config)
     let manager_stage = stage_graph
         .wire_up(
             manager,
@@ -108,6 +178,7 @@ pub fn build_stage_graph(
                 Arc::new(era_history.clone()),
                 track_peers_input,
                 mempool_stage.clone(),
+                peer_selection_notify,
             ),
         )
         .without_state();

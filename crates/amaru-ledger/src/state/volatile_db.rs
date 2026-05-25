@@ -137,6 +137,10 @@ impl VolatileDB {
         self.sequence.truncate(ix);
         Ok(())
     }
+
+    pub fn clear(&mut self) {
+        self.sequence.clear();
+    }
 }
 
 // VolatileState

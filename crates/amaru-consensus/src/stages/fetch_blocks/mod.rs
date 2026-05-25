@@ -14,16 +14,90 @@
 
 use std::time::Duration;
 
-use amaru_kernel::{BlockHeader, BlockHeight, IsHeader, ORIGIN_HASH, Point, Tip, cardano::network_block::NetworkBlock};
+use amaru_kernel::{
+    BlockHeader, BlockHeight, HeaderHash, IsHeader, ORIGIN_HASH, Peer, Point, Tip, cardano::network_block::NetworkBlock,
+};
 use amaru_ouroboros_traits::{MissingBlocks, MissingBlocksResult};
 use amaru_protocols::{blockfetch::Blocks2, manager::ManagerMessage, store_effects::Store};
-use pure_stage::{Effects, OrTerminateWith, ScheduleId, StageRef};
+use pure_stage::{Effects, OrTerminateWith, ScheduleId, StageRef, TryInStage};
 
-use crate::stages::select_chain::{SelectChainMsg, best_tip_from_store, load_parent_point};
+use crate::stages::{
+    block_source::BlockSourceMsg,
+    peer_selection::PeerSelectionMsg,
+    select_chain::{SelectChainMsg, load_parent_point},
+};
 
 // TODO make configurable
 const MAX_MISSING_BLOCKS_PER_BATCH: usize = 25;
 
+/// Block fetch coordinator stage.
+///
+/// This stage drives the retrieval of full blocks for headers that have been selected
+/// by the upstream select_chain stage. It computes missing block ranges via the store,
+/// requests them from the network via the manager (using the block-fetch protocol),
+/// handles arrivals (with straggler protection), stores them, and forwards them
+/// downstream for validation while advancing the chain selection loop. It also
+/// handles startup recovery of blocks that were downloaded but not yet validated
+/// before a prior shutdown.
+///
+/// ## Overview
+/// - Pure actor stage (see `stage()` fn) processing `FetchBlocksMsg`.
+/// - Collaborates with a dynamically ensured child stage (`cleanup_replies`) to safely
+///   handle out-of-order or late block replies without clogging its own mailbox.
+/// - Uses bounded batches (MAX_MISSING_BLOCKS_PER_BATCH=25) for fetch requests.
+/// - Timeout-driven retry (5s) with upstream signaling for continuation.
+///
+/// ## Input messages and behaviour
+/// - `NewTip(tip, parent)`: Update tracked block_height, assert no outstanding missing,
+///   delegate to `request_missing_blocks` which queries store for gaps and (if any)
+///   sends `ManagerMessage::FetchBlocks2` (with cr=child ref for replies) then schedules
+///   a `Timeout(req_id)`.
+/// - `RecoverStoredBlocks(best_hash)`: Startup recovery only. If origin, signal upstream
+///   immediately. Otherwise replay any unvalidated-but-stored blocks downstream for
+///   re-validation (using unvalidated_ancestor_hashes + has_block checks), falling back
+///   to `request_missing_blocks` on first gap. Terminates on store errors.
+/// - `Block(peer, network_block)`: Decode + basic integrity (body_hash match → adversarial
+///   on fail), ordering checks against current `missing` cursor (parent + first point;
+///   stragglers logged and dropped). On match: store block, send `(Tip, parent_boundary, block_height)`
+///   downstream, `shift_one_block` on cursor; if now empty, clear state, cancel timeout,
+///   signal `FetchNextFrom` upstream.
+/// - `Timeout(req_id)`: If matches current, log error, clear missing/timeout, signal
+///   `FetchNextFrom(boundary)` upstream to retry (no direct peer penalty here).
+///
+/// ## Child stages and their protocols
+/// - **cleanup_replies** (dynamic, `StageRef<Blocks2>`, lazily `ensure_child`'d on every
+///   message; factory creates `Cleanup` with self-ref + block_source/peer_selection):
+///   - Receives `Blocks2` replies routed by manager (because `cr` passed in FetchBlocks2).
+///   - `NoBlocks(_)`: ignored (timeout will handle).
+///   - `Block(id, peer, nb)`: decode header (adversarial on fail + return), ALWAYS
+///     `BlockSourceMsg::BlockReceived {peer, tip}` (for stats/selection), forward as
+///     `FetchBlocksMsg::Block` to parent ONLY if id >= curr_id (straggler filter),
+///     update curr_id = max.
+///   - `Done(id)`: advance curr_id to id+1 max (to ignore subsequent old msgs from prior req).
+///   - Purpose (per doc): "Ensure that straggling block replies do not clog the mailbox of the fetch stage."
+///   - In prod starts as blackhole; replaced on first use. Tests inject named mock via `for_tests`.
+///
+/// ## Key state (missing blocks, requests, timeouts)
+/// - `downstream: StageRef<(Tip, Point, BlockHeight)>`: where validated-ready blocks go (contramapped in wiring).
+/// - `req_id: u64`: monotonic, incremented on each new FetchBlocks2; used to pair timeouts and filter in child.
+/// - `missing: Option<MissingBlocks>`: cursor over current batch (from `find_missing_blocks`); supports
+///   `from_to()`, `first()`, `boundary()`, `shift_one_block()`, `is_empty()`, `nb_missing_blocks()`.
+///   Asserted None on NewTip/Recover entry; cleared on completion, timeout, or no-work cases.
+/// - `timeout: Option<ScheduleId>`: the pending 5s timeout for current req; taken/cancelled only on batch success.
+/// - `block_height: BlockHeight`: monotonic max over seen tips; passed with every downstream send (for both live and recovered blocks).
+/// - Other refs: upstream (for FetchNextFrom continuation), manager (requests), block_source (receipts via child), peer_selection (adversarial reports).
+///
+/// ## External interactions (which stages it talks to)
+/// - **select_chain (upstream)**: receives `NewTip`/`RecoverStoredBlocks`; sends `SelectChainMsg::FetchNextFrom(point)` on batch done, no-work, timeout, or recovery complete.
+/// - **manager**: sends `ManagerMessage::FetchBlocks2 {from, through, id, cr: cleanup_replies}` to initiate block fetches (replies flow back via provided child ref).
+/// - **downstream** (typically validate_block_input via contramap in build): sends `(Tip, parent_Point, block_height)` for each block (newly fetched or recovered stored).
+/// - **block_source** (via child only): `BlockReceived {peer, tip}` for every header seen in replies (even stragglers/old).
+/// - **peer_selection**: `Adversarial(peer)` on body-hash mismatch (main) or header decode failure (child).
+/// - **Store** (via effects): `find_missing_blocks`, `has_block`, `load_header`, `store_block`, `unvalidated_ancestor_hashes`, `load_tip` etc. (many via `or_terminate`).
+/// - Time/schedule via Effects: `schedule_after` for `Timeout`, `cancel_schedule`.
+/// - No direct interaction with validate results (one-way downstream); no header validation performed here (assumes requested ranges; minimal structural checks only).
+///
+/// The `stage()` fn ensures the child then dispatches the 4 msg variants to the impl methods and returns updated state. All error paths that cannot continue call `eff.terminate()`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FetchBlocks {
     downstream: StageRef<(Tip, Point, BlockHeight)>,
@@ -31,6 +105,8 @@ pub struct FetchBlocks {
     missing: Option<MissingBlocks>,
     upstream: StageRef<SelectChainMsg>,
     manager: StageRef<ManagerMessage>,
+    block_source: StageRef<BlockSourceMsg>,
+    peer_selection: StageRef<PeerSelectionMsg>,
     cleanup_replies: StageRef<Blocks2>,
     timeout: Option<ScheduleId>,
     block_height: BlockHeight,
@@ -41,6 +117,8 @@ impl FetchBlocks {
         downstream: StageRef<(Tip, Point, BlockHeight)>,
         upstream: StageRef<SelectChainMsg>,
         manager: StageRef<ManagerMessage>,
+        block_source: StageRef<BlockSourceMsg>,
+        peer_selection: StageRef<PeerSelectionMsg>,
     ) -> Self {
         Self {
             downstream,
@@ -48,6 +126,8 @@ impl FetchBlocks {
             missing: None,
             upstream,
             manager,
+            block_source,
+            peer_selection,
             cleanup_replies: StageRef::blackhole(),
             timeout: None,
             block_height: BlockHeight::from(0),
@@ -60,6 +140,8 @@ impl FetchBlocks {
         downstream: StageRef<(Tip, Point, BlockHeight)>,
         upstream: StageRef<SelectChainMsg>,
         manager: StageRef<ManagerMessage>,
+        block_source: StageRef<BlockSourceMsg>,
+        peer_selection: StageRef<PeerSelectionMsg>,
         cleanup_replies: StageRef<Blocks2>,
     ) -> Self {
         Self {
@@ -68,6 +150,8 @@ impl FetchBlocks {
             missing: None,
             upstream,
             manager,
+            block_source,
+            peer_selection,
             cleanup_replies,
             timeout: None,
             block_height: BlockHeight::from(0),
@@ -89,7 +173,7 @@ impl FetchBlocks {
 
     /// Startup-only recovery: resubmit downloaded blocks whose validity was not
     /// persisted before shutdown, then fetch from the first missing block.
-    pub async fn recover_stored_blocks(&mut self, eff: Effects<FetchBlocksMsg>) {
+    pub async fn recover_stored_blocks(&mut self, eff: Effects<FetchBlocksMsg>, best_hash: HeaderHash) {
         assert!(
             self.missing.is_none(),
             "there shouldn't be any missing blocks when recovering stored blocks: {:?}",
@@ -97,17 +181,18 @@ impl FetchBlocks {
         );
 
         let store = Store::new(eff.clone());
-        let (best_tip, unvalidated) = match best_tip_from_store(&store).await {
-            Ok(Some(candidate)) => candidate,
-            Ok(None) => {
-                eff.send(&self.upstream, SelectChainMsg::FetchNextFrom(Point::Origin)).await;
-                return;
-            }
-            Err(error) => {
-                tracing::error!(%error, "failed to find best tip from store");
-                return eff.terminate().await;
-            }
-        };
+        if best_hash == ORIGIN_HASH {
+            eff.send(&self.upstream, SelectChainMsg::FetchNextFrom(Point::Origin)).await;
+            return;
+        }
+        let best_tip = store
+            .load_header(&best_hash)
+            .await
+            .or_terminate(&eff, async move |_| {
+                tracing::error!(hash = %best_hash, "cannot load header for best candidate");
+            })
+            .await;
+        let unvalidated = store.unvalidated_ancestor_hashes(best_hash).await.0;
 
         self.block_height = best_tip.block_height().max(self.block_height);
         let tip = best_tip.tip();
@@ -122,7 +207,7 @@ impl FetchBlocks {
             let tip = header.tip();
             let block_parent = match parent {
                 Some(p) => p,
-                None => load_parent_point(&eff, store.clone(), &header).await,
+                None => load_parent_point(&eff, &store, &header).await,
             };
             match store.has_block(&hash).await {
                 Ok(true) => {
@@ -193,7 +278,7 @@ impl FetchBlocks {
         }
     }
 
-    pub async fn block(&mut self, network_block: NetworkBlock, eff: Effects<FetchBlocksMsg>) {
+    pub async fn block(&mut self, peer: Peer, network_block: NetworkBlock, eff: Effects<FetchBlocksMsg>) {
         let store = Store::new(eff.clone());
         let block = match network_block.decode_block() {
             Ok(block) => block,
@@ -208,17 +293,17 @@ impl FetchBlocks {
 
         // check that body belongs to header
         if header.header().header_body.block_body_hash != block.body_hash() {
+            eff.send(&self.peer_selection, PeerSelectionMsg::Adversarial(peer)).await;
             tracing::warn!(expected = %header.header().header_body.block_body_hash, actual = %block.body_hash(), "block body hash mismatch");
             return;
         }
         let Some(missing) = self.missing.as_mut() else {
-            // TODO: eventually accept blocks that could arrive when we don't get them within the timeout
-            // provided that they are valid (parent block exists, no invalid parent).
-            tracing::warn!("received block with no outstanding missing blocks");
+            tracing::debug!(%peer, "received straggler block");
             return;
         };
         if header.parent_hash() != Some(missing.boundary().hash()) {
-            tracing::warn!(expected = %missing.boundary().hash(), actual = %header.parent_hash().unwrap_or(ORIGIN_HASH), "block parent hash mismatch");
+            // this happens for stragglers when fetching from multiple peers
+            tracing::debug!(expected = %missing.boundary().hash(), actual = %header.parent_hash().unwrap_or(ORIGIN_HASH), "block parent hash mismatch");
             return;
         }
         if Some(point) != missing.first() {
@@ -265,44 +350,73 @@ impl FetchBlocks {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FetchBlocksMsg {
     NewTip(Tip, Point),
-    RecoverStoredBlocks,
-    Block(NetworkBlock),
+    RecoverStoredBlocks(HeaderHash),
+    Block(Peer, NetworkBlock),
     Timeout(u64),
 }
 
 pub async fn stage(mut state: FetchBlocks, msg: FetchBlocksMsg, eff: Effects<FetchBlocksMsg>) -> FetchBlocks {
-    if state.cleanup_replies.is_blackhole() {
-        let stage = eff.stage("cleanup_replies", cleanup_replies).await;
-        state.cleanup_replies = eff.wire_up(stage, (0, eff.me())).await;
-    }
+    eff.ensure_child(&mut state.cleanup_replies, "cleanup_replies", cleanup_replies, || {
+        Cleanup::new(eff.me(), state.block_source.clone(), state.peer_selection.clone())
+    })
+    .await;
     match msg {
         FetchBlocksMsg::NewTip(tip, parent) => state.new_tip(tip, parent, eff).await,
-        FetchBlocksMsg::RecoverStoredBlocks => state.recover_stored_blocks(eff).await,
-        FetchBlocksMsg::Block(block) => state.block(block, eff).await,
+        FetchBlocksMsg::RecoverStoredBlocks(best_hash) => state.recover_stored_blocks(eff, best_hash).await,
+        FetchBlocksMsg::Block(peer, block) => state.block(peer, block, eff).await,
         FetchBlocksMsg::Timeout(req_id) => state.timeout(req_id, eff).await,
     }
     state
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+struct Cleanup {
+    curr_id: u64,
+    fetch: StageRef<FetchBlocksMsg>,
+    block_source: StageRef<BlockSourceMsg>,
+    peer_selection: StageRef<PeerSelectionMsg>,
+}
+
+impl Cleanup {
+    fn new(
+        fetch: StageRef<FetchBlocksMsg>,
+        block_source: StageRef<BlockSourceMsg>,
+        peer_selection: StageRef<PeerSelectionMsg>,
+    ) -> Self {
+        Self { curr_id: 0, fetch, block_source, peer_selection }
+    }
+}
+
 /// Ensure that straggling block replies do not clog the mailbox of the fetch stage.
-pub async fn cleanup_replies(
-    (curr_id, fetch): (u64, StageRef<FetchBlocksMsg>),
-    msg: Blocks2,
-    eff: Effects<Blocks2>,
-) -> (u64, StageRef<FetchBlocksMsg>) {
+///
+/// TODO: keep block hashes in LRU to deduplicate incoming blocks without validation or ordering assumption
+async fn cleanup_replies(mut state: Cleanup, msg: Blocks2, eff: Effects<Blocks2>) -> Cleanup {
     match msg {
         // completely ignore empty responses, fetch stage will deal with timeouts
-        Blocks2::NoBlocks(_) => (curr_id, fetch),
-        // ignore responses to prior requests
-        Blocks2::Block(id, _) if id < curr_id => (curr_id, fetch),
-        Blocks2::Block(id, block) => {
-            eff.send(&fetch, FetchBlocksMsg::Block(block)).await;
+        Blocks2::NoBlocks(_) => {}
+        Blocks2::Block(id, peer, network_block) => {
+            let header = match network_block.decode_header() {
+                Ok(header) => header,
+                Err(error) => {
+                    tracing::warn!(%error, "failed to decode block in cleanup");
+                    eff.send(&state.peer_selection, PeerSelectionMsg::Adversarial(peer)).await;
+                    return state;
+                }
+            };
+            eff.send(&state.block_source, BlockSourceMsg::BlockReceived { peer: peer.clone(), tip: header.tip() })
+                .await;
+            if id >= state.curr_id {
+                eff.send(&state.fetch, FetchBlocksMsg::Block(peer, network_block)).await;
+            }
             // getting higher id implies a new request has started
-            (id.max(curr_id), fetch)
+            state.curr_id = id.max(state.curr_id);
         }
         // getting done message implies a new request will start with id+1, but Done might be old as well
-        Blocks2::Done(id) => ((id + 1).max(curr_id), fetch),
+        Blocks2::Done(id) => {
+            state.curr_id = (id + 1).max(state.curr_id);
+        }
     }
+    state
 }
 
 #[cfg(test)]

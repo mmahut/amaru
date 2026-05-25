@@ -12,7 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{fmt, net::SocketAddr, num::NonZeroUsize, pin::Pin, sync::Arc, time::Duration};
+use std::{
+    fmt::{self, Display},
+    net::SocketAddr,
+    num::NonZeroUsize,
+    pin::Pin,
+    sync::Arc,
+    time::Duration,
+};
 
 use amaru_kernel::{NonEmptyBytes, Peer};
 
@@ -60,11 +67,36 @@ impl ConnectionId {
     pub fn initial() -> Self {
         Self(0)
     }
+
+    pub fn as_u64(self) -> u64 {
+        self.0
+    }
 }
 
 impl fmt::Display for ConnectionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ConnectionDirection {
+    Inbound,
+    Outbound,
+}
+
+impl Display for ConnectionDirection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_ref())
+    }
+}
+
+impl AsRef<str> for ConnectionDirection {
+    fn as_ref(&self) -> &str {
+        match self {
+            ConnectionDirection::Inbound => "Inbound",
+            ConnectionDirection::Outbound => "Outbound",
+        }
     }
 }
 
