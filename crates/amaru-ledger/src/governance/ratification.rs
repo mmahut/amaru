@@ -99,52 +99,60 @@ impl<'distr> RatificationContext<'distr> {
         protocol_parameters: ProtocolParameters,
         treasury: Lovelace,
     ) -> Result<Self, StoreError> {
-        info_span!(amaru_observability::amaru::ledger::state::RATIFICATION_CONTEXT_NEW).in_scope(|| {
-            let constitutional_committee = match snapshot.constitutional_committee()? {
-                ConstitutionalCommitteeStatus::NoConfidence => None,
-                ConstitutionalCommitteeStatus::Trusted { threshold } => {
-                    let members = snapshot
-                        .iter_cc_members()?
-                        .filter_map(|(cold_credential, row)| {
-                            row.valid_until.map(|valid_until| (cold_credential, (row.hot_credential, valid_until)))
-                        })
-                        .collect();
+        let epoch = snapshot.epoch() + 1;
+        info_span!(amaru_observability::amaru::ledger::governance::RATIFICATION_CONTEXT_NEW, epoch = u64::from(epoch))
+            .in_scope(|| {
+                let constitutional_committee = match snapshot.constitutional_committee()? {
+                    ConstitutionalCommitteeStatus::NoConfidence => None,
+                    ConstitutionalCommitteeStatus::Trusted { threshold } => {
+                        let members = snapshot
+                            .iter_cc_members()?
+                            .filter_map(|(cold_credential, row)| {
+                                row.valid_until.map(|valid_until| (cold_credential, (row.hot_credential, valid_until)))
+                            })
+                            .collect();
 
-                    Some(ConstitutionalCommittee::new(into_safe_ratio(&threshold), members))
-                }
-            };
+                        Some(ConstitutionalCommittee::new(into_safe_ratio(&threshold), members))
+                    }
+                };
 
-            // FIXME: votes entirely stored in-memory
-            //
-            // This isn't ideal , as we collect all votes in memory here. This is okay-ish on most
-            // networks because the number of votes is rather small. Even with 1M+ votes, this shouldn't
-            // require much memory; but it becomes a potential attack vector.
-            //
-            // We must avoid loading ALL votes in memory at once. Especially since we do not prune
-            // votes at the moment...
-            let votes = snapshot.iter_votes()?.fold(BTreeMap::new(), |mut votes, (k, v)| {
-                votes.entry(k.proposal).or_insert_with(Vec::new).push((k.voter, v));
-                votes
-            });
+                // FIXME: votes entirely stored in-memory
+                //
+                // This isn't ideal , as we collect all votes in memory here. This is okay-ish on most
+                // networks because the number of votes is rather small. Even with 1M+ votes, this shouldn't
+                // require much memory; but it becomes a potential attack vector.
+                //
+                // We must avoid loading ALL votes in memory at once. Especially since we do not prune
+                // votes at the moment...
+                let mut votes_count: u64 = 0;
+                let votes = snapshot.iter_votes()?.fold(BTreeMap::new(), |mut votes, (k, v)| {
+                    votes_count += 1;
+                    votes.entry(k.proposal).or_insert_with(Vec::new).push((k.voter, v));
+                    votes
+                });
 
-            Ok(RatificationContext {
-                // Ratification happens with one epoch of delay, and at the next epoch transition. So,
-                // if we ratify votes that happened in epoch `e`, the ratification is done during the
-                // transition from `e + 1` to `e + 2`; but it is done "as if" it was happening at the
-                // beginning of epoch `e + 1`. So, the epoch we consider for DRep mandates and proposal
-                // expiry is the one from after the snapshot.
-                epoch: snapshot.epoch() + 1,
-                treasury,
-                stake_distribution,
-                protocol_parameters,
-                pruned_proposals: BTreeSet::new(),
-                withdrawals: BTreeMap::new(),
-                constitutional_committee,
-                constitutional_committee_update: None,
-                new_constitution: None,
-                votes,
+                let span = Span::current();
+                span.record("treasury", treasury);
+                span.record("votes", votes_count);
+
+                Ok(RatificationContext {
+                    // Ratification happens with one epoch of delay, and at the next epoch transition. So,
+                    // if we ratify votes that happened in epoch `e`, the ratification is done during the
+                    // transition from `e + 1` to `e + 2`; but it is done "as if" it was happening at the
+                    // beginning of epoch `e + 1`. So, the epoch we consider for DRep mandates and proposal
+                    // expiry is the one from after the snapshot.
+                    epoch,
+                    treasury,
+                    stake_distribution,
+                    protocol_parameters,
+                    pruned_proposals: BTreeSet::new(),
+                    withdrawals: BTreeMap::new(),
+                    constitutional_committee,
+                    constitutional_committee_update: None,
+                    new_constitution: None,
+                    votes,
+                })
             })
-        })
     }
 
     pub fn ratify_proposals(
@@ -155,10 +163,11 @@ impl<'distr> RatificationContext<'distr> {
     ) -> Result<ProposalsRootsRc, RatificationInternalError> {
         info_span!(
             amaru_observability::amaru::ledger::governance::RATIFY_PROPOSALS,
+            epoch = u64::from(self.epoch),
             roots_protocol_parameters = opt_root(roots.protocol_parameters.as_deref()),
             roots_hard_fork = opt_root(roots.hard_fork.as_deref()),
             roots_constitutional_committee = opt_root(roots.constitutional_committee.as_deref()),
-            roots_constitution = opt_root(roots.constitution.as_deref())
+            roots_constitution = opt_root(roots.constitution.as_deref()),
         )
         .in_scope(|| {
             // A forest (i.e. a multitude of trees) that tracks what proposals needs to be ratified,
@@ -222,8 +231,8 @@ impl<'distr> RatificationContext<'distr> {
         Self::new_enact_span(&id, &proposal).in_scope(|| -> Result<(), RatificationInternalError> {
             let mut now_obsolete = forest.enact(id, &proposal, compass)?;
 
-            tracing::Span::current().record(
-                "proposals.pruned",
+            Span::current().record(
+                "pruned_relatives",
                 now_obsolete.iter().map(|id| id.to_compact_string()).collect::<Vec<_>>().join(", "),
             );
 
@@ -281,10 +290,10 @@ impl<'distr> RatificationContext<'distr> {
     }
 
     fn new_enact_span(id: &ComparableProposalId, proposal: &ProposalEnum) -> Span {
-        tracing::info_span!(
-            "enacting",
-            "proposal.id" = id.to_compact_string(),
-            "proposal.kind" = proposal.display_kind(),
+        info_span!(
+            amaru_observability::amaru::ledger::governance::ENACTING,
+            proposal_id = id.to_compact_string(),
+            proposal_kind = proposal.display_kind(),
         )
     }
 
@@ -292,7 +301,7 @@ impl<'distr> RatificationContext<'distr> {
         info_span!(
             amaru_observability::amaru::ledger::governance::RATIFYING,
             proposal_id = id.to_compact_string(),
-            proposal_kind = proposal.display_kind().to_string(),
+            proposal_kind = proposal.display_kind(),
         )
     }
 
@@ -302,7 +311,7 @@ impl<'distr> RatificationContext<'distr> {
         proposal: &ProposalEnum,
         stake_distribution: &StakeDistribution,
     ) -> bool {
-        let span = tracing::Span::current();
+        let span = Span::current();
 
         let (dreps_votes, cc_votes, pool_votes) =
             partition_votes(self.votes.get(id).map(|v| v.as_slice()).unwrap_or(&[]));
@@ -316,18 +325,18 @@ impl<'distr> RatificationContext<'distr> {
 
         let cc_approved = self.is_accepted_by_constitutional_committee(proposal, cc_votes);
 
-        span.record("approved.committee", cc_approved);
+        span.record("approved_by_constitutional_committee", cc_approved);
 
         if cc_approved {
             let spos_approved = self.is_accepted_by_stake_pool_operators(proposal, pool_votes, stake_distribution);
 
-            span.record("approved.pools", spos_approved);
+            span.record("approved_by_pools", spos_approved);
 
             if spos_approved {
                 let dreps_approved =
                     self.is_accepted_by_delegate_representatives(proposal, dreps_votes, stake_distribution);
 
-                span.record("approved.dreps", dreps_approved);
+                span.record("approved_by_dreps", dreps_approved);
 
                 return dreps_approved;
             }
@@ -351,7 +360,7 @@ impl<'distr> RatificationContext<'distr> {
                     proposal,
                 )?;
 
-                tracing::Span::current().record("required_threshold.committee", field::display(&threshold));
+                Span::current().record("committee_approval_threshold", field::display(&threshold));
 
                 let tally = || committee.tally(self.epoch, votes);
 
@@ -373,7 +382,7 @@ impl<'distr> RatificationContext<'distr> {
         ) {
             None => false,
             Some(threshold) => {
-                tracing::Span::current().record("required_threshold.pools", field::display(&threshold));
+                Span::current().record("pools_approval_threshold", field::display(&threshold));
 
                 let tally = || {
                     stake_pools::tally(self.protocol_parameters.protocol_version, proposal, votes, stake_distribution)
@@ -398,7 +407,7 @@ impl<'distr> RatificationContext<'distr> {
         ) {
             None => false,
             Some(threshold) => {
-                tracing::Span::current().record("required_threshold.dreps", field::display(&threshold));
+                Span::current().record("dreps_approval_threshold", field::display(&threshold));
 
                 let tally = || -> SafeRatio { dreps::tally(self.epoch, proposal, votes, stake_distribution) };
 

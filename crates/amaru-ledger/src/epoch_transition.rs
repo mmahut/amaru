@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use amaru_kernel::{Epoch, EraHistory};
-use amaru_observability::{info_span, trace_span};
+use amaru_observability::info_span;
 
 use crate::{
     governance::ratification::RatificationContext,
@@ -34,14 +34,13 @@ pub use ratification::{GovernanceActivity, GovernanceUpdates};
 /// Unpaid rewards are assigned back to the treasury.
 ///
 pub fn end_epoch(db: &impl ReadStore, computed_rewards: Rewards<Computed>) -> Result<Rewards<Effective>, StoreError> {
-    trace_span!(INFO, amaru_observability::amaru::ledger::state::END_EPOCH).in_scope(|| {
+    info_span!(amaru_observability::amaru::ledger::epoch_transition::END_EPOCH).in_scope(|| {
         // FIXME: account de-registrations from the volatile db
         //
         // The following code only looks at accounts from the stable store which is missing the last
         // `k` blocks of an epoch. One may unregister its account in that last unstable chunk; so
         // we must filter them out.
         let accounts = db.iter_accounts()?.map(|(k, _v)| k);
-
         Ok(Rewards::<Effective>::new(computed_rewards, accounts))
     })
 }
@@ -52,7 +51,7 @@ pub fn begin_epoch<'distr>(
     era_history: &EraHistory,
     ratification_context: RatificationContext<'distr>,
 ) -> Result<(PoolsEpochTransitionUpdates, GovernanceUpdates), StateError> {
-    info_span!(amaru_observability::amaru::ledger::state::BEGIN_EPOCH).in_scope(|| {
+    info_span!(amaru_observability::amaru::ledger::epoch_transition::BEGIN_EPOCH).in_scope(|| {
         // FIXME: unbind accounts of unregistered pools
         //
         // We also need a mechanism to remove any remaining delegation to pools retired by this
@@ -63,8 +62,7 @@ pub fn begin_epoch<'distr>(
         // Tick pools to compute their new state at the epoch boundary. Notice
         // how we tick with the _current epoch_ however, but we take the snapshot before
         // the tick since the actions are only effective once the epoch is crossed.
-        let pools_updates = info_span!(amaru_observability::amaru::ledger::state::TICK_POOL)
-            .in_scope(|| PoolsEpochTransitionUpdates::new(db, epoch))?;
+        let pools_updates = PoolsEpochTransitionUpdates::new(db, epoch)?;
 
         // Ratify and enact proposals at the epoch boundary. Note that this does not modify the
         // immutable store in any fashion (db is read-only here) but produces a series of

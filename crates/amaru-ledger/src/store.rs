@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod columns;
-
 use std::{
     borrow::BorrowMut,
     collections::{BTreeMap, BTreeSet},
@@ -47,6 +45,13 @@ use columns::*;
 use thiserror::Error;
 
 use crate::{epoch_transition::GovernanceActivity, governance::ratification::ProposalsRoots, summary::Pots};
+
+pub mod columns;
+mod epoch_transition;
+pub use epoch_transition::{
+    enact_governance_updates, pay_or_refund_accounts, pay_rewards, reset_blocks_count, reset_fees,
+    update_constitutional_committee, update_or_retire_pools,
+};
 
 #[derive(Debug, Error)]
 #[error(transparent)]

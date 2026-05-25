@@ -22,6 +22,7 @@ use amaru_kernel::{
     Epoch, Hash, Lovelace, PoolId, PoolParams, RewardAccount, StakeCredential, expect_stake_credential, hash,
     pool_metadata, rational_number, relay,
 };
+use amaru_observability::info_span;
 use tracing::debug;
 
 use crate::store::{ReadStore, StoreError, columns::pools::Row as Pool};
@@ -47,13 +48,16 @@ impl PoolsEpochTransitionUpdates {
     /// Create a new transition update from a read-only store and the epoch that is *beginning*. So
     /// when transitioning from e -> e + 1; 'epoch' is e + 1.
     pub fn new(db: &impl ReadStore, epoch: Epoch) -> Result<Self, StoreError> {
-        let mut pools_updates = Self::default();
+        info_span!(amaru_observability::amaru::ledger::epoch_transition::POOLS_UPDATES_NEW, epoch = u64::from(epoch))
+            .in_scope(|| {
+                let mut pools_updates = Self::default();
 
-        for (_pool_id, pool) in db.iter_pools()? {
-            pools_updates.tick_pool(epoch, pool)
-        }
+                for (_pool_id, pool) in db.iter_pools()? {
+                    pools_updates.tick_pool(epoch, pool)
+                }
 
-        Ok::<_, StoreError>(pools_updates)
+                Ok::<_, StoreError>(pools_updates)
+            })
     }
 
     pub fn retired(&self) -> &BTreeSet<PoolId> {
@@ -126,7 +130,8 @@ impl PoolsEpochTransitionUpdates {
                 let current_params = &mut pool.current_params;
 
                 debug!(
-                    pool = %pool_id,
+                    name: "pool.update",
+                    id = %pool_id,
                     vrf = set(&mut current_params.vrf, vrf, Hash::to_string),
                     pledge = set(&mut current_params.pledge, pledge, Lovelace::to_string),
                     cost = set(&mut current_params.cost, cost, Lovelace::to_string),
@@ -135,7 +140,6 @@ impl PoolsEpochTransitionUpdates {
                     owners = set(&mut current_params.owners, owners, |s| hash::fmt(s.deref())),
                     relays = set(&mut current_params.relays, relays, |r| relay::fmt(r)),
                     metadata = set(&mut current_params.metadata, metadata, pool_metadata::fmt),
-                    "tick.pool.updating",
                 );
             }
 
@@ -147,7 +151,7 @@ impl PoolsEpochTransitionUpdates {
     }
 
     fn retire_pool(&mut self, epoch: Epoch, pool: Pool) {
-        debug!(pool = %pool.id(), "tick.pool.retiring");
+        debug!(name: "pool.retire", id = %pool.id());
 
         self.retired.insert(pool.id());
         self.refunds.insert(

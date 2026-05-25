@@ -98,18 +98,6 @@ define_schemas! {
                 required point_slot: u64
             }
 
-            /// Epoch transition processing
-            public EPOCH_TRANSITION {
-                required from: u64
-                required into: u64
-            }
-
-            /// Flushing the epoch transition overlay to disk
-            public APPLYING_OVERLAY {
-                required epoch: u64
-            }
-
-
             /// Resolve transaction inputs from various sources
             public RESOLVE_INPUTS {
                 optional resolved_from_context: u64
@@ -130,19 +118,11 @@ define_schemas! {
                 required epoch: u64
             }
 
-            /// Tick proposals for ratification
-            public TICK_PROPOSALS {
-                required proposals_count: u64
-            }
-
             /// Prepare block for validation
             public PREPARE_BLOCK {}
 
             /// Validate block against rules
             public VALIDATE_BLOCK {}
-
-            /// Tick pool operations
-            public TICK_POOL {}
 
             /// Compute rewards for epoch
             public COMPUTE_REWARDS {}
@@ -158,11 +138,50 @@ define_schemas! {
                 required k: u64
             }
 
-            /// End epoch operations
+            /// Roll backward to a specific point
+            public ROLL_BACKWARD {
+                required rollback_point: String
+            }
+        }
+
+        epoch_transition {
+            /// Epoch transition processing
+            public EPOCH_TRANSITION {
+                required from: u64
+                required into: u64
+            }
+
+            /// Perform end-of-epoch epoch boundary computations
             public END_EPOCH {}
 
-            /// Begin epoch operations
+            /// Perform start-of-epoch epoch boundary computations
             public BEGIN_EPOCH {}
+
+            /// Flushing the epoch transition overlay to disk
+            public APPLYING_OVERLAY {
+                /// Epoch for which this overlay is being flush; This is the *currently active*
+                /// epoch.
+                required epoch: u64
+                /// Whether to end the epoch; in case Amaru is restarting mid-update.
+                optional should_end_epoch: bool,
+                /// Whether to take an on-disk snapshot; in case Amaru is restarting mid-update.
+                optional should_snapshot: bool,
+                /// Whether to begin the epoch; in case Amaru is restarting mid-update.
+                optional should_begin_epoch: bool,
+            }
+
+            /// Create pools updates
+            public POOLS_UPDATES_NEW {
+                /// Epoch for which those updates are for. This is the epoch that is just starting.
+                required epoch: u64
+            }
+
+            /// Create governance updates (i.e. ratify proposals) at an epoch boundary.
+            public GOVERNANCE_UPDATES_NEW {
+                /// Total number of proposals in scope. This also includes proposals that have
+                /// *just* been submitted.
+                required proposals_count: u64
+            }
 
             /// Reset fees to zero
             public RESET_FEES {}
@@ -170,14 +189,42 @@ define_schemas! {
             /// Reset blocks count to zero
             public RESET_BLOCKS_COUNT {}
 
-            /// Roll backward to a specific point
-            public ROLL_BACKWARD {
-                required rollback_point: String
+            /// Pay rewards to all accounts before the epoch end
+            public PAY_REWARDS {
+                /// Total number of accounts that received non-zero rewards
+                optional accounts_paid: u64
+                /// Total rewards effectively paid to ALL accounts; does not include unassignable rewards
+                optional rewards_paid: u64
+                /// Treasury increase; corresponding to both the treasury tax and the unpaid rewards
+                optional treasury_delta: u64
+                /// Reserves depletion from incentives; always negative.
+                optional reserves_delta: i64
             }
 
-            /// Create ratification context
-            public RATIFICATION_CONTEXT_NEW {}
+            /// Pay withdrawals to accounts, or refund deposits
+            public PAY_OR_REFUND_ACCOUNTS {
+                /// Total quantity of ADA paid, excluding treasury leftovers
+                optional total_paid_or_refunded: u64
+                /// Total amounts that couldn't be paid to accounts, going back to treasury instead.
+                optional treasury_leftovers: u64
+            }
 
+            /// Updating pools metadata or retiring pools at an epoch boundary.
+            public UPDATE_OR_RETIRE_POOLS {
+                /// Total number of pools updating metadata
+                required pools_updated: u64
+                /// Total number of pools retired
+                required pools_retired: u64
+            }
+
+            /// Enact all governance updates and flush their outcome to disk
+            public ENACT_GOVERNANCE_UPDATES {}
+
+            /// Add or remove CC members; or switch to a no-confidence state
+            public UPDATE_CONSTITUTIONAL_COMMITTEE {
+                /// Whether or not updates switches the committee to a "no-confidence" state
+                required no_confidence: bool
+            }
         }
 
         context {
@@ -284,8 +331,19 @@ define_schemas! {
         }
 
         governance {
+            /// Create ratification context
+            public RATIFICATION_CONTEXT_NEW {
+                /// Epoch to ratify; distinct from the actual epoch this calculation is happening.
+                required epoch: u64
+                /// Value of the treasury considered for this ratification round.
+                optional treasury: u64
+                /// Total number of votes to ratify.
+                optional votes: u64
+            }
+
             /// Ratify proposals at epoch boundary
             public RATIFY_PROPOSALS {
+                required epoch: u64
                 optional roots_protocol_parameters: String
                 optional roots_hard_fork: String
                 optional roots_constitutional_committee: String
@@ -293,9 +351,22 @@ define_schemas! {
             }
 
             /// Ratify a proposal while traversing the governance forest
-            RATIFYING {
+            public RATIFYING {
                 required proposal_id: String
                 required proposal_kind: String
+                optional approved_by_constitutional_committee: bool
+                optional committee_approval_threshold: String
+                optional approved_by_pools: bool
+                optional pools_approval_threshold: String
+                optional approved_by_dreps: bool
+                optional dreps_approval_threshold: String
+            }
+
+            /// Computing enactment of a ratified proposal
+            public ENACTING {
+                required proposal_id: String
+                required proposal_kind: String
+                optional pruned_relatives: String
             }
         }
     }

@@ -343,7 +343,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
     fn epoch_transition(&mut self, next_epoch: Epoch) -> Result<(), StateError> {
         info_span!(
-            amaru_observability::amaru::ledger::state::EPOCH_TRANSITION,
+            amaru_observability::amaru::ledger::epoch_transition::EPOCH_TRANSITION,
             from = u64::from(next_epoch - 1),
             into = u64::from(next_epoch)
         )
