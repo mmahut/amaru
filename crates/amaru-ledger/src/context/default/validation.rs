@@ -275,7 +275,7 @@ impl CommitteeSlice for DefaultValidationContext {
 
 impl ProposalsSlice for DefaultValidationContext {
     fn acknowledge(&mut self, id: ProposalId, pointer: ProposalPointer, proposal: Proposal) {
-        self.state.proposals.register(id.into(), (proposal, pointer), None, None).unwrap_or_default(); // Can't happen as by construction key is unique
+        self.state.proposals.insert(id.into(), (proposal, pointer));
     }
 
     fn vote(&mut self, proposal: ProposalId, voter: Voter, vote: Vote, anchor: Option<Anchor>) {

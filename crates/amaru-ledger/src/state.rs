@@ -356,6 +356,19 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             #[allow(clippy::unwrap_used)]
             let db = self.stable.lock().unwrap();
 
+            // NOTE: Crossing states during epoch transition
+            //
+            // The volatile at this point MUST NOT contain any block applications belonging to
+            // two epochs; So it is crucical for this view to only be created before we introduce
+            // any block from the next epoch.
+            //
+            // We could possible replace the direct access on the volatile here with an
+            // aggregated state as a proof that the volatile was indeed only containing the
+            // last k blocks for a single epoch. Or carry some kind of type-level guard that
+            // the this is called within an acceptable context (i.e. the volatile
+            // pre-conditions have been checked).
+            let mut volatile_view = self.volatile.view(next_epoch - 1, &*db);
+
             let effective_rewards = epoch_transition::end_epoch(&*db, computed_rewards)?;
 
             let ratification_context = RatificationContext::new(
@@ -369,13 +382,8 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 db.pots()?.treasury + effective_rewards.delta_treasury(),
             )?;
 
-            let (pools_updates, governance_updates) = epoch_transition::begin_epoch(
-                &*db,
-                &self.volatile,
-                next_epoch,
-                &self.era_history,
-                ratification_context,
-            )?;
+            let (pools_updates, governance_updates) =
+                epoch_transition::begin_epoch(&mut volatile_view, next_epoch, &self.era_history, ratification_context)?;
 
             drop(db); // Dropping the *mutable reference*, not the *actual database* :)
 

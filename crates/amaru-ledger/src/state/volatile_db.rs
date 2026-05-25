@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    mem,
+};
 
 use amaru_kernel::{
     Anchor, Ballot, BallotId, CertificatePointer, ComparableProposalId, DRep, DRepRegistration, Epoch, Lovelace,
@@ -26,11 +29,13 @@ use super::{
     diff_set::DiffSet,
 };
 use crate::{
+    governance::ratification::ProposalsRootsRc,
     state::{diff_bind::Resettable, diff_epoch_reg::Registrations},
-    store::{self, columns::*},
+    store::{
+        self, ReadStore, StoreError,
+        columns::{pools::Row as Pool, *},
+    },
 };
-
-pub const EVENT_TARGET: &str = "amaru::ledger::state::volatile_db";
 
 // VolatileDB
 // ----------------------------------------------------------------------------
@@ -94,6 +99,7 @@ impl VolatileDB {
             && last.anchor.0.slot() < target_slot
         {
             tracing::warn!(
+                name: "rollback_to.beyond",
                 %target_slot,
                 last_slot = ?last.anchor.0.slot(),
                 "Attempting to rollback to a point beyond the last known volatile state"
@@ -107,6 +113,7 @@ impl VolatileDB {
             && target_slot < first.anchor.0.slot()
         {
             tracing::error!(
+                name: "rollback_to.before",
                 %target_slot,
                 first_slot = ?first.anchor.0.slot(),
                 "Attempting to rollback to a point before the first point of the volatile state"
@@ -138,6 +145,33 @@ impl VolatileDB {
         Ok(())
     }
 
+    /// Obtain a view of the database, which acts as a proxy 'ReadStore' augmented with the latest
+    /// volatile updates, if any. This is used in context where one needs the true latest view of
+    /// the ledger; for example at the epoch boundary.
+    pub fn view<'volatile, 'store, DB: ReadStore>(
+        &'volatile self,
+        // TODO: Derive epoch instead of taking extra arg
+        //
+        // Currently passing this argument for simplicity, but that's a door open to
+        // inconsistencies. In principle we should be able to derive the epoch from either the
+        // stable db or self; since there can be only epoch in the context where this function is
+        // called. It's even an invariant violation if not...
+        epoch: Epoch,
+        db: &'store DB,
+    ) -> VolatileView<'volatile, 'store, DB> {
+        let mut pools = DiffEpochReg::default();
+        let mut proposals = BTreeMap::new();
+
+        for anchored in self.sequence.iter() {
+            pools.evolve(anchored.state.pools.into_borrowed());
+            for (k, v) in anchored.state.proposals.iter() {
+                proposals.insert(k, v);
+            }
+        }
+
+        VolatileView { db, epoch, pools, proposals }
+    }
+
     pub fn clear(&mut self) {
         self.sequence.clear();
     }
@@ -146,6 +180,7 @@ impl VolatileDB {
 // VolatileState
 // ----------------------------------------------------------------------------
 
+/// Resulting state change coming from processing a block.
 #[derive(Debug, Default)]
 pub struct VolatileState {
     pub utxo: DiffSet<TransactionInput, MemoizedTransactionOutput>,
@@ -155,7 +190,7 @@ pub struct VolatileState {
     pub dreps_deregistrations: BTreeMap<StakeCredential, CertificatePointer>,
     pub committee: DiffBind<StakeCredential, StakeCredential, Empty, Empty>,
     pub withdrawals: BTreeSet<StakeCredential>,
-    pub proposals: DiffBind<ComparableProposalId, Empty, Empty, (Proposal, ProposalPointer)>,
+    pub proposals: BTreeMap<ComparableProposalId, (Proposal, ProposalPointer)>,
     pub votes: DiffSet<BallotId, Ballot>,
     pub fees: Lovelace,
 }
@@ -176,6 +211,134 @@ impl VolatileState {
 
     pub fn has_consumed_input(&self, input: &TransactionInput) -> bool {
         self.utxo.consumed.contains(input)
+    }
+}
+
+// VolatileView
+// ----------------------------------------------------------------------------
+
+/// An aggregate of multiple VolatileState, useful at epoch boundaries or for building context.
+#[derive(Debug)]
+pub struct VolatileView<'volatile, 'store, DB: ReadStore> {
+    epoch: Epoch,
+    db: &'store DB,
+    pools: DiffEpochReg<PoolId, &'volatile (PoolParams, CertificatePointer)>,
+    proposals: BTreeMap<&'volatile ComparableProposalId, &'volatile (Proposal, ProposalPointer)>,
+    // TODO
+    // accounts: DiffBind<StakeCredential, (PoolId, CertificatePointer), (DRep, CertificatePointer), Lovelace>,
+}
+
+/// An internal iterator that proxies the stable store's `iter_pools`, but taking into account any
+/// pending volatile update.
+///
+/// NOTE: About 'IterPools'
+///
+/// This iterator may look complicated, but it exists for two reasons:
+///
+/// 1. It allows to stick with iterators; which means that the compiler and execution can be
+///    optimised towards that. There's no overhead resulting from allocating a large vector of 3000
+///    pools. We can intead rely on streaming all the way to construct the updates.
+///
+/// 2. Until we have hit the stable store, we cannot know whether a registration is actually a new
+///    registration, or if it's a re-registration. That's because there's no mechanism to 'update'
+///    a pool really, they just re-register. Yet, we don't want to be inspecting each registration
+///    independently with a db call because that could be very dramatic.
+///
+///    Since we can process those updates in any order; we can go ahead and first treat all the
+///    database pools, an then, continue the iterator with what's left in the pending state if any.
+///    Yet, because of Rust borrowing and ownership model, we cannot just do that on top of the db
+///    iterator alone; we must introduce an extra wrapper that will own all the required data and
+///    take care of the chaining.
+///
+/// Importantly, the last points means that there's no guaranteed order on this iterator. Pools
+/// shall be considered unordered by consumers of this iterator.
+struct IterPools<'volatile, DBIter: Iterator<Item = (PoolId, Pool)>> {
+    epoch: Epoch,
+    db_iterator: DBIter,
+    registrations: BTreeMap<PoolId, Registrations<&'volatile (PoolParams, CertificatePointer)>>,
+    retirements: BTreeMap<PoolId, Epoch>,
+}
+
+impl<'volatile, DBIter: Iterator<Item = (PoolId, Pool)>> Iterator for IterPools<'volatile, DBIter> {
+    type Item = (PoolId, Pool);
+
+    // TODO: reduce logic duplication?
+    //
+    // - The following code 'patches' the immutable db state with what's transient in the
+    //   volatile.
+    //
+    // - Fundamentally, it duplicates the logic of:
+    //   - state::volatile_db::add_pools
+    //   - store::columns::pools::extend
+    //   - rocksdb::ledger::columns::pools::{add, remove}
+    //
+    // - However, it doesn't duplicate things in a way that's trivial to unify. But that's
+    //   probably something we may want to look into? Perhaps as one of the design goal for a
+    //   future ledger store.
+    //
+    // TODO: annoying clones
+    //
+    // This also contains a few annoying clones which could likely be avoided or deferred by having
+    // the iterator works over a `&Pool`.
+    fn next(&mut self) -> Option<Self::Item> {
+        // First, we patch stable pools with any pending update
+        if let Some((pool_id, mut pool)) = self.db_iterator.next() {
+            // Pool is already registered, and has some updates.
+            if let Some(update) = self.registrations.remove(&pool_id) {
+                let mut future_params =
+                    update.into_iter().map(|(pool_params, _)| (Some(pool_params.clone()), self.epoch + 1)).collect();
+                pool.future_params.append(&mut future_params);
+            }
+
+            // Pool has announced its retirement.
+            if let Some(retirement_epoch) = self.retirements.remove(&pool_id) {
+                pool.future_params.append(&mut vec![(None, retirement_epoch)])
+            }
+
+            return Some((pool_id, pool));
+        }
+
+        // Then, we must add any pool that only appears in the volatile
+        if let Some((pool_id, registrations)) = self.registrations.pop_first() {
+            let (registration, re_registration) = registrations.into_inner();
+
+            let mut pool = Pool::new(registration.1, registration.0.clone());
+            if let Some(re_registration) = re_registration {
+                pool.future_params = vec![(Some(re_registration.0.clone()), self.epoch + 1)]
+            }
+
+            return Some((pool_id, pool));
+        }
+
+        None
+    }
+}
+
+impl<'volatile, 'store, DB: ReadStore> VolatileView<'volatile, 'store, DB> {
+    /// Provides an iterator for pools on top of the stable store, but adding any pending updates
+    /// from the aggregated volatile state.
+    pub fn iter_pools(&mut self) -> Result<impl Iterator<Item = (PoolId, Pool)>, StoreError> {
+        Ok(IterPools {
+            epoch: self.epoch,
+            db_iterator: self.db.iter_pools()?,
+            registrations: mem::take(&mut self.pools.registered),
+            retirements: mem::take(&mut self.pools.unregistered),
+        })
+    }
+
+    /// Provides an iterator for proposals on top of the stable store, but adding any pending updates
+    /// from the aggregated volatile state.
+    pub fn iter_proposals(
+        &mut self,
+    ) -> Result<impl Iterator<Item = (ComparableProposalId, proposals::Row)>, StoreError> {
+        Ok(self.db.iter_proposals()?.chain(add_proposals(
+            mem::take(&mut self.proposals).into_iter().map(|(k, v)| (k.clone(), v.clone())),
+            self.epoch,
+        )))
+    }
+
+    pub fn proposals_roots(&self) -> Result<ProposalsRootsRc, StoreError> {
+        Ok(ProposalsRootsRc::from(self.db.proposals_roots()?))
     }
 }
 
@@ -231,7 +394,7 @@ impl AnchoredVolatileState {
                 accounts: add_accounts(self.state.accounts.registered.into_iter()),
                 dreps: add_dreps(self.state.dreps.registered.into_iter()),
                 cc_members: add_committee(self.state.committee.registered.into_iter()),
-                proposals: add_proposals(self.state.proposals.registered.into_iter(), epoch + gov_action_lifetime),
+                proposals: add_proposals(self.state.proposals.into_iter(), epoch + gov_action_lifetime),
                 votes: self.state.votes.produced.into_iter(),
             },
             remove: store::Columns {
@@ -240,10 +403,7 @@ impl AnchoredVolatileState {
                 accounts: self.state.accounts.unregistered.into_iter(),
                 dreps: remove_dreps(self.state.dreps.unregistered.into_iter(), self.state.dreps_deregistrations),
                 cc_members: self.state.committee.unregistered.into_iter(),
-                proposals: {
-                    debug_assert!(self.state.proposals.unregistered.is_empty());
-                    std::iter::empty()
-                },
+                proposals: std::iter::empty(),
                 votes: {
                     debug_assert!(self.state.votes.consumed.is_empty());
                     std::iter::empty()
@@ -327,24 +487,12 @@ fn add_committee(
 // --------------------------------------------------------------------------
 
 fn add_proposals(
-    iterator: impl Iterator<Item = (ComparableProposalId, Bind<Empty, Empty, (Proposal, ProposalPointer)>)>,
+    iterator: impl Iterator<Item = (ComparableProposalId, (Proposal, ProposalPointer))>,
     expiration: Epoch,
 ) -> impl Iterator<Item = (proposals::Key, proposals::Value)> {
-    iterator.enumerate().filter_map(
-        move |(index, (proposal_id, Bind { left: _, right: _, value })): (usize, (_, Bind<_, Empty, _>))| match value {
-            Some((proposal, proposed_in)) => {
-                Some((proposal_id, proposals::Value { proposed_in, valid_until: expiration, proposal }))
-            }
-            None => {
-                tracing::error!(
-                    target: EVENT_TARGET,
-                    index,
-                    "add.proposals.no_proposal",
-                );
-                None
-            }
-        },
-    )
+    iterator.map(move |(proposal_id, (proposal, proposed_in))| {
+        (proposal_id, proposals::Value { proposed_in, valid_until: expiration, proposal })
+    })
 }
 
 #[cfg(test)]

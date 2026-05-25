@@ -50,6 +50,10 @@ impl<V> Registrations<V> {
         Self((v, None))
     }
 
+    pub fn into_inner(self) -> (V, Option<V>) {
+        (self.0.0, self.0.1)
+    }
+
     pub fn next(&mut self, v: V) {
         let inner = &mut self.0;
         inner.1 = Some(v);
@@ -63,6 +67,10 @@ impl<V> Registrations<V> {
     pub fn into_last(self) -> V {
         let inner = self.0;
         inner.1.unwrap_or(inner.0)
+    }
+
+    pub fn into_borrowed(&self) -> Registrations<&V> {
+        Registrations((&self.0.0, self.0.1.as_ref()))
     }
 }
 
@@ -108,6 +116,23 @@ impl<K: Ord, V> DiffEpochReg<K, V> {
     pub fn unregister(&mut self, k: K, epoch: Epoch) {
         self.unregistered.insert(k, epoch);
     }
+}
+
+impl<K: Ord + Copy, V> DiffEpochReg<K, V> {
+    /// Create a structure of borrowed keys and values from an initial borrowed structure.
+    pub fn into_borrowed(&self) -> DiffEpochReg<K, &V> {
+        let mut borrowed = DiffEpochReg::default();
+
+        for (k, v) in self.registered.iter() {
+            borrowed.registered.insert(*k, v.into_borrowed());
+        }
+
+        for (k, v) in self.unregistered.iter() {
+            borrowed.unregistered.insert(*k, *v);
+        }
+
+        borrowed
+    }
 
     /// Merge two states together, assuming that the other state is the most recent.
     ///
@@ -121,7 +146,10 @@ impl<K: Ord, V> DiffEpochReg<K, V> {
         }
 
         for (k, v) in most_recent.registered {
-            self.register(k, v.into_last())
+            self.register(k, v.0.0);
+            if let Some(re_registration) = v.0.1 {
+                self.register(k, re_registration);
+            }
         }
     }
 }

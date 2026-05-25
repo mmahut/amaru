@@ -40,7 +40,7 @@ use crate::{
         CandidateProposal, CommitteeUpdate, ProposalsRoots, ProposalsRootsRc, RatificationContext,
     },
     state::StateError,
-    store::ReadStore,
+    store::columns::proposals::Row as Proposal,
 };
 
 /// A summary of the governance updates resulting from processing proposals at an epoch boundary.
@@ -115,7 +115,8 @@ impl GovernanceUpdates {
     ///    aren't penalized for not being active in epochs where there's no activity).
     ///
     pub fn new(
-        db: &impl ReadStore,
+        roots: ProposalsRootsRc,
+        iter_proposals: impl Iterator<Item = (ComparableProposalId, Proposal)>,
         era_history: &EraHistory,
         mut ctx: RatificationContext<'_>,
     ) -> Result<Self, StateError> {
@@ -123,8 +124,7 @@ impl GovernanceUpdates {
 
         // A dual fold where we split the proposal information between 'CandidateProposal' and
         // 'ProposalMetadata'; both used in different contexts.
-        let proposals: Vec<(Rc<ComparableProposalId>, CandidateProposal)> = db
-            .iter_proposals()?
+        let proposals: Vec<(Rc<ComparableProposalId>, CandidateProposal)> = iter_proposals
             .map(|(id, row)| {
                 let id = Rc::new(id);
 
@@ -164,7 +164,7 @@ impl GovernanceUpdates {
                     // We shouldn't collect all proposals here, but provides iterators for the
                     // ratification step to go over them lazily.
                     proposals,
-                    ProposalsRootsRc::from(db.proposals_roots()?),
+                    roots,
                 )
                 .map_err(|e| StateError::RatificationFailed(e.to_string()))?;
 
