@@ -161,11 +161,22 @@ pub async fn stage(mut state: AdoptChain, msg: AdoptChainMsg, eff: Effects<Adopt
     }
 
     if let Some(current_best) = current_best.as_ref() {
-        adopt_tip(&store, &incoming_header, current_best)
+        let adopt_result = adopt_tip(&store, &incoming_header, current_best)
             .or_terminate_with(&eff, async |error| {
                 tracing::error!(error = %error, tip = %msg, "failed to adopt tip");
             })
             .await;
+        match adopt_result {
+            AdoptTipResult::BestChainRolledForward | AdoptTipResult::BestChainSwitched => {}
+            AdoptTipResult::HeaderNotFound => {
+                tracing::error!(tip = %msg, "invariant violated: incoming header was loaded but find_ancestor_on_best_chain reports it missing");
+                return eff.terminate().await;
+            }
+            AdoptTipResult::AncestorOnBestChainNotFound => {
+                tracing::error!(tip = %msg, "invariant violated: incoming chain shares no ancestor with the best chain");
+                return eff.terminate().await;
+            }
+        }
     } else {
         store
             .roll_forward_chain(&incoming_header.point())
