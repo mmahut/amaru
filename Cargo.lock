@@ -82,7 +82,6 @@ dependencies = [
  "futures-util",
  "hex",
  "include_dir",
- "indicatif",
  "indoc",
  "insta",
  "minicbor",

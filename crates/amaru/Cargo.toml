@@ -39,7 +39,6 @@ futures-util.workspace = true
 hex.workspace = true
 include_dir = { workspace = true, features = ["glob"] }
 indoc.workspace = true
-indicatif.workspace = true
 minicbor.workspace = true
 opentelemetry-appender-tracing.workspace = true
 opentelemetry-otlp.workspace = true
