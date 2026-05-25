@@ -29,7 +29,7 @@ use amaru_ledger::{
 };
 use amaru_network::chain_sync_client::ChainSyncClient;
 use amaru_ouroboros::{ChainStore, Nonces};
-use amaru_progress_bar::{new_terminal_progress_bar};
+use amaru_progress_bar::new_terminal_progress_bar;
 use amaru_stores::rocksdb::{RocksDB, RocksDbConfig, consensus::RocksDBStore};
 use async_compression::tokio::bufread::GzipDecoder as AsyncGzipDecoder;
 use flate2::read::GzDecoder;
