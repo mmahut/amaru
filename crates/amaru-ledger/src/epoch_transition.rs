@@ -33,16 +33,12 @@ pub use ratification::{GovernanceActivity, GovernanceUpdates};
 /// Ends the ongoing epoch by calculating rewards payouts to the various still-registered accounts.
 /// Unpaid rewards are assigned back to the treasury.
 ///
-pub fn end_epoch(db: &impl ReadStore, computed_rewards: Rewards<Computed>) -> Result<Rewards<Effective>, StoreError> {
-    info_span!(amaru_observability::amaru::ledger::epoch_transition::END_EPOCH).in_scope(|| {
-        // FIXME: account de-registrations from the volatile db
-        //
-        // The following code only looks at accounts from the stable store which is missing the last
-        // `k` blocks of an epoch. One may unregister its account in that last unstable chunk; so
-        // we must filter them out.
-        let accounts = db.iter_accounts()?.map(|(k, _v)| k);
-        Ok(Rewards::<Effective>::new(computed_rewards, accounts))
-    })
+pub fn end_epoch<'volatile, 'store, DB: ReadStore>(
+    view: &mut VolatileView<'volatile, 'store, DB>,
+    computed_rewards: Rewards<Computed>,
+) -> Result<Rewards<Effective>, StoreError> {
+    info_span!(amaru_observability::amaru::ledger::epoch_transition::END_EPOCH)
+        .in_scope(|| Ok(Rewards::<Effective>::new(computed_rewards, view.iter_accounts()?)))
 }
 
 pub fn begin_epoch<'distr, 'volatile, 'store, DB: ReadStore>(

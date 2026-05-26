@@ -30,7 +30,10 @@ use super::{
 };
 use crate::{
     governance::ratification::ProposalsRootsRc,
-    state::{diff_bind::Resettable, diff_epoch_reg::Registrations},
+    state::{
+        diff_bind::{MergeError, Resettable},
+        diff_epoch_reg::Registrations,
+    },
     store::{
         self, ReadStore, StoreError,
         columns::{pools::Row as Pool, *},
@@ -145,35 +148,47 @@ impl VolatileDB {
         Ok(())
     }
 
-    /// Obtain a view of the database, which acts as a proxy 'ReadStore' augmented with the latest
-    /// volatile updates, if any. This is used in context where one needs the true latest view of
-    /// the ledger; for example at the epoch boundary.
-    pub fn view<'volatile, 'store, DB: ReadStore>(
-        &'volatile self,
-        // TODO: Derive epoch instead of taking extra arg
-        //
-        // Currently passing this argument for simplicity, but that's a door open to
-        // inconsistencies. In principle we should be able to derive the epoch from either the
-        // stable db or self; since there can be only epoch in the context where this function is
-        // called. It's even an invariant violation if not...
-        epoch: Epoch,
-        db: &'store DB,
-    ) -> VolatileView<'volatile, 'store, DB> {
-        let mut pools = DiffEpochReg::default();
-        let mut proposals = BTreeMap::new();
-
-        for anchored in self.sequence.iter() {
-            pools.evolve(anchored.state.pools.into_borrowed());
-            for (k, v) in anchored.state.proposals.iter() {
-                proposals.insert(k, v);
-            }
-        }
-
-        VolatileView { db, epoch, pools, proposals }
-    }
-
     pub fn clear(&mut self) {
         self.sequence.clear();
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ViewError {
+    #[error(
+        "unable to construct volatile view: invariant violation ({:?}) when processing accounts at anchor {:?}:\nnext_accounts: {:#?}\ncurrent_accounts: {:#?}",
+         .merge_error,
+         .anchor,
+         .next_accounts,
+         .current_accounts,
+    )]
+    AccountsMergeError {
+        anchor: Box<(Tip, PoolId)>,
+        merge_error: MergeError<StakeCredential>,
+        next_accounts:
+            Box<DiffBind<StakeCredential, (PoolId, CertificatePointer), (DRep, CertificatePointer), Lovelace>>,
+        current_accounts:
+            Box<DiffBind<StakeCredential, (PoolId, CertificatePointer), (DRep, CertificatePointer), Lovelace>>,
+    },
+}
+
+impl ViewError {
+    pub fn accounts_merge_error(
+        anchored: &AnchoredVolatileState,
+        merge_error: MergeError<&StakeCredential>,
+        current_accounts: DiffBind<
+            &StakeCredential,
+            &(PoolId, CertificatePointer),
+            &(DRep, CertificatePointer),
+            &Lovelace,
+        >,
+    ) -> Self {
+        Self::AccountsMergeError {
+            merge_error: merge_error.to_owned(),
+            anchor: Box::new(anchored.anchor),
+            next_accounts: Box::new(anchored.state.accounts.clone()),
+            current_accounts: Box::new(current_accounts.to_owned()),
+        }
     }
 }
 
@@ -222,10 +237,16 @@ impl VolatileState {
 pub struct VolatileView<'volatile, 'store, DB: ReadStore> {
     epoch: Epoch,
     db: &'store DB,
-    pools: DiffEpochReg<PoolId, &'volatile (PoolParams, CertificatePointer)>,
+    pools: Option<DiffEpochReg<PoolId, &'volatile (PoolParams, CertificatePointer)>>,
     proposals: BTreeMap<&'volatile ComparableProposalId, &'volatile (Proposal, ProposalPointer)>,
-    // TODO
-    // accounts: DiffBind<StakeCredential, (PoolId, CertificatePointer), (DRep, CertificatePointer), Lovelace>,
+    accounts: Option<AccountVolatileView<'volatile>>,
+}
+
+/// A simplified 'DiffBind' for accounts, specialized to just the stake credentials.
+#[derive(Debug)]
+struct AccountVolatileView<'volatile> {
+    registered: BTreeSet<&'volatile StakeCredential>,
+    unregistered: BTreeSet<&'volatile StakeCredential>,
 }
 
 /// An internal iterator that proxies the stable store's `iter_pools`, but taking into account any
@@ -314,20 +335,97 @@ impl<'volatile, DBIter: Iterator<Item = (PoolId, Pool)>> Iterator for IterPools<
     }
 }
 
-impl<'volatile, 'store, DB: ReadStore> VolatileView<'volatile, 'store, DB> {
+/// Similar to [`IterPools`], but for accounts; making sure we acknowledge deregistrations while
+/// continuing with new fresh registrations.
+struct IterAccounts<'volatile, DBIter: Iterator<Item = (StakeCredential, accounts::Row)>> {
+    db_iterator: DBIter,
+    registrations: BTreeSet<&'volatile StakeCredential>,
+    deregistrations: BTreeSet<&'volatile StakeCredential>,
+}
+
+impl<'volatile, DBIter: Iterator<Item = (StakeCredential, accounts::Row)>> Iterator
+    for IterAccounts<'volatile, DBIter>
+{
+    type Item = StakeCredential;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((account, _)) = self.db_iterator.next()
+            && !self.deregistrations.contains(&account)
+        {
+            return Some(account);
+        }
+
+        if let Some(account) = self.registrations.pop_first() {
+            return Some(account.clone());
+        }
+
+        None
+    }
+}
+
+impl<'volatile, 'db, DB: ReadStore> VolatileView<'volatile, 'db, DB> {
+    /// Obtain a view of the database, which acts as a proxy 'ReadStore' augmented with the latest
+    /// volatile updates, if any. This is used in context where one needs the true latest view of
+    /// the ledger; for example at the epoch boundary.
+    pub fn new(
+        // TODO: Derive epoch instead of taking extra arg
+        //
+        // Currently passing this argument for simplicity, but that's a door open to
+        // inconsistencies. In principle we should be able to derive the epoch from either the
+        // stable db or self; since there can be only epoch in the context where this function is
+        // called. It's even an invariant violation if not...
+        epoch: Epoch,
+        volatile: &'volatile VolatileDB,
+        stable: &'db DB,
+    ) -> Result<VolatileView<'volatile, 'db, DB>, ViewError> {
+        let mut pools = DiffEpochReg::default();
+        let mut proposals = BTreeMap::new();
+        let mut accounts = DiffBind::default();
+
+        for anchored in volatile.sequence.iter() {
+            if let Err(merge_error) = accounts.evolve(anchored.state.accounts.into_borrowed()) {
+                return Err(ViewError::accounts_merge_error(anchored, merge_error, accounts));
+            }
+
+            pools.evolve(anchored.state.pools.into_borrowed());
+
+            for (k, v) in anchored.state.proposals.iter() {
+                proposals.insert(k, v);
+            }
+        }
+
+        let accounts = AccountVolatileView {
+            registered: accounts.registered.into_keys().collect(),
+            unregistered: accounts.unregistered,
+        };
+
+        Ok(Self { db: stable, epoch, accounts: Some(accounts), pools: Some(pools), proposals })
+    }
+
     /// Provides an iterator for pools on top of the stable store, but adding any pending updates
     /// from the aggregated volatile state.
+    ///
+    /// IMPORTANT: Yields pools in no particular order.
     pub fn iter_pools(&mut self) -> Result<impl Iterator<Item = (PoolId, Pool)>, StoreError> {
-        Ok(IterPools {
-            epoch: self.epoch,
-            db_iterator: self.db.iter_pools()?,
-            registrations: mem::take(&mut self.pools.registered),
-            retirements: mem::take(&mut self.pools.unregistered),
-        })
+        match mem::take(&mut self.pools) {
+            None => {
+                // Just being careful here. There's no reason to ever call this twice; but if it
+                // ever happens, this line might save us from hours of debugging.
+                unreachable!(".iter_pools() called twice on the same VolatileView! Don't do that.")
+            }
+            Some(mut pools) => Ok(IterPools {
+                epoch: self.epoch,
+                db_iterator: self.db.iter_pools()?,
+                registrations: mem::take(&mut pools.registered),
+                retirements: mem::take(&mut pools.unregistered),
+            }),
+        }
     }
 
     /// Provides an iterator for proposals on top of the stable store, but adding any pending updates
     /// from the aggregated volatile state.
+    ///
+    /// IMPORTANT: Yields proposals in no particular order.
     pub fn iter_proposals(
         &mut self,
     ) -> Result<impl Iterator<Item = (ComparableProposalId, proposals::Row)>, StoreError> {
@@ -337,6 +435,28 @@ impl<'volatile, 'store, DB: ReadStore> VolatileView<'volatile, 'store, DB> {
         )))
     }
 
+    /// Provides an iterator for accounts on top of the stable store, also applying any pending
+    /// registration or deregistration from the aggregated volatile state.
+    ///
+    /// IMPORTANT: Yields accounts in no particular order.
+    pub fn iter_accounts(&mut self) -> Result<impl Iterator<Item = StakeCredential>, StoreError> {
+        match mem::take(&mut self.accounts) {
+            None => {
+                // Just being careful here. There's no reason to ever call this twice; but if it
+                // ever happens, this line might save us from hours of debugging.
+                unreachable!(".iter_accounts() called twice on the same VolatileView! Don't do that.")
+            }
+            Some(mut accounts) => Ok(IterAccounts {
+                db_iterator: self.db.iter_accounts()?,
+                registrations: mem::take(&mut accounts.registered),
+                deregistrations: mem::take(&mut accounts.unregistered),
+            }),
+        }
+    }
+
+    /// A view on the proposal roots; this doesn't really require any volatile update but is
+    /// conveniently made available from the underlying store; to avoid having to pass both a
+    /// volatile view and a stable store around every function.
     pub fn proposals_roots(&self) -> Result<ProposalsRootsRc, StoreError> {
         Ok(ProposalsRootsRc::from(self.db.proposals_roots()?))
     }
