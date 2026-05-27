@@ -19,7 +19,7 @@ use amaru_kernel::{
 };
 use amaru_ledger::{
     epoch_transition::GovernanceActivity,
-    state::{BackwardError, State, VolatileState},
+    state::{BackwardError, State, volatile::VolatileFragment},
     store::{ReadStore, Store, StoreError},
 };
 use amaru_stores::rocksdb::{RocksDB, RocksDBHistoricalStores, RocksDbConfig};
@@ -56,7 +56,7 @@ fn rollback_before_volatile_front_is_rejected() {
 
     assert!(matches!(
         dbg!(state.rollback_to(&to)),
-        Err(BackwardError::UnknownRollbackPoint { rollback_point, .. }) if rollback_point == to,
+        Err(err @ BackwardError::UnknownRollbackPoint { .. }) if err.rollback_point() == to,
     ));
     assert_eq!(*state.tip(), point(200, 2), "tip is unchanged after a rejected rollback");
 }
@@ -71,7 +71,7 @@ fn rollback_within_volatile_but_unknown_hash_is_rejected() {
 
     assert!(matches!(
         dbg!(state.rollback_to(&to)),
-        Err(BackwardError::UnknownRollbackPoint { rollback_point, .. }) if rollback_point == to,
+        Err(err @ BackwardError::UnknownRollbackPoint { .. }) if err.rollback_point() == to,
     ));
     assert_eq!(*state.tip(), point(200, 2), "tip is unchanged after a rejected rollback");
 }
@@ -86,7 +86,7 @@ fn rollback_within_volatile_but_unknown_slot_is_rejected() {
 
     assert!(matches!(
         dbg!(state.rollback_to(&to)),
-        Err(BackwardError::UnknownRollbackPoint { rollback_point, .. }) if rollback_point == to,
+        Err(err @ BackwardError::UnknownRollbackPoint { .. }) if err.rollback_point() == to,
     ));
     assert_eq!(*state.tip(), point(200, 2), "tip is unchanged after a rejected rollback");
 }
@@ -100,7 +100,7 @@ fn rollback_after_volatile_front_is_rejected() {
 
     assert!(matches!(
         dbg!(state.rollback_to(&to)),
-        Err(BackwardError::RollbackPointInFuture { rollback_point, .. }) if rollback_point == to,
+        Err(err @ BackwardError::RollbackPointInFuture { .. }) if err.rollback_point() == to,
     ));
     assert_eq!(*state.tip(), point(100, 1), "tip is unchanged after a rejected rollback");
 }

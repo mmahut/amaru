@@ -757,35 +757,27 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     pub fn rollback_to(&mut self, to: &Point) -> Result<(), BackwardError> {
         info_span!(amaru_observability::amaru::ledger::state::ROLL_BACKWARD, rollback_point = to.to_string()).in_scope(
             || {
+                let immutable_tip = self.immutable_tip();
+
+                let volatile_tip = self.volatile_tip().map(|t| t.point()).unwrap_or(immutable_tip);
+
                 // NOTE: Rolling back to the tip of the immutable
                 //
                 // All rollback points within the volatile part are handled by `VolatileDB`, but there is one more
                 // legal rollback target, which is the `immutable_tip()`, in which case the VolatileDB is cleared.
-                let immutable_tip = self.immutable_tip();
                 if *to == immutable_tip {
                     self.volatile.clear();
-                    return Ok(());
-                }
-
-                if *to < immutable_tip {
-                    return Err(BackwardError::UnknownRollbackPoint { rollback_point: *to, tip: immutable_tip });
-                }
-                let tip = self.volatile_tip().map(|t| t.point()).unwrap_or(immutable_tip);
-
-                if *to > tip {
-                    return Err(BackwardError::RollbackPointInFuture { rollback_point: *to, tip });
-                }
-
-                if to == &tip {
-                    self.volatile.clear();
+                } else if *to < immutable_tip {
+                    return Err(BackwardError::beyond_max(*to, volatile_tip, immutable_tip));
+                } else if *to > volatile_tip {
+                    return Err(BackwardError::in_the_future(*to, volatile_tip, immutable_tip));
                 } else {
-                    self.volatile.rollback_to(to).map_err(|rollback_point| BackwardError::UnknownRollbackPoint {
-                        rollback_point: *rollback_point,
-                        tip,
+                    self.volatile.rollback_to(to).map_err(|rollback_point| {
+                        BackwardError::unknown(*rollback_point, volatile_tip, immutable_tip)
                     })?;
                 }
 
-                let epoch_from = unsafe_slot_to_epoch(&self.era_history, tip.slot_or_default());
+                let epoch_from = unsafe_slot_to_epoch(&self.era_history, volatile_tip.slot_or_default());
                 let epoch_to = unsafe_slot_to_epoch(&self.era_history, to.slot_or_default());
 
                 if epoch_to < epoch_from {
@@ -981,15 +973,58 @@ fn unsafe_slot_to_epoch(era_history: &EraHistory, slot: Slot) -> Epoch {
 // Errors
 // ----------------------------------------------------------------------------
 
+/// The ledger has been instructed to rollback to an unknown point. These should be impossible
+/// if chain-sync messages (roll-forward and roll-backward) are all passed to the ledger.
 #[derive(Debug, Error)]
 pub enum BackwardError {
-    /// The ledger has been instructed to rollback to an unknown point. This should be impossible
-    /// if chain-sync messages (roll-forward and roll-backward) are all passed to the ledger.
-    #[error("error rolling back to unknown point at {rollback_point}; current ledger tip is at {tip}")]
-    UnknownRollbackPoint { rollback_point: Point, tip: Point },
+    #[error("error rolling back to unknown point: {0}")]
+    UnknownRollbackPoint(BackwardErrorDetails),
 
-    #[error("cannot roll back to a point {rollback_point} in the future of the current ledger tip {tip}")]
-    RollbackPointInFuture { rollback_point: Point, tip: Point },
+    #[error("attempted to rollback beyond immutable tip: {0}")]
+    BeyondMaxRollback(BackwardErrorDetails),
+
+    #[error("attempted roll back in the future: {0}")]
+    RollbackPointInFuture(BackwardErrorDetails),
+}
+
+impl BackwardError {
+    pub fn rollback_point(&self) -> Point {
+        match self {
+            Self::UnknownRollbackPoint(BackwardErrorDetails { rollback_point, .. })
+            | Self::BeyondMaxRollback(BackwardErrorDetails { rollback_point, .. })
+            | Self::RollbackPointInFuture(BackwardErrorDetails { rollback_point, .. }) => **rollback_point,
+        }
+    }
+
+    pub fn unknown(rollback_point: Point, volatile_tip: Point, immutable_tip: Point) -> Self {
+        Self::UnknownRollbackPoint(BackwardErrorDetails::new(rollback_point, volatile_tip, immutable_tip))
+    }
+
+    pub fn beyond_max(rollback_point: Point, volatile_tip: Point, immutable_tip: Point) -> Self {
+        Self::BeyondMaxRollback(BackwardErrorDetails::new(rollback_point, volatile_tip, immutable_tip))
+    }
+
+    pub fn in_the_future(rollback_point: Point, volatile_tip: Point, immutable_tip: Point) -> Self {
+        Self::RollbackPointInFuture(BackwardErrorDetails::new(rollback_point, volatile_tip, immutable_tip))
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("rollback point = {rollback_point}, volatile tip = {volatile_tip}, immutable_tip = {immutable_tip}")]
+pub struct BackwardErrorDetails {
+    rollback_point: Box<Point>,
+    volatile_tip: Box<Point>,
+    immutable_tip: Box<Point>,
+}
+
+impl BackwardErrorDetails {
+    pub fn new(rollback_point: Point, volatile_tip: Point, immutable_tip: Point) -> Self {
+        BackwardErrorDetails {
+            rollback_point: Box::new(rollback_point),
+            volatile_tip: Box::new(volatile_tip),
+            immutable_tip: Box::new(immutable_tip),
+        }
+    }
 }
 
 #[derive(Debug, Error)]
