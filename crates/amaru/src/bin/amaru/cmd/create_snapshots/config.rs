@@ -20,7 +20,7 @@ use std::{
 
 use amaru_kernel::NetworkName;
 use serde::Deserialize;
-use tracing::{info, warn};
+use tracing::info;
 
 use super::repo_root;
 const OFFICIAL_CARDANO_NODE_CONFIG_BASE_URL: &str = "https://book.world.dev.cardano.org/environments";
@@ -81,8 +81,9 @@ pub(super) async fn resolve_config_dir(
                 info!(config_dir = %config_dir.display(), network = %network, "using bundled cardano-node config");
                 return Ok(config_dir);
             }
-            Err(error) => {
-                warn!(config_dir = %config_dir.display(), error = %error, network = %network, "bundled cardano-node config is incomplete; falling back to official download");
+            Err(_) => {
+                info!(config_dir = %config_dir.display(), network = %network, "bundled cardano-node config is outdated; refreshing from official source");
+                return download_official_config_bundle(client, network, &config_dir).await;
             }
         }
     }
