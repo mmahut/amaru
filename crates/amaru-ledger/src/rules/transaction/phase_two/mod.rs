@@ -16,11 +16,17 @@ use std::{collections::BTreeMap, fmt};
 
 use amaru_kernel::{
     EraHistory, HasTransactionId, NetworkName, ProtocolParameters, TransactionBody, TransactionInput,
-    TransactionPointer, WitnessSet, cbor, decode_plutus_script, to_cbor, transaction_input_to_string,
+    TransactionPointer, WitnessSet, cbor, decode_plutus_script,
+    phase_two::{
+        script::Script,
+        tx_info::{TxInfo, TxInfoTranslationError},
+        utxos::Utxos,
+    },
+    to_cbor, transaction_input_to_string,
 };
 use amaru_plutus::{
     arena_pool::ArenaPool,
-    script_context::{Script, TxInfo, TxInfoTranslationError, Utxos},
+    script_context::ToScriptArgs,
     to_plutus_data::{PLUTUS_V1, PLUTUS_V2, PLUTUS_V3, PlutusDataError},
 };
 use amaru_uplc::{

@@ -15,18 +15,18 @@
 use std::{borrow::Cow, collections::BTreeMap, ops::Deref};
 
 use amaru_kernel::{
-    Address, AssetName, Certificate as PallasCertificate, Hash, StakePayload, TransactionInput, size::DATUM,
+    Address, AssetName, Certificate as PallasCertificate, Hash, PlutusData, StakePayload, TransactionInput, size::DATUM,
 };
 
 use crate::{
     IsKnownPlutusVersion, PlutusDataError, PlutusVersion, ToPlutusData, constr, constr_v1,
     script_context::{
-        Certificate, CurrencySymbol, DatumOption, Datums, IsPrePlutusVersion3, Mint, OutputRef, PlutusData,
-        ScriptContext, ScriptPurpose, StakeAddress, TransactionOutput, TxInfo, Value, Withdrawals,
+        Certificate, CurrencySymbol, DatumOption, Datums, IsPrePlutusVersion3, Mint, OutputReference, ScriptContext,
+        ScriptPurpose, StakeAddress, TransactionOutput, TxInfo, Value, Withdrawals,
     },
 };
 
-impl ToPlutusData<1> for OutputRef<'_> {
+impl ToPlutusData<1> for OutputReference<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         constr_v1!(0, [self.input, self.output])
     }

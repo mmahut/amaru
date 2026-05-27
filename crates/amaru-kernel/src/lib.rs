@@ -89,6 +89,7 @@ pub use cardano::{
     non_zero_int::NonZeroInt,
     nonce::{Nonce, parse_nonce},
     peer::Peer,
+    phase_two,
     plutus_data::{PlutusData, PlutusDataSet},
     plutus_script::{PlutusScript, decode_plutus_script},
     plutus_version::{IsKnownPlutusVersion, KnownPlutusVersion, PlutusVersion, reify_plutus_version},

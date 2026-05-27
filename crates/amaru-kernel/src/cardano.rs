@@ -68,6 +68,7 @@ pub mod network_name;
 pub mod non_zero_int;
 pub mod nonce;
 pub mod peer;
+pub mod phase_two;
 pub mod plutus_data;
 pub mod plutus_script;
 pub mod plutus_version;
