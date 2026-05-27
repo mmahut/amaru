@@ -156,7 +156,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
         let stake_distributions = initial_stake_distributions(&snapshots, &era_history)?;
 
-        let epoch = snapshots.most_recent_snapshot();
+        let epoch = unsafe_slot_to_epoch(&era_history, stable.tip()?.slot_or_default());
 
         Ok(Self::new_with(
             stable,
@@ -245,7 +245,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
     /// Tip of the volatile (`VolatileDB`) sequence only, if non-empty.
     pub fn volatile_tip(&self) -> Option<Tip> {
-        self.volatile.view_back().map(|st| st.anchor.0)
+        self.volatile.view_back().map(|fragment| fragment.tip())
     }
 
     /// Get the registered relay socket addresses from the stable store.
@@ -303,6 +303,8 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                             row.borrow_mut().fees += fees;
                         })?;
 
+                        batch.reset_epoch_transition_progress()?;
+
                         Ok(governance_activity)
                     })
                     .map_err(StateError::Storage)?;
@@ -319,21 +321,21 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     /// Check whether the next state should cause an epoch transition. This is the case when it
     /// corresponds to a block in a different (next) epoch, in which case, we must first transition
     /// into the new epoch before the block can be validated.
-    fn try_epoch_transition(&mut self, next_tip: Tip) -> Result<(), StateError> {
-        if let Some(current_tip) = self.volatile_tip() {
-            let current_epoch = unsafe_slot_to_epoch(&self.era_history, current_tip.slot());
-            let next_epoch = unsafe_slot_to_epoch(&self.era_history, next_tip.slot());
+    fn try_epoch_transition(&mut self, next_tip: Point) -> Result<(), StateError> {
+        let current_tip = self.tip();
 
-            if next_epoch > current_epoch {
-                let old_protocol_version = self.protocol_version();
+        let current_epoch = unsafe_slot_to_epoch(&self.era_history, current_tip.slot_or_default());
+        let next_epoch = unsafe_slot_to_epoch(&self.era_history, next_tip.slot_or_default());
 
-                self.epoch_transition(next_epoch)?;
+        if next_epoch > current_epoch {
+            let old_protocol_version = self.protocol_version();
 
-                let new_protocol_version = self.protocol_version();
+            self.epoch_transition(next_epoch)?;
 
-                if old_protocol_version != new_protocol_version {
-                    info!(from = old_protocol_version.0, to = new_protocol_version.0, "protocol.upgrade")
-                }
+            let new_protocol_version = self.protocol_version();
+
+            if old_protocol_version != new_protocol_version {
+                info!(from = old_protocol_version.0, to = new_protocol_version.0, "protocol.upgrade")
             }
         }
 
@@ -347,13 +349,15 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             into = u64::from(next_epoch)
         )
         .in_scope(|| {
-            // FIXME: This should eventually be an '.await', as we always expect to *eventually*
+            // FIXME: This should eventually be a '.await', as we always expect to *eventually*
             // have some rewards summary being available. There's no way to continue progressing
             // the ledger if we don't.
-            let computed_rewards = self.take_computed_rewards().ok_or(StateError::RewardsSummaryNotReady)?;
+            let computed_rewards = self.take_computed_rewards();
 
             #[allow(clippy::unwrap_used)]
             let db = self.stable.lock().unwrap();
+
+            let progress = db.epoch_transition_progress().map_err(StateError::Storage)?;
 
             // NOTE: Crossing states during epoch transition
             //
@@ -369,7 +373,16 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             let mut volatile_view = VolatileView::new(next_epoch - 1, &self.volatile, &*db)
                 .map_err(StateError::FailedToCreateVolatileView)?;
 
-            let effective_rewards = epoch_transition::end_epoch(&mut volatile_view, computed_rewards)?;
+            let (treasury, effective_rewards) = if progress.is_none() {
+                let effective_rewards = epoch_transition::end_epoch(
+                    &mut volatile_view,
+                    computed_rewards.ok_or(StateError::RewardsSummaryNotReady)?,
+                )?;
+
+                (db.pots()?.treasury + effective_rewards.delta_treasury(), Some(effective_rewards))
+            } else {
+                (db.pots()?.treasury, None)
+            };
 
             let ratification_context = RatificationContext::new(
                 self.snapshots.for_epoch(next_epoch - 2)?,
@@ -379,7 +392,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 //
                 // Ratification occurs after rewards have been paid out; and thus, uses the value
                 // of the treasury that already includes any unpaid rewards.
-                db.pots()?.treasury + effective_rewards.delta_treasury(),
+                treasury,
             )?;
 
             let (pools_updates, governance_updates) =
@@ -393,19 +406,19 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         })
     }
 
-    fn try_compute_rewards(&mut self, tip: Slot) -> Result<(), StateError> {
-        let relative_slot =
-            self.era_history.slot_in_epoch(tip, tip).map_err(|e| StateError::ErrorComputingEpoch(tip, e))?;
+    fn try_compute_rewards(&mut self, next_tip: Point) -> Result<(), StateError> {
+        let next_slot = next_tip.slot_or_default();
+        let next_relative_slot = unsafe_slot_in_epoch(&self.era_history, next_slot);
 
         // Once we reach the stability window, compute rewards unless we've already done so.
-        let stability_window = self.global_parameters.stability_window;
+        let is_stake_distribution_stable = next_relative_slot >= self.global_parameters.stability_window;
 
         // FIXME: Asynchronous rewards calculation
         //
         // compute rewards in a thread, or in a non-blocking manner to carry on with other
         // tasks while rewards are being computed; they only need to be available at the epoch
         // boundary.
-        if matches!(self.rewards(), RewardsState::NotReady) && relative_slot >= stability_window {
+        if matches!(self.rewards(), RewardsState::NotReady) && is_stake_distribution_stable {
             *self.rewards_mut() = RewardsState::Computed(self.compute_rewards()?.into());
         }
 
@@ -680,13 +693,11 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
             trace_block_transactions(point, block_height, &block);
 
-            let tip = Tip::new(*point, block_height.into());
-
             // 1. Rewards calculation
-            BlockValidation::from(self.try_compute_rewards(tip.slot()))?;
+            BlockValidation::from(self.try_compute_rewards(*point))?;
 
             // 2. Epoch transition
-            BlockValidation::from(self.try_epoch_transition(tip))?;
+            BlockValidation::from(self.try_epoch_transition(*point))?;
 
             let issuer = Hasher::<224>::hash(&block.header.header_body.issuer_vkey[..]);
 
@@ -707,6 +718,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             )?;
 
             // 5. Record new volatile state
+            let tip = Tip::new(*point, block_height.into());
             let fragment = VolatileFragment::from(context).anchor(tip, issuer);
             if let Some(now_stable) = BlockValidation::from(self.push_fragment(fragment))? {
                 // 6-7. Flush overlay & Apply now-stable block
@@ -798,7 +810,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     pub fn chain_density(&self, point: &Point) -> f64 {
         let latest_slot = point.slot_or_default();
         let k_slot =
-            self.volatile.view_front().map(|state| state.anchor.0.point()).unwrap_or(Point::Origin).slot_or_default();
+            self.volatile.view_front().map(|anchored| anchored.point()).unwrap_or(Point::Origin).slot_or_default();
 
         if k_slot >= latest_slot {
             0f64
@@ -968,6 +980,13 @@ fn unsafe_slot_to_epoch(era_history: &EraHistory, slot: Slot) -> Epoch {
     era_history
         .slot_to_epoch_unchecked_horizon(slot)
         .unwrap_or_else(|e| unreachable!("impossible; failed to compute epoch from tip ({slot:?}): {e:?}"))
+}
+
+// See [`unsafe_slot_to_epoch`]
+fn unsafe_slot_in_epoch(era_history: &EraHistory, slot: Slot) -> Slot {
+    era_history
+        .slot_in_epoch(slot, slot)
+        .unwrap_or_else(|e| unreachable!("impossible; failed to compute relative slot from tip ({slot:?}): {e:?}"))
 }
 
 // Errors

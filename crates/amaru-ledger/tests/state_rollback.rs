@@ -20,7 +20,7 @@ use amaru_kernel::{
 use amaru_ledger::{
     epoch_transition::GovernanceActivity,
     state::{BackwardError, State, volatile::VolatileFragment},
-    store::{ReadStore, Store, StoreError},
+    store::{EpochTransitionProgress, ReadStore, Store, StoreError},
 };
 use amaru_stores::rocksdb::{RocksDB, RocksDBHistoricalStores, RocksDbConfig};
 
@@ -152,6 +152,10 @@ struct MockStore(RocksDB);
 impl ReadStore for MockStore {
     fn tip(&self) -> amaru_ledger::store::Result<Point> {
         Ok(Point::Origin)
+    }
+
+    fn epoch_transition_progress(&self) -> amaru_ledger::store::Result<Option<EpochTransitionProgress>> {
+        Err(StoreError::Internal(anyhow::anyhow!("mock").into()))
     }
 
     fn protocol_parameters(&self) -> amaru_ledger::store::Result<ProtocolParameters> {

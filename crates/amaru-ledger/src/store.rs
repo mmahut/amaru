@@ -15,7 +15,7 @@
 use std::{
     borrow::BorrowMut,
     collections::{BTreeMap, BTreeSet},
-    io, iter,
+    fmt, io, iter,
     ops::Deref,
     path::Path,
 };
@@ -108,7 +108,7 @@ impl OpenErrorKind {
 /// A simple alias for alleviating the store interface annotations.
 pub type Result<A> = std::result::Result<A, StoreError>;
 
-#[derive(Debug, Clone, PartialEq, Eq, cbor::Encode, cbor::Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cbor::Encode, cbor::Decode)]
 pub enum EpochTransitionProgress {
     #[n(0)]
     EpochEnded,
@@ -116,6 +116,20 @@ pub enum EpochTransitionProgress {
     SnapshotTaken,
     #[n(2)]
     EpochStarted,
+}
+
+impl fmt::Display for EpochTransitionProgress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::EpochEnded => "Epoch Ended",
+                Self::SnapshotTaken => "Snapshot Taken",
+                Self::EpochStarted => "Epoch Started",
+            }
+        )
+    }
 }
 
 // Snapshot
@@ -182,6 +196,9 @@ pub trait Store: ReadStore {
 pub trait ReadStore {
     /// Access the tip of the stable store, corresponding to the latest point that was saved.
     fn tip(&self) -> Result<Point>;
+
+    /// Get the current epoch transition progress in the store.
+    fn epoch_transition_progress(&self) -> Result<Option<EpochTransitionProgress>>;
 
     /// Get the current protocol parameters
     fn protocol_parameters(&self) -> Result<ProtocolParameters>;
@@ -283,6 +300,9 @@ pub trait TransactionalContext<'a>: ReadStore {
 
     /// Rollback the transaction. This will not persist any changes to the store.
     fn rollback(self) -> Result<()>;
+
+    /// Idempotently reset the epoch transition progress.
+    fn reset_epoch_transition_progress(&self) -> Result<()>;
 
     /// Try to update the epoch transition progress so that we can recover from interruption within an
     /// epoch transition, if this ever happens.

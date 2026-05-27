@@ -96,7 +96,7 @@ impl StateOverlay {
     /// Record transition into a new epoch.
     pub fn transition(
         &mut self,
-        effective_rewards: Rewards<Effective>,
+        effective_rewards: Option<Rewards<Effective>>,
         pools_updates: PoolsEpochTransitionUpdates,
         governance_updates: GovernanceUpdates,
     ) {
@@ -104,7 +104,7 @@ impl StateOverlay {
         debug!(name: "state_overlay.transition", from = %self.epoch, %to);
 
         self.epoch = to;
-        self.rewards = RewardsState::Effective(effective_rewards);
+        self.rewards = effective_rewards.map(RewardsState::Effective).unwrap_or(RewardsState::NotReady);
         self.pools_updates = Some(pools_updates);
         self.governance_updates = Some(governance_updates);
     }
@@ -116,9 +116,11 @@ impl StateOverlay {
             epoch = u64::from(self.epoch)
         )
         .in_scope(|| {
+            use EpochTransitionProgress::*;
+
             // ---------------------------------------------------------------------------- End of epoch
             db.with_transaction::<_, StateError>(|batch| {
-                let should_end_epoch = batch.try_epoch_transition(None, Some(EpochTransitionProgress::EpochEnded))?;
+                let should_end_epoch = batch.try_epoch_transition(None, Some(EpochEnded))?;
 
                 Span::current().record("should_end_epoch", should_end_epoch);
 
@@ -128,6 +130,8 @@ impl StateOverlay {
                     } else {
                         return Err(StateError::NoEffectiveRewards);
                     }
+                } else {
+                    mem::take(&mut self.rewards);
                 }
 
                 Ok(())
@@ -135,10 +139,7 @@ impl StateOverlay {
 
             // ------------------------------------------------------------------------------ Snapshot
             db.with_transaction::<_, StateError>(|batch| {
-                let should_snapshot = batch.try_epoch_transition(
-                    Some(EpochTransitionProgress::EpochEnded),
-                    Some(EpochTransitionProgress::SnapshotTaken),
-                )?;
+                let should_snapshot = batch.try_epoch_transition(Some(EpochEnded), Some(SnapshotTaken))?;
 
                 Span::current().record("should_snapshot", should_snapshot);
 
@@ -151,10 +152,7 @@ impl StateOverlay {
 
             // -------------------------------------------------------------------------- Start of epoch
             db.with_transaction::<_, StateError>(|batch| {
-                let should_begin_epoch = batch.try_epoch_transition(
-                    Some(EpochTransitionProgress::SnapshotTaken),
-                    Some(EpochTransitionProgress::EpochStarted),
-                )?;
+                let should_begin_epoch = batch.try_epoch_transition(Some(SnapshotTaken), Some(EpochStarted))?;
 
                 Span::current().record("should_begin_epoch", should_begin_epoch);
 
@@ -174,6 +172,9 @@ impl StateOverlay {
                         self.protocol_parameters = protocol_parameters;
                         self.governance_activity = governance_activity;
                     }
+                } else {
+                    mem::take(&mut self.pools_updates);
+                    mem::take(&mut self.governance_updates);
                 }
 
                 Ok(())
@@ -275,7 +276,8 @@ impl StateOverlay {
     fn assert_previous_epoch(&self, epoch: Epoch) {
         assert!(
             epoch + 1 == self.epoch,
-            "invariant violation: asking protocol parameters for an epoch that's neither current ({}) nor the precedent ({})",
+            "invariant violation: asking protocol parameters for an epoch ({}) that's neither current ({}) nor the precedent ({})",
+            epoch,
             self.epoch,
             self.epoch.saturating_sub(1),
         );

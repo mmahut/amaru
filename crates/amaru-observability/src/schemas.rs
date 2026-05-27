@@ -381,10 +381,8 @@ define_schemas! {
 
             /// Epoch transition tracking
             public TRY_EPOCH_TRANSITION {
-                optional has_from: bool
-                optional has_to: bool
-                optional point: String
-                optional snapshots: String
+                required from: String
+                required to: String
                 required db_system_name: String
                 required db_operation_name: String
             }

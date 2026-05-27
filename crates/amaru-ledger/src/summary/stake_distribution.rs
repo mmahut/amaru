@@ -31,8 +31,6 @@ use crate::{
     },
 };
 
-const EVENT_TARGET: &str = "amaru::ledger::state::stake_distribution";
-
 /// A stake distribution snapshot useful for:
 ///
 /// - Leader schedule (in particular the 'pools' field)
@@ -256,7 +254,7 @@ impl StakeDistribution {
         });
 
         info!(
-            target: EVENT_TARGET,
+            name: "stake_distribution.snapshot",
             epoch = %epoch,
             accounts = %accounts.len(),
             pools = %pools.len(),
@@ -264,7 +262,6 @@ impl StakeDistribution {
             dreps = %dreps.len(),
             dreps_voting_stake = %dreps_voting_stake,
             pools_voting_stake = %pools_voting_stake,
-            "stake_distribution.snapshot",
         );
 
         Ok(StakeDistribution { epoch, active_stake, dreps_voting_stake, pools_voting_stake, accounts, pools, dreps })
