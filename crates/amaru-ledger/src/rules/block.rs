@@ -105,6 +105,18 @@ impl Display for InvalidBlockDetails {
     }
 }
 
+impl<A, E> From<Result<A, E>> for BlockValidation<A, anyhow::Error>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn from(result: Result<A, E>) -> Self {
+        match result {
+            Ok(a) => Self::Valid(a),
+            Err(e) => Self::anyhow(e),
+        }
+    }
+}
+
 impl<A> BlockValidation<A, anyhow::Error> {
     pub fn bail(msg: String) -> Self {
         BlockValidation::Err(anyhow::Error::msg(msg))

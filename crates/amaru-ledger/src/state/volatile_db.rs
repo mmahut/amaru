@@ -426,13 +426,11 @@ impl<'volatile, 'db, DB: ReadStore> VolatileView<'volatile, 'db, DB> {
     /// from the aggregated volatile state.
     ///
     /// IMPORTANT: Yields proposals in no particular order.
-    pub fn iter_proposals(
-        &mut self,
-    ) -> Result<impl Iterator<Item = (ComparableProposalId, proposals::Row)>, StoreError> {
-        Ok(self.db.iter_proposals()?.chain(add_proposals(
-            mem::take(&mut self.proposals).into_iter().map(|(k, v)| (k.clone(), v.clone())),
-            self.epoch,
-        )))
+    pub fn iter_proposals(&self) -> Result<impl Iterator<Item = (ComparableProposalId, proposals::Row)>, StoreError> {
+        Ok(self
+            .db
+            .iter_proposals()?
+            .chain(add_proposals(self.proposals.iter().map(|(k, v)| ((*k).clone(), (*v).clone())), self.epoch)))
     }
 
     /// Provides an iterator for accounts on top of the stable store, also applying any pending

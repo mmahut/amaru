@@ -40,7 +40,7 @@ pub fn pay_rewards<'store>(
     db: &impl TransactionalContext<'store>,
     mut effective_rewards: Rewards<Effective>,
 ) -> Result<(), StoreError> {
-    trace_span!(amaru_observability::amaru::ledger::epoch_transition::PAY_REWARDS,).in_scope(|| {
+    trace_span!(amaru_observability::amaru::ledger::epoch_transition::PAY_REWARDS).in_scope(|| {
         // Pay rewards out to every account
         db.with_accounts(|iterator| {
             let mut rewards_paid: u64 = 0;

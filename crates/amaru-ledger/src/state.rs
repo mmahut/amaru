@@ -30,9 +30,8 @@ use amaru_metrics::ledger::LedgerMetrics;
 use amaru_observability::{info_span, trace_span};
 use amaru_ouroboros_traits::{HasStakeDistribution, PoolSummary, has_stake_distribution::GetPoolError};
 use amaru_plutus::arena_pool::ArenaPool;
-use anyhow::anyhow;
 use thiserror::Error;
-use tracing::{Span, error, info, trace};
+use tracing::{Span, info, trace};
 use volatile_db::AnchoredVolatileState;
 pub use volatile_db::VolatileState;
 
@@ -394,6 +393,25 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         })
     }
 
+    fn try_compute_rewards(&mut self, tip: Slot) -> Result<(), StateError> {
+        let relative_slot =
+            self.era_history.slot_in_epoch(tip, tip).map_err(|e| StateError::ErrorComputingEpoch(tip, e))?;
+
+        // Once we reach the stability window, compute rewards unless we've already done so.
+        let stability_window = self.global_parameters.stability_window;
+
+        // FIXME: Asynchronous rewards calculation
+        //
+        // compute rewards in a thread, or in a non-blocking manner to carry on with other
+        // tasks while rewards are being computed; they only need to be available at the epoch
+        // boundary.
+        if matches!(self.rewards(), RewardsState::NotReady) && relative_slot >= stability_window {
+            *self.rewards_mut() = RewardsState::Computed(self.compute_rewards()?.into());
+        }
+
+        Ok(())
+    }
+
     #[expect(clippy::unwrap_used)]
     fn compute_rewards(&mut self) -> Result<RewardsSummary, StateError> {
         info_span!(amaru_observability::amaru::ledger::state::COMPUTE_REWARDS).in_scope(|| {
@@ -419,17 +437,15 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         })
     }
 
-    /// Roll the ledger forward with the given block by applying transactions one by one, in
-    /// sequence. The update stops at the first invalid transaction, if any. Otherwise, it updates
-    /// the internal state of the ledger.
-    pub fn add_block(&mut self, next_state: AnchoredVolatileState) -> Result<(), StateError> {
-        trace_span!(amaru_observability::amaru::ledger::state::FORWARD).in_scope(|| {
-            let volatile_len_before = self.volatile.len() as u64;
+    /// Push a next state into the ledger volatile storage. Once the volatile is full (i.e. filled
+    /// with `k` state updates); a push will yield a stable state to apply. Otherwise, this simply
+    /// fills the volatile.
+    pub fn push_state(&mut self, state: AnchoredVolatileState) -> Result<Option<AnchoredVolatileState>, StateError> {
+        trace_span!(amaru_observability::amaru::ledger::state::PUSH_STATE).in_scope(|| {
             let security_param = self.global_parameters.consensus_security_param;
 
-            // Persist the next now-immutable block, which may not quite exist when we just
-            // bootstrapped the system
-            if self.volatile.len() >= security_param {
+            // Yield any now-stable state change
+            let now_stable = if self.volatile.len() >= security_param {
                 let now_stable = self.volatile.pop_front().unwrap_or_else(|| {
                     unreachable!(
                         "pre-condition: self.volatile.len()={} >= consensus_security_param={}",
@@ -438,43 +454,15 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                     )
                 });
 
-                trace_span!(
-                    amaru_observability::amaru::ledger::state::VOLATILE_TO_STABLE,
-                    persisted_point = now_stable.anchor.0.to_string(),
-                    // TODO: useless fields to VOLATILE_TO_STABLE trace?
-                    //
-                    // The next two fields don't look super useful?
-                    //
-                    // 1. The length of the volatile db always vary by exactly 1 here
-                    // 2. The variation is transient, as it grows again from the 'next_state'
-                    volatile_len_before = volatile_len_before,
-                    volatile_len_after = volatile_len_before.saturating_sub(1),
-                    k = security_param as u64
-                )
-                .in_scope(|| self.apply_block(now_stable))?;
+                Some(now_stable)
             } else {
                 trace!(target: EVENT_TARGET, size = self.volatile.len(), "volatile.warming_up",);
-            }
+                None
+            };
 
-            let tip = next_state.anchor.0.slot();
-            let relative_slot =
-                self.era_history.slot_in_epoch(tip, tip).map_err(|e| StateError::ErrorComputingEpoch(tip, e))?;
+            self.volatile.push_back(state);
 
-            // Once we reach the stability window, compute rewards unless we've already done so.
-            let stability_window = self.global_parameters.stability_window;
-
-            // FIXME: Asynchronous rewards calculation
-            //
-            // compute rewards in a thread, or in a non-blocking manner to carry on with other
-            // tasks while rewards are being computed; they only need to be available at the epoch
-            // boundary.
-            if matches!(self.rewards(), RewardsState::NotReady) && relative_slot >= stability_window {
-                *self.rewards_mut() = RewardsState::Computed(self.compute_rewards()?.into());
-            }
-
-            self.volatile.push_back(next_state);
-
-            Ok(())
+            Ok(now_stable)
         })
     }
 
@@ -641,10 +629,42 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         )
     }
 
-    /// Returns:
-    /// * `Ok(u64)` - if no error occurred and the block is valid. `u64` is the block height.
-    /// * `Err(<InvalidBlockDetails>)` - if the block is invalid.
-    /// * `Err(_)` - if another error occurred.
+    /// Roll the ledger forward given a new upcoming block. This roughly unwinds the following
+    /// steps:
+    ///
+    /// 1. **Rewards Calculations**
+    ///
+    ///    Begin the rewards calculation if we are now within the stability window (3 * k / f slots
+    ///    deep in the epoch).
+    ///
+    /// 2. **Epoch Transition**
+    ///
+    ///    Try to transition into a new epoch should the block make the ledger cross an epoch
+    ///
+    /// 3. **Validation Context**
+    ///
+    ///    Create a validation context from the current stable ledger state + overlay if any
+    ///
+    /// 4. **Ledger rules execution**
+    ///
+    ///    Runs validation rules, collecting and aggregating block updates into a single batch
+    ///
+    /// 5. **Record new volatile state**
+    ///
+    ///    Anchor those updates and push them into the volatile store.
+    ///
+    /// 6. **Flush overlay**
+    ///
+    ///    In normal operations (i.e. once the ledger is done warming up), pushing a new state to
+    ///    the volatile automatically yields a new now-stable state that is recorded to disk.
+    ///
+    ///    Before attempting to record a block from a new epoch to disk, any pending overlay must
+    ///    be fully flushed and a snapshot taken.
+    ///
+    /// 7. **Apply now-stable block**
+    ///
+    ///    Finally, we can store the new now-stable block to the stable store.
+    ///
     pub fn roll_forward(
         &mut self,
         point: &Point,
@@ -652,25 +672,26 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         arena_pool: &ArenaPool,
     ) -> BlockValidation<LedgerMetrics, anyhow::Error> {
         trace_span!(amaru_observability::amaru::ledger::state::ROLL_FORWARD).in_scope(|| {
-            let mut context = match self.create_block_validation_context(&block) {
-                Ok(context) => context,
-                Err(e) => return BlockValidation::Err(anyhow!(e)),
-            };
-
             let block_height = block.header.header_body.block_number;
 
             trace_block_transactions(point, block_height, &block);
+
+            let tip = Tip::new(*point, block_height.into());
+
+            // 1. Rewards calculation
+            BlockValidation::from(self.try_compute_rewards(tip.slot()))?;
+
+            // 2. Epoch transition
+            BlockValidation::from(self.try_epoch_transition(tip))?;
 
             let issuer = Hasher::<224>::hash(&block.header.header_body.issuer_vkey[..]);
 
             let metrics = self.new_metrics(point, &block, issuer);
 
-            let tip = Tip::new(*point, block_height.into());
+            // 3. Validation context
+            let mut context = BlockValidation::from(self.create_block_validation_context(&block))?;
 
-            if let Err(e) = self.try_epoch_transition(tip) {
-                return BlockValidation::Err(anyhow!(e));
-            }
-
+            // 4. Ledger rules execution
             rules::validate_block(
                 &mut context,
                 arena_pool,
@@ -681,15 +702,14 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 block,
             )?;
 
-            let state: VolatileState = context.into();
-
-            match self.add_block(state.anchor(tip, issuer)) {
-                Ok(()) => BlockValidation::Valid(metrics),
-                Err(e) => {
-                    error!(%e, "Failed to roll forward the ledger state");
-                    BlockValidation::Err(anyhow!(e))
-                }
+            // 5. Record new volatile state
+            let state = VolatileState::from(context).anchor(tip, issuer);
+            if let Some(now_stable) = BlockValidation::from(self.push_state(state))? {
+                // 6-7. Flush overlay & Apply now-stable block
+                BlockValidation::from(self.apply_block(now_stable))?;
             }
+
+            BlockValidation::Valid(metrics)
         })
     }
 
@@ -699,8 +719,6 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         let prev_hash = block.header.header_body.prev_hash;
 
         let block_height = block.header.header_body.block_number;
-
-        let txs_processed = block.transaction_bodies.len() as u64;
 
         let epoch = self
             .era_history()
@@ -744,6 +762,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                     self.volatile.clear();
                     return Ok(());
                 }
+
                 if *to < immutable_tip {
                     return Err(BackwardError::UnknownRollbackPoint { rollback_point: *to, tip: immutable_tip });
                 }

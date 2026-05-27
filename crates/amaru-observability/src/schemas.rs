@@ -128,15 +128,7 @@ define_schemas! {
             public COMPUTE_REWARDS {}
 
             /// Forward ledger state with new volatile state
-            public FORWARD {}
-
-            /// Persist the oldest volatile block to stable storage once the security parameter is reached
-            public VOLATILE_TO_STABLE {
-                required persisted_point: String
-                required volatile_len_before: u64
-                required volatile_len_after: u64
-                required k: u64
-            }
+            public PUSH_STATE {}
 
             /// Roll backward to a specific point
             public ROLL_BACKWARD {
