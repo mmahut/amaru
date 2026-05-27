@@ -178,7 +178,13 @@ impl StateOverlay {
 
                 Ok(())
             })
-        })
+        })?;
+
+        assert!(matches!(self.rewards, RewardsState::NotReady), "rewards leftovers after flushing overlay?");
+        assert!(self.governance_updates.is_none(), "governance updates leftovers after flushing overlay?");
+        assert!(self.pools_updates.is_none(), "pools updates leftovers after flushing overlay?");
+
+        Ok(())
     }
 }
 
