@@ -71,6 +71,16 @@ pub struct Args {
     )]
     dist_dir: Option<PathBuf>,
 
+    /// Directory where snapshot archives and materialized snapshot directories are written.
+    ///
+    /// Defaults to ./snapshots/<NETWORK>/ when unspecified.
+    #[arg(
+        long,
+        value_name = amaru::value_names::DIRECTORY,
+        env = amaru::env_vars::SNAPSHOTS_DIR,
+    )]
+    snapshot_dir: Option<PathBuf>,
+
     /// Forcefully erase requested generated snapshot outputs and regenerate them.
     #[arg(
         short,
@@ -109,7 +119,7 @@ fn default_snapshot_output_dir(network: NetworkName) -> PathBuf {
 }
 
 pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    let Args { network, epoch, dist_dir, force, cardano_node_config_dir } = args;
+    let Args { network, epoch, dist_dir, snapshot_dir, force, cardano_node_config_dir } = args;
     let client = reqwest::Client::new();
     let requested_epoch = epoch;
     let epoch = match requested_epoch {
@@ -124,7 +134,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let target_epochs = bootstrap_target_epochs(epoch)?;
     let dist_dir = dist_dir.unwrap_or_else(|| default_dist_dir(network));
     let metadata_dir = dist_dir.join("epochs");
-    let snapshot_output_dir = default_snapshot_output_dir(network);
+    let snapshot_output_dir = snapshot_dir.unwrap_or_else(|| default_snapshot_output_dir(network));
     let work_dir = dist_dir.join("work");
     let cardano_db_dir = work_dir.join("cardano-db");
     let ledger_snapshot_dir = cardano_db_dir.join("ledger");
