@@ -16,7 +16,6 @@ categories.workspace = true
 [dependencies]
 # External dependencies
 hex.workspace = true
-itertools.workspace = true
 num.workspace = true
 thiserror.workspace = true
 pallas-codec.workspace = true
