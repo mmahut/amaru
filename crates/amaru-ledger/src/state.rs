@@ -32,8 +32,6 @@ use amaru_ouroboros_traits::{HasStakeDistribution, PoolSummary, has_stake_distri
 use amaru_plutus::arena_pool::ArenaPool;
 use thiserror::Error;
 use tracing::{Span, info, trace};
-use volatile_db::AnchoredVolatileState;
-pub use volatile_db::VolatileState;
 
 use crate::{
     context::{DefaultPreparationContext, DefaultValidationContext},
@@ -44,7 +42,9 @@ use crate::{
     rules::block::BlockValidation,
     state::{
         overlay::StateOverlay,
-        volatile_db::{StoreUpdate, VolatileDB, VolatileView},
+        volatile::{
+            AnchoredVolatileFragment, StoreUpdate, VolatileDB, VolatileFragment, VolatileView, VolatileViewError,
+        },
     },
     store::{HistoricalStores, ReadStore, Snapshot, Store, StoreError, TransactionalContext},
     summary::{
@@ -58,7 +58,7 @@ pub mod diff_bind;
 pub mod diff_epoch_reg;
 pub mod diff_set;
 pub mod overlay;
-pub mod volatile_db;
+pub mod volatile;
 
 /// The minimum number of past (from the current epoch) snapshots required for the ledger to
 /// operate.
@@ -260,7 +260,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     }
 
     #[expect(clippy::unwrap_used)]
-    fn apply_block(&mut self, now_stable: AnchoredVolatileState) -> Result<(), StateError> {
+    fn apply_block(&mut self, now_stable: AnchoredVolatileFragment) -> Result<(), StateError> {
         let tip_slot = now_stable.anchor.0.slot();
         let tip_epoch = unsafe_slot_to_epoch(&self.era_history, tip_slot);
 
@@ -440,7 +440,10 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     /// Push a next state into the ledger volatile storage. Once the volatile is full (i.e. filled
     /// with `k` state updates); a push will yield a stable state to apply. Otherwise, this simply
     /// fills the volatile.
-    pub fn push_state(&mut self, state: AnchoredVolatileState) -> Result<Option<AnchoredVolatileState>, StateError> {
+    pub fn push_fragment(
+        &mut self,
+        state: AnchoredVolatileFragment,
+    ) -> Result<Option<AnchoredVolatileFragment>, StateError> {
         trace_span!(amaru_observability::amaru::ledger::state::PUSH_STATE).in_scope(|| {
             let security_param = self.global_parameters.consensus_security_param;
 
@@ -469,7 +472,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     #[expect(clippy::unwrap_used)]
     pub fn resolve_inputs<'a>(
         &'_ self,
-        ongoing_state: &VolatileState,
+        ongoing_state: &VolatileFragment,
         inputs: impl Iterator<Item = &'a TransactionInput>,
     ) -> Result<Vec<(TransactionInput, Option<MemoizedTransactionOutput>)>, StoreError> {
         let _span = trace_span!(amaru_observability::amaru::ledger::state::RESOLVE_INPUTS);
@@ -647,9 +650,10 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     ///
     /// 4. **Ledger rules execution**
     ///
-    ///    Runs validation rules, collecting and aggregating block updates into a single batch
+    ///    Runs validation rules, collecting and aggregating block updates into a single update
+    ///    fragment.
     ///
-    /// 5. **Record new volatile state**
+    /// 5. **Record new volatile fragment**
     ///
     ///    Anchor those updates and push them into the volatile store.
     ///
@@ -703,8 +707,8 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             )?;
 
             // 5. Record new volatile state
-            let state = VolatileState::from(context).anchor(tip, issuer);
-            if let Some(now_stable) = BlockValidation::from(self.push_state(state))? {
+            let fragment = VolatileFragment::from(context).anchor(tip, issuer);
+            if let Some(now_stable) = BlockValidation::from(self.push_fragment(fragment))? {
                 // 6-7. Flush overlay & Apply now-stable block
                 BlockValidation::from(self.apply_block(now_stable))?;
             }
@@ -1016,7 +1020,7 @@ pub enum StateError {
     NoEffectiveRewards,
 
     #[error("inconsistent or invalid volatile states; failed to create an aggregated volatile view")]
-    FailedToCreateVolatileView(#[source] volatile_db::ViewError),
+    FailedToCreateVolatileView(#[source] VolatileViewError),
 
     #[error("failed to compute epoch from slot {0:?}: {1}")]
     ErrorComputingEpoch(Slot, EraHistoryError),

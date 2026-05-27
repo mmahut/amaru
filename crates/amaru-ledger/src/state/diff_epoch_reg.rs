@@ -140,7 +140,7 @@ impl<K: Ord + Copy, V> DiffEpochReg<K, V> {
     ///
     /// Both states MUST belong to the same epoch. This isn't suitable for combining states across
     /// epoch boundaries.
-    pub fn evolve(&mut self, most_recent: Self) {
+    pub fn append(&mut self, most_recent: Self) {
         for (k, v) in most_recent.unregistered {
             self.unregister(k, v)
         }

@@ -139,7 +139,7 @@ fn make_state() -> State<MockStore, RocksDBHistoricalStores> {
 fn forward_to(state: &mut State<MockStore, RocksDBHistoricalStores>, point: Point, height: u64) {
     let issuer = Hash::new([0u8; 28]);
     let tip = Tip::new(point, BlockHeight::from(height));
-    state.add_block(VolatileState::default().anchor(tip, issuer)).expect("forward");
+    state.push_fragment(VolatileFragment::default().anchor(tip, issuer)).expect("forward");
 }
 
 fn point(slot: u64, tag: u8) -> Point {

@@ -137,7 +137,7 @@ impl<K: Ord, L, R, V> DiffBind<K, L, R, V> {
     }
 
     /// Merge two states together, assuming that the other is a more recent update.
-    pub fn evolve(&mut self, most_recent: Self) -> Result<&mut Self, MergeError<K>> {
+    pub fn append(&mut self, most_recent: Self) -> Result<&mut Self, MergeError<K>> {
         for key in most_recent.unregistered {
             self.unregister(key);
         }

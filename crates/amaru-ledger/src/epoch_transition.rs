@@ -17,7 +17,7 @@ use amaru_observability::info_span;
 
 use crate::{
     governance::ratification::RatificationContext,
-    state::{StateError, volatile_db::VolatileView},
+    state::{StateError, volatile::VolatileView},
     store::{ReadStore, StoreError},
 };
 
