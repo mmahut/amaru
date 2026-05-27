@@ -71,6 +71,7 @@ pub(super) async fn resolve_config_dir(
     work_dir: &Path,
 ) -> Result<PathBuf, Box<dyn Error>> {
     if let Some(config_dir) = config_dir {
+        validate_explicit_config_dir_usage(network)?;
         validate_config_dir(&config_dir)?;
         return Ok(config_dir);
     }
@@ -91,6 +92,14 @@ pub(super) async fn resolve_config_dir(
     download_official_config_bundle(client, network, &cached_config_dir(work_dir, network)).await
 }
 
+fn validate_explicit_config_dir_usage(network: NetworkName) -> Result<(), Box<dyn Error>> {
+    if matches!(network, NetworkName::Testnet(_)) {
+        return Ok(());
+    }
+
+    Err(format!("--cardano-node-config-dir is only supported for custom testnet networks; omit it for {network}").into())
+}
+
 fn bundled_config_dir(network: NetworkName) -> Option<PathBuf> {
     matches!(network, NetworkName::Preprod).then(|| repo_root().join("cardano-node-config"))
 }
@@ -105,7 +114,7 @@ fn official_config_base_url(network: NetworkName) -> Result<String, Box<dyn Erro
         NetworkName::Preprod => Ok(format!("{OFFICIAL_CARDANO_NODE_CONFIG_BASE_URL}/preprod")),
         NetworkName::Preview => Ok(format!("{OFFICIAL_CARDANO_NODE_CONFIG_BASE_URL}/preview")),
         NetworkName::Testnet(_) => {
-            Err("automatic cardano-node config download is only supported on mainnet, preprod and preview".into())
+            Err("automatic cardano-node config download is only supported on mainnet, preprod and preview; use --cardano-node-config-dir for custom testnet networks".into())
         }
     }
 }

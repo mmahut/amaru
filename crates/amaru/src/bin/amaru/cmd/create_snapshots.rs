@@ -91,6 +91,10 @@ pub struct Args {
     force: bool,
 
     /// Directory containing the cardano-node config.json and genesis files.
+    ///
+    /// Only required for custom testnet networks. For mainnet, preprod and preview,
+    /// the config is downloaded automatically from the official source and cached
+    /// when no local bundled copy is available.
     #[arg(
         long,
         value_name = amaru::value_names::DIRECTORY,
