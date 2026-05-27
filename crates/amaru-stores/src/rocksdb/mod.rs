@@ -23,9 +23,8 @@ use std::{
 use ::rocksdb::{self, OptimisticTransactionDB, Options, SliceTransform, checkpoint};
 use amaru_iter_borrow::{self, IterBorrow, borrowable_proxy::BorrowableProxy};
 use amaru_kernel::{
-    CertificatePointer, Constitution, ConstitutionalCommitteeStatus, DRep, Epoch, EraHistory, Lovelace,
-    MemoizedTransactionOutput, PROTOCOL_VERSION_9, Point, PoolId, ProposalId, ProtocolParameters, StakeCredential,
-    TransactionInput, cbor,
+    CertificatePointer, Constitution, ConstitutionalCommitteeStatus, Epoch, EraHistory, Lovelace,
+    MemoizedTransactionOutput, Point, PoolId, ProposalId, ProtocolParameters, StakeCredential, TransactionInput, cbor,
 };
 use amaru_ledger::{
     epoch_transition::GovernanceActivity,
@@ -679,13 +678,6 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
         proposals::remove(&self.db, proposals.into_iter())
     }
 
-    fn add_drep_delegations(
-        &self,
-        delegations: impl IntoIterator<Item = (StakeCredential, DRep, CertificatePointer)>,
-    ) -> Result<(), StoreError> {
-        dreps_delegations::add(&self.db, delegations.into_iter())
-    }
-
     fn save(
         &self,
         era_history: &EraHistory,
@@ -739,23 +731,11 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
                 let drep_validity = current_epoch + protocol_parameters.drep_expiry
                     - governance_activity.consecutive_dormant_epochs as u64;
 
-                let protocol_version = protocol_parameters.protocol_version;
-
                 utxo::add(&self.db, add.utxo)?;
                 pools::add(&self.db, add.pools)?;
                 dreps::add(&self.db, drep_validity, add.dreps)?;
                 cc_members::upsert(&self.db, add.cc_members)?;
-
-                // NOTE:
-                // In order to reproduce a bug from Protocol Version 9, we must keep track of
-                // accounts past delegations, and store them separately for "later".
-                //
-                // "Later" being: when a drep is unregistered; all its delegators (past and current)
-                // must then be reset.
-                let previous_delegations = accounts::add(&self.db, add.accounts, protocol_version)?;
-                if protocol_version <= PROTOCOL_VERSION_9 {
-                    dreps_delegations::add(&self.db, previous_delegations.into_iter())?;
-                }
+                accounts::add(&self.db, add.accounts)?;
 
                 let proposals_count = proposals::add(&self.db, add.proposals)?;
                 let voting_dreps = votes::add(&self.db, add.votes)?;
@@ -770,7 +750,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
                 utxo::remove(&self.db, remove.utxo)?;
                 pools::remove(&self.db, remove.pools)?;
                 accounts::remove(&self.db, remove.accounts)?;
-                dreps::remove(&self.db, remove.dreps, protocol_version)?;
+                dreps::remove(&self.db, remove.dreps)?;
 
                 // When a proposal is seen during a dormant period, we flush the current dormant
                 // epochs counter on each drep.

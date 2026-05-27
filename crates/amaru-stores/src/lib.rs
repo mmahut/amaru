@@ -124,8 +124,6 @@ pub mod tests {
             drep_row.anchor =
                 Some(Anchor { url: "https://example.com".to_string(), content_hash: Hash::from([0u8; 32]) });
         }
-        drep_row.previous_deregistration = None;
-
         let anchor = drep_row.anchor.clone().expect("Expected anchor to be Some");
         let deposit = drep_row.deposit;
         let registered_at = drep_row.registered_at;
@@ -272,12 +270,6 @@ pub mod tests {
         assert_eq!(stored_drep.deposit, fixture.drep_row.deposit, "drep deposit mismatch");
 
         assert_eq!(stored_drep.registered_at, fixture.drep_row.registered_at, "drep registration time mismatch");
-
-        match (&stored_drep.previous_deregistration, &fixture.drep_row.previous_deregistration) {
-            (Some(a), Some(b)) => assert_eq!(a, b, "drep previous deregistration mismatch"),
-            (None, None) => {}
-            (left, right) => panic!("Mismatch in previous_deregistration: left = {:?}, right = {:?}", left, right),
-        }
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -434,12 +426,9 @@ pub mod tests {
         )?;
         context.commit()?;
 
-        let maybe_drep_row = store.iter_dreps()?.find(|(key, _)| *key == fixture.drep_key).map(|(_, row)| row);
+        let maybe_drep_row = store.iter_dreps()?.find(|(key, _)| *key == fixture.drep_key);
 
-        let drep_row = maybe_drep_row
-            .ok_or_else(|| StoreError::Internal("DRep row not found after supposed deregistration".into()))?;
-
-        assert_eq!(drep_row.previous_deregistration, Some(drep_registered_at), "DRep was not marked as deregistered");
+        assert!(maybe_drep_row.is_none(), "DRep row should have been deleted after deregistration");
 
         Ok(())
     }

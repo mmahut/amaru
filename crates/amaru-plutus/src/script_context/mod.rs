@@ -25,8 +25,8 @@ use amaru_kernel::{
     ComputeHash, EraHistory, EraHistoryError, ExUnits, GlobalParameters, HasOwnership, HasScriptHash, Hash, Lovelace,
     MemoizedDatum, MemoizedPlutusData, MemoizedScript, MemoizedTransactionOutput, NativeScript, Network, NetworkName,
     NonEmptyKeyValuePairs, NonEmptyKeyValuePairs as PallasNonEmptyKeyValuePairs, NonEmptySet, NonEmptyVec, NonZeroInt,
-    Nullable, PallasRedeemers, PlutusData, PlutusScript, Proposal, ProposalId, ProtocolVersion, RedeemerKey,
-    RewardAccount, ScriptPurpose as RedeemerTag, Slot, StakeCredential, StakePayload, TransactionBody, TransactionId,
+    Nullable, PallasRedeemers, PlutusData, PlutusScript, Proposal, ProposalId, RedeemerKey, RewardAccount,
+    ScriptPurpose as RedeemerTag, Slot, StakeCredential, StakePayload, TransactionBody, TransactionId,
     TransactionInput, Vote, Voter, VotingProcedure, WitnessSet, cbor,
     size::{CREDENTIAL, DATUM, KEY, SCRIPT},
     transaction_input_to_string,
@@ -205,7 +205,6 @@ impl<'a> TxInfo<'a> {
         slot: &Slot,
         network: NetworkName,
         era_history: &EraHistory,
-        protocol_version: ProtocolVersion,
     ) -> Result<Self, TxInfoTranslationError> {
         let mut scripts: BTreeMap<Hash<SCRIPT>, Script<'_>> = BTreeMap::new();
         let inputs = Self::translate_inputs(&tx.inputs, utxos, &mut scripts)?;
@@ -223,7 +222,7 @@ impl<'a> TxInfo<'a> {
         let certificates: Vec<Certificate<'a>> = tx
             .certificates
             .as_ref()
-            .map(|set| set.iter().map(|certificate| Certificate { protocol_version, certificate }).collect())
+            .map(|set| set.iter().map(|certificate| Certificate { certificate }).collect())
             .unwrap_or_default();
 
         let withdrawals = tx.withdrawals.as_ref().map(Withdrawals::try_from).transpose()?.unwrap_or_default();
@@ -755,8 +754,6 @@ pub struct Withdrawals(pub BTreeMap<StakeAddress, Lovelace>);
 #[doc(hidden)]
 #[derive(Debug, Clone)]
 pub struct Certificate<'a> {
-    // There is a bug in conway protocol 9 that means we have to change our serialization logic depending on the protocol version
-    protocol_version: ProtocolVersion,
     certificate: &'a PallasCertificate,
 }
 

@@ -46,7 +46,7 @@ use crate::{
             AnchoredVolatileFragment, StoreUpdate, VolatileDB, VolatileFragment, VolatileView, VolatileViewError,
         },
     },
-    store::{HistoricalStores, ReadStore, Snapshot, Store, StoreError, TransactionalContext},
+    store::{HistoricalStores, Snapshot, Store, StoreError, TransactionalContext},
     summary::{
         governance::{self, GovernanceSummary},
         rewards::RewardsSummary,
@@ -456,11 +456,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 .map_err(StateError::Storage)?;
 
                 if stake_distributions.front().map(|distr| distr.epoch < snapshot.epoch()).unwrap_or(true) {
-                    stake_distributions.push_front(compute_stake_distribution(
-                        &snapshot,
-                        &self.era_history,
-                        self.protocol_parameters(),
-                    )?);
+                    stake_distributions.push_front(compute_stake_distribution(&snapshot, &self.era_history)?);
                 }
 
                 Ok(rewards_summary)
@@ -879,11 +875,8 @@ pub fn initial_stake_distributions(
     for epoch in [epoch_for_rewards, epoch_for_leader_schedule, latest_epoch] {
         let snapshot = snapshots.for_epoch(epoch)?;
 
-        let protocol_parameters = snapshot.protocol_parameters()?;
-
         stake_distributions.push_front(
-            compute_stake_distribution(&snapshot, era_history, &protocol_parameters)
-                .map_err(|err| StoreError::Internal(err.into()))?,
+            compute_stake_distribution(&snapshot, era_history).map_err(|err| StoreError::Internal(err.into()))?,
         );
     }
 
@@ -893,15 +886,13 @@ pub fn initial_stake_distributions(
 pub fn compute_stake_distribution(
     snapshot: &impl Snapshot,
     era_history: &EraHistory,
-    protocol_parameters: &ProtocolParameters,
 ) -> Result<StakeDistribution, StateError> {
     info_span!(
         amaru_observability::amaru::ledger::state::COMPUTE_STAKE_DISTRIBUTION,
         epoch = u64::from(snapshot.epoch())
     )
     .in_scope(|| {
-        StakeDistribution::new(snapshot, protocol_parameters, GovernanceSummary::new(snapshot, era_history)?)
-            .map_err(StateError::Storage)
+        StakeDistribution::new(snapshot, GovernanceSummary::new(snapshot, era_history)?).map_err(StateError::Storage)
     })
 }
 

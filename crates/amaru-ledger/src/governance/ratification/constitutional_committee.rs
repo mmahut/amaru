@@ -19,7 +19,7 @@ use std::{
     sync::LazyLock,
 };
 
-use amaru_kernel::{Epoch, PROTOCOL_VERSION_9, ProtocolVersion, StakeCredential, Vote};
+use amaru_kernel::{Epoch, StakeCredential, Vote};
 use num::Zero;
 use tracing::warn;
 
@@ -111,7 +111,6 @@ impl ConstitutionalCommittee {
     pub fn voting_threshold(
         &self,
         current_epoch: Epoch,
-        protocol_version: ProtocolVersion,
         min_committee_size: u16,
         proposal: &ProposalEnum,
     ) -> Option<&SafeRatio> {
@@ -124,11 +123,7 @@ impl ConstitutionalCommittee {
             | ProposalEnum::HardFork(..)
             | ProposalEnum::Constitution(..)
             | ProposalEnum::Orphan(OrphanProposal::TreasuryWithdrawal { .. }) => {
-                // The minimum committee size has no effect during the bootstrap phase (i.e. v9). The
-                // committee is always allowed to vote during v9.
-                if self.active_members(current_epoch).len() < (min_committee_size as usize)
-                    && protocol_version > PROTOCOL_VERSION_9
-                {
+                if self.active_members(current_epoch).len() < (min_committee_size as usize) {
                     warn!(
                         members.active = self.active_members(current_epoch).len(),
                         min_committee_size = min_committee_size,
@@ -192,17 +187,13 @@ mod tests {
     };
 
     use amaru_kernel::{
-        Epoch, Hash, PROTOCOL_VERSION_9, PROTOCOL_VERSION_10, StakeCredential, VOTE_NO, VOTE_YES, Vote,
-        any_rational_number, any_stake_credential, any_vote_ref,
+        Epoch, Hash, StakeCredential, VOTE_NO, VOTE_YES, Vote, any_rational_number, any_stake_credential, any_vote_ref,
     };
     use num::{One, Zero};
     use proptest::{collection, prelude::*, sample, test_runner::RngSeed};
 
     use super::ConstitutionalCommittee;
-    use crate::{
-        governance::ratification::any_proposal_enum,
-        summary::{SafeRatio, into_safe_ratio},
-    };
+    use crate::summary::{SafeRatio, into_safe_ratio};
 
     const MIN_ARBITRARY_EPOCH: u64 = 10;
     const MAX_COMMITTEE_SIZE: usize = 10;
@@ -381,37 +372,6 @@ mod tests {
             );
         }
     }
-
-    proptest! {
-        #[test]
-        #[should_panic]
-        #[cfg(not(target_os = "windows"))]
-        fn prop_min_size_has_no_effect_in_v9(
-            committee in any_constitutional_committee(),
-            min_committee_size in 0..MAX_COMMITTEE_SIZE,
-            proposal in any_proposal_enum(),
-        ) {
-            let threshold_any = committee.voting_threshold(
-                    Epoch::from(MIN_ARBITRARY_EPOCH + 1),
-                    PROTOCOL_VERSION_9,
-                    min_committee_size as u16,
-                    &proposal
-            );
-
-            let threshold_min = committee.voting_threshold(
-                    Epoch::from(MIN_ARBITRARY_EPOCH + 1),
-                    PROTOCOL_VERSION_10,
-                    0,
-                    &proposal
-            );
-
-            prop_assert!(
-                threshold_any != threshold_min,
-                "threshold_any={threshold_any:?}\nthreshold_min={threshold_min:?}",
-            );
-        }
-    }
-
     pub fn any_tally()
     -> impl Strategy<Value = (Epoch, BTreeMap<StakeCredential, &'static Vote>, Rc<ConstitutionalCommittee>)> {
         any_constitutional_committee().prop_flat_map(|committee| {
