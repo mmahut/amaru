@@ -6,7 +6,7 @@ Amaru bootstrap expects a window of three consecutive epoch snapshots. The runti
 
 ### Prerequisites
 
-- `db-analyser` on `$PATH` — ships with [cardano-node releases](https://github.com/IntersectMBO/cardano-node/releases)
+- `db-analyser` on `$PATH` — known working version: `11.0.1` (ships with [cardano-node releases](https://github.com/IntersectMBO/cardano-node/releases))
 - Internet access for Koios (epoch/block metadata) and Mithril (cardano-db download)
 
 ### Running the command
