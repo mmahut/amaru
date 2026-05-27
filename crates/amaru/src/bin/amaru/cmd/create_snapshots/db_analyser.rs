@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::{
-    env, fs,
+    fs,
     io::{self, BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command as ProcessCommand, Stdio},
@@ -26,45 +26,21 @@ use tracing::{info, warn};
 const DB_ANALYSER_PROGRESS_REPORT_INTERVAL_SECS: f64 = 30.0;
 
 pub(super) fn ensure_db_analyser_binary() -> Result<String, Box<dyn std::error::Error>> {
-    let cardano_node_home = env::var("CARDANO_NODE_HOME").map_err(|error| match error {
-        env::VarError::NotPresent => {
-            "CARDANO_NODE_HOME is not set. create-snapshots requires db-analyser at CARDANO_NODE_HOME/bin/db-analyser. Set CARDANO_NODE_HOME to your cardano-node installation root (for example: export CARDANO_NODE_HOME=/opt/cardano-node).".to_owned()
-        }
-        env::VarError::NotUnicode(_) => {
-            "CARDANO_NODE_HOME contains non-Unicode data. Set CARDANO_NODE_HOME to a valid Unicode filesystem path that contains bin/db-analyser.".to_owned()
-        }
-    })?;
+    let binary = "db-analyser";
 
-    let binary = PathBuf::from(&cardano_node_home).join("bin").join("db-analyser");
-    if !binary.is_file() {
-        return Err(format!(
-            "db-analyser was not found at {}. CARDANO_NODE_HOME is set to {} but expected executable at CARDANO_NODE_HOME/bin/db-analyser.",
-            binary.display(),
-            cardano_node_home
-        )
-        .into());
-    }
-
-    let status = ProcessCommand::new(&binary).arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status();
+    let status = ProcessCommand::new(binary).arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status();
 
     match status {
         Ok(_) => {
-            let binary = binary.to_string_lossy().into_owned();
-            info!(binary = %binary, cardano_node_home, "using db-analyser binary from CARDANO_NODE_HOME/bin");
-            Ok(binary)
+            info!(binary, "using db-analyser binary from $PATH");
+            Ok(binary.to_owned())
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            Err(format!(
-                "db-analyser was not found at {}. Verify CARDANO_NODE_HOME points to a cardano-node installation that includes bin/db-analyser.",
-                binary.display()
-            )
-            .into())
+            Err("db-analyser was not found in $PATH. Add it to your $PATH (for example: export PATH=/opt/cardano-node/bin:$PATH).".into())
         }
         Err(error) => Err(format!(
-            "failed to execute db-analyser preflight at {}: {}. Ensure the file is executable (for example: chmod +x {}).",
-            binary.display(),
-            error,
-            binary.display()
+            "failed to execute db-analyser preflight: {}. Ensure the binary is executable.",
+            error
         )
         .into()),
     }
