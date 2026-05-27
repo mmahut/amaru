@@ -136,7 +136,7 @@ impl ToPlutusData<1> for amaru_kernel::StakeAddress {
 
 impl ToPlutusData<1> for StakeAddress {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        <amaru_kernel::StakeAddress as ToPlutusData<1>>::to_plutus_data(&self.0)
+        <amaru_kernel::StakeAddress as ToPlutusData<1>>::to_plutus_data(self.as_ref())
     }
 }
 
@@ -253,7 +253,7 @@ where
 
 impl ToPlutusData<1> for Withdrawals {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        <Vec<_> as ToPlutusData<1>>::to_plutus_data(&self.0.iter().collect::<Vec<_>>())
+        <Vec<_> as ToPlutusData<1>>::to_plutus_data(&self.iter().collect::<Vec<_>>())
     }
 }
 

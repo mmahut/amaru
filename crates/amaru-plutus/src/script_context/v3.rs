@@ -557,7 +557,7 @@ impl ToPlutusData<3> for Mint<'_> {
 
 impl ToPlutusData<3> for Withdrawals {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&self.0)
+        <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&self.iter().collect::<BTreeMap<_, _>>())
     }
 }
 
@@ -584,7 +584,7 @@ impl ToPlutusData<3> for amaru_kernel::StakeAddress {
 
 impl ToPlutusData<3> for StakeAddress {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        <amaru_kernel::StakeAddress as ToPlutusData<3>>::to_plutus_data(&self.0)
+        <amaru_kernel::StakeAddress as ToPlutusData<3>>::to_plutus_data(self.as_ref())
     }
 }
 

@@ -21,12 +21,25 @@ use crate::{Network, StakePayload};
 /// A wrapper around [`crate::StakeAddress`] to provide a custom [`Ord`] implementation.
 /// Wrapping the address makes a `BTreeMap<StakeAddress, _>` iterate, and therefore serialize,
 /// in the order a script expects. Equality is defined to agree with this ordering.
+#[repr(transparent)]
 #[derive(Clone, Debug)]
-pub struct StakeAddress(pub crate::StakeAddress);
+pub struct StakeAddress(crate::StakeAddress);
+
+impl From<crate::StakeAddress> for StakeAddress {
+    fn from(value: crate::StakeAddress) -> Self {
+        Self(value)
+    }
+}
 
 impl From<StakeAddress> for crate::StakeAddress {
     fn from(value: StakeAddress) -> Self {
         value.0
+    }
+}
+
+impl AsRef<crate::StakeAddress> for StakeAddress {
+    fn as_ref(&self) -> &crate::StakeAddress {
+        &self.0
     }
 }
 

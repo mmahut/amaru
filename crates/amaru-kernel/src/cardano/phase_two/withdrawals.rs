@@ -25,8 +25,21 @@ use crate::{Address, AddressError, Lovelace, NonEmptyKeyValuePairs as PallasNonE
 /// taken. The [`StakeAddress`] key supplies the Plutus-canonical ordering, so this
 /// `BTreeMap` iterates, and serializes, in the order a script expects; this is the type
 /// that wrapper exists to serve.
+#[repr(transparent)]
 #[derive(Debug, Default)]
-pub struct Withdrawals(pub BTreeMap<StakeAddress, Lovelace>);
+pub struct Withdrawals(BTreeMap<StakeAddress, Lovelace>);
+
+impl Withdrawals {
+    /// Iterate over each withdrawal as a `(stake address, amount)` pair, in canonical order.
+    pub fn iter(&self) -> impl Iterator<Item = (&StakeAddress, &Lovelace)> {
+        self.0.iter()
+    }
+
+    /// Iterate over the stake addresses being withdrawn from, in canonical order.
+    pub fn keys(&self) -> impl Iterator<Item = &StakeAddress> {
+        self.0.keys()
+    }
+}
 
 #[doc(hidden)]
 #[derive(Debug, Error)]
@@ -47,7 +60,7 @@ impl TryFrom<&PallasNonEmptyKeyValuePairs<RewardAccount, Lovelace>> for Withdraw
                 let address = Address::from_bytes(reward_account)?;
 
                 if let Address::Stake(reward_account) = address {
-                    Ok((StakeAddress(reward_account), *coin))
+                    Ok((StakeAddress::from(reward_account), *coin))
                 } else {
                     Err(WithdrawalError::InvalidAddressType(address))
                 }

@@ -78,8 +78,8 @@ impl<'a> ScriptPurpose<'a> {
             RedeemerTag::Mint => mint.0.keys().nth(index).copied().and_then(|policy_id| {
                 scripts.get(&policy_id).map(|script| (ScriptPurpose::Minting(policy_id), script.clone()))
             }),
-            RedeemerTag::Reward => withdrawals.0.keys().nth(index).and_then(|stake| {
-                if let StakePayload::Script(hash) = stake.0.payload() {
+            RedeemerTag::Reward => withdrawals.keys().nth(index).and_then(|stake| {
+                if let StakePayload::Script(hash) = stake.as_ref().payload() {
                     scripts
                         .get(hash)
                         .map(|script| (ScriptPurpose::Rewarding(StakeCredential::ScriptHash(*hash)), script.clone()))
