@@ -20,7 +20,7 @@ use std::{
 
 use amaru::{DEFAULT_NETWORK, default_data_dir, default_snapshots_dir};
 use amaru_kernel::{NetworkName, Point};
-use amaru_mithril::{download_from_mithril, extract_block_header_cbor, get_latest_chunk, parse_header_slot_and_hash};
+use amaru_mithril::{chunk_for_slot, download_from_mithril, extract_block_header_cbor, get_latest_chunk, parse_header_slot_and_hash};
 use clap::{ArgAction, Parser};
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -193,9 +193,14 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let latest_chunk = get_latest_chunk(&cardano_db_dir.join("immutable"))?;
-    let from_chunk = latest_chunk.unwrap_or(0);
-    info!(from_chunk, target_dir = %cardano_db_dir.display(), "synchronizing cardano-db from Mithril");
-    download_from_mithril(network, cardano_db_dir.clone(), from_chunk).await?;
+    let required_chunk = pending_targets.last().map(|t| chunk_for_slot(t.slot)).unwrap_or(0);
+    if latest_chunk.is_some_and(|lc| lc >= required_chunk) {
+        info!(latest_chunk, required_chunk, target_dir = %cardano_db_dir.display(), "local cardano-db already covers all target slots; skipping Mithril download");
+    } else {
+        let from_chunk = latest_chunk.unwrap_or(0);
+        info!(from_chunk, target_dir = %cardano_db_dir.display(), "synchronizing cardano-db from Mithril");
+        download_from_mithril(network, cardano_db_dir.clone(), from_chunk).await?;
+    }
 
     let db_analyser_binary = ensure_db_analyser_binary()?;
     let mut previous_snapshot_slot = None;
