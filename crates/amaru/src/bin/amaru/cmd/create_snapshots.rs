@@ -20,7 +20,9 @@ use std::{
 
 use amaru::{DEFAULT_NETWORK, default_data_dir, default_snapshots_dir};
 use amaru_kernel::{NetworkName, Point};
-use amaru_mithril::{download_from_mithril, extract_block_header_cbor, get_latest_chunk, parse_header_slot_and_hash};
+use amaru_mithril::{
+    download_from_mithril, extract_block_header_cbor, first_missing_immutable_chunk, parse_header_slot_and_hash,
+};
 use clap::{ArgAction, Parser};
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -182,8 +184,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         write_epoch_metadata(&metadata_dir, target)?;
     }
 
-    let latest_chunk = get_latest_chunk(&cardano_db_dir.join("immutable"))?;
-    let from_chunk = latest_chunk.unwrap_or(0);
+    let from_chunk = first_missing_immutable_chunk(&cardano_db_dir.join("immutable"))?;
     info!(from_chunk, target_dir = %cardano_db_dir.display(), "synchronizing cardano-db from Mithril");
     download_from_mithril(network, cardano_db_dir.clone(), from_chunk).await?;
 

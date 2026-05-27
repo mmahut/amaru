@@ -351,6 +351,32 @@ pub fn get_latest_chunk(immutable_dir: &Path) -> Result<Option<u64>, io::Error> 
         .map(|n| n.saturating_sub(1)))
 }
 
+pub fn first_missing_immutable_chunk(immutable_dir: &Path) -> Result<u64, io::Error> {
+    if !immutable_dir.try_exists()? {
+        return Ok(0);
+    }
+
+    let mut chunk = 0_u64;
+    loop {
+        let chunk_prefix = format!("{chunk:05}");
+        for extension in ["chunk", "primary", "secondary"] {
+            let path = immutable_dir.join(format!("{chunk_prefix}.{extension}"));
+            match fs::metadata(&path) {
+                Ok(metadata) if metadata.is_file() => {}
+                Ok(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("expected a regular file at {}", path.display()),
+                    ));
+                }
+                Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(chunk),
+                Err(err) => return Err(err),
+            }
+        }
+        chunk = chunk.checked_add(1).ok_or_else(|| io::Error::other("immutable chunk index overflows u64"))?;
+    }
+}
+
 fn infer_chunk_from_slot(slot: u64) -> u64 {
     slot / 21_600
 }
