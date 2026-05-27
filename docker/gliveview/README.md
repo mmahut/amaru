@@ -6,7 +6,7 @@ GLiveView relies on prometheus metrics exposed by Amaru to display live chain an
 
 ## Prerequisites
 
-- A running Amaru node with an accessible socket file and Prometheus metrics endpoint
+- A running Amaru node with an accessible Prometheus metrics endpoint
 - Docker installed
 
 ## Usage

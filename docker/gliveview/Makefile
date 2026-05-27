@@ -4,7 +4,6 @@ IMAGE := gliveview
 
 start: build
 	docker run --rm -it \
-		--add-host host.docker.internal:host-gateway \
 		-v gliveview-blocklog:/opt/cardano/blocklog \
 		$(IMAGE)
 

@@ -17,7 +17,6 @@ for f in config.json byron-genesis.json shelley-genesis.json alonzo-genesis.json
 done
 
 export CONFIG="$FILES_DIR/config.json"
-export SOCKET="${CNODE_SOCKET_PATH:-/opt/cardano/node.socket}"
 
 # gLiveView runs `pgrep -fn "cardano-node.*.port <CNODE_PORT>"` each iteration
 # and increments a fail counter when no matching process is found, eventually
