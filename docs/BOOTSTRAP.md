@@ -4,16 +4,45 @@ Amaru bootstrap expects a window of three consecutive epoch snapshots. The runti
 
 ## Create a Snapshot Set
 
+### Prerequisites
+
+- `db-analyser` on `$PATH` — ships with [cardano-node releases](https://github.com/IntersectMBO/cardano-node/releases)
+- Internet access for Koios (epoch/block metadata) and Mithril (cardano-db download)
+
+### Running the command
+
 Generate a bootstrap set by passing the first epoch in the three-epoch window to `create-snapshots`. For example, this creates the set for epochs `163`, `164`, and `165` on `preprod`:
 
 ```shell
 cargo run create-snapshots --network preprod --epoch 163
 ```
 
-The command expands the requested epoch to three consecutive targets, fetches the last block of each epoch, downloads or resumes the backing cardano-db from Mithril, runs `db-analyser` in Docker, and then writes:
+The command is fully resumable: Mithril downloads are skipped when the local cardano-db already covers all target slots, and db-analyser work is reused when a matching snapshot directory already exists on disk.
 
-* metadata files under `data/<network>/epoch-snapshots/epochs/`
-* compressed snapshot archives under `snapshots/<network>/`
+### Steps performed for each target epoch
+
+1. **Fetch block metadata** — queries Koios for the last block of the epoch (slot, hash, parent point).
+2. **Download or resume cardano-db** — synchronises immutable files from Mithril up to the required slot; skipped entirely when local data already covers all target slots.
+3. **Run db-analyser** — invokes `db-analyser --store-ledger <slot>` to produce a raw ledger state snapshot.
+4. **Materialize snapshot** — assembles the snapshot directory at `snapshots/<network>/<slot>.<hash>/` (see [Snapshot format](#snapshot-format) below).
+5. **Archive** — compresses the directory into `snapshots/<network>/<slot>.<hash>.tar.gz`.
+
+### Snapshot format
+
+Each materialized snapshot directory contains:
+
+```
+<slot>.<hash>/
+├── bootstrap.headers.json   # JSON array of exactly two hex-encoded CBOR block headers
+│                            # that immediately follow the snapshot point. Extracted
+│                            # directly from the Mithril immutable .chunk files.
+├── meta                     # Metadata directory produced by db-analyser
+├── state                    # Ledger state directory produced by db-analyser
+├── tables/
+│   └── tvar                 # Binary ledger-state tables file produced by db-analyser
+│                            # (db-analyser writes this as a flat 'tables' file;
+│                            # create-snapshots relocates it to tables/tvar on materialization)
+```
 
 ## Publish a Snapshot Set
 
