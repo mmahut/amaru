@@ -97,7 +97,8 @@ fn validate_explicit_config_dir_usage(network: NetworkName) -> Result<(), Box<dy
         return Ok(());
     }
 
-    Err(format!("--cardano-node-config-dir is only supported for custom testnet networks; omit it for {network}").into())
+    Err(format!("--cardano-node-config-dir is only supported for custom testnet networks; omit it for {network}")
+        .into())
 }
 
 fn bundled_config_dir(network: NetworkName) -> Option<PathBuf> {
