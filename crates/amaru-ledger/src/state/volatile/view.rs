@@ -19,7 +19,7 @@ use std::{
 
 use amaru_kernel::{
     CertificatePointer, ComparableProposalId, DRep, Epoch, Lovelace, PoolId, PoolParams, Proposal, ProposalPointer,
-    StakeCredential, Tip,
+    ProtocolParameters, StakeCredential, Tip,
 };
 
 use crate::{
@@ -46,6 +46,7 @@ mod iter_pools;
 #[derive(Debug)]
 pub struct VolatileView<'volatile, 'store, DB: ReadStore> {
     epoch: Epoch,
+    proposal_lifetime: u64,
     db: &'store DB,
     pools: Option<DiffEpochReg<PoolId, &'volatile (PoolParams, CertificatePointer)>>,
     proposals: BTreeMap<&'volatile ComparableProposalId, &'volatile (Proposal, ProposalPointer)>,
@@ -64,6 +65,7 @@ impl<'volatile, 'db, DB: ReadStore> VolatileView<'volatile, 'db, DB> {
         // stable db or self; since there can be only epoch in the context where this function is
         // called. It's even an invariant violation if not...
         epoch: Epoch,
+        protocol_parameters: &ProtocolParameters,
         volatile: &'volatile VolatileDB,
         stable: &'db DB,
     ) -> Result<VolatileView<'volatile, 'db, DB>, VolatileViewError> {
@@ -88,7 +90,14 @@ impl<'volatile, 'db, DB: ReadStore> VolatileView<'volatile, 'db, DB> {
             unregistered: accounts.unregistered,
         };
 
-        Ok(Self { db: stable, epoch, accounts: Some(accounts), pools: Some(pools), proposals })
+        Ok(Self {
+            epoch,
+            proposal_lifetime: protocol_parameters.gov_action_lifetime,
+            db: stable,
+            accounts: Some(accounts),
+            pools: Some(pools),
+            proposals,
+        })
     }
 
     /// Provides an iterator for pools on top of the stable store, but adding any pending updates
@@ -111,10 +120,10 @@ impl<'volatile, 'db, DB: ReadStore> VolatileView<'volatile, 'db, DB> {
     ///
     /// IMPORTANT: Yields proposals in no particular order.
     pub fn iter_proposals(&self) -> Result<impl Iterator<Item = (ComparableProposalId, proposals::Row)>, StoreError> {
-        Ok(self
-            .db
-            .iter_proposals()?
-            .chain(add_proposals(self.proposals.iter().map(|(k, v)| ((*k).clone(), (*v).clone())), self.epoch)))
+        Ok(self.db.iter_proposals()?.chain(add_proposals(
+            self.proposals.iter().map(|(k, v)| ((*k).clone(), (*v).clone())),
+            self.epoch + self.proposal_lifetime,
+        )))
     }
 
     /// Provides an iterator for accounts on top of the stable store, also applying any pending

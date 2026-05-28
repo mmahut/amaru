@@ -359,6 +359,8 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
             let progress = db.epoch_transition_progress().map_err(StateError::Storage)?;
 
+            let protocol_parameters = self.protocol_parameters();
+
             // NOTE: Crossing states during epoch transition
             //
             // The volatile at this point MUST NOT contain any block applications belonging to
@@ -370,7 +372,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             // last k blocks for a single epoch. Or carry some kind of type-level guard that
             // the this is called within an acceptable context (i.e. the volatile
             // pre-conditions have been checked).
-            let mut volatile_view = VolatileView::new(next_epoch - 1, &self.volatile, &*db)
+            let mut volatile_view = VolatileView::new(next_epoch - 1, protocol_parameters, &self.volatile, &*db)
                 .map_err(StateError::FailedToCreateVolatileView)?;
 
             let (treasury, effective_rewards) = if progress.is_none() {
@@ -387,7 +389,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             let ratification_context = RatificationContext::new(
                 self.snapshots.for_epoch(next_epoch - 2)?,
                 self.stake_distribution(next_epoch - 2)?,
-                self.protocol_parameters().clone(),
+                protocol_parameters.clone(),
                 // NOTE: ratification treasury value
                 //
                 // Ratification occurs after rewards have been paid out; and thus, uses the value
@@ -399,7 +401,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 &mut volatile_view,
                 next_epoch,
                 &self.era_history,
-                self.protocol_parameters(),
+                protocol_parameters,
                 ratification_context,
             )?;
 
@@ -960,7 +962,7 @@ impl HasStakeDistribution for StakeDistributionObserver {
             - 2;
         let view = self.view.lock().unwrap();
         let stake_distribution =
-            view.iter().find(|s| s.epoch == epoch).ok_or(GetPoolError::StakeDistributionNotAvailable(epoch))?;
+            view.iter().find(|s| s.epoch == epoch).ok_or(GetPoolError::StakeDistributionNotAvailable(slot, epoch))?;
 
         Ok(stake_distribution.pools.get(pool).map(|st| PoolSummary {
             vrf: st.parameters.vrf,

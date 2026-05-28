@@ -255,7 +255,6 @@ impl StakeDistribution {
 
         info!(
             name: "stake_distribution.snapshot",
-            epoch = %epoch,
             accounts = %accounts.len(),
             pools = %pools.len(),
             active_stake = %active_stake,

@@ -176,7 +176,7 @@ impl GovernanceUpdates {
                 .map_err(|e| StateError::RatificationFailed(e.to_string()))?;
 
             // Once ratified, we can go over each proposal and figure out refunds due to
-            // enactment, expiry or conflicts with other enacte proposals.
+            // enactment, expiry or conflicts with other enacted proposals.
             let mut is_dormant_epoch = true;
             let mut payouts = ctx.withdrawals;
             let mut payouts_str = String::new();
@@ -201,9 +201,25 @@ impl GovernanceUpdates {
                             deposit
                         });
                 } else {
+                    // NOTE: dormant epochs
+                    //
                     // An epoch is said to be 'dormant' if there's no active proposals at the beginning of
-                    // the epoch, after ratification has occured.
-                    is_dormant_epoch = false;
+                    // the epoch, after ratification has occured. However, since proposals are ratified
+                    // with an epoch of delay, the `ctx.epoch` refers to 2 epochs in the past compare
+                    // the one that is just starting.
+                    //
+                    // Consider the following diagram, with a proposal valid until epoch e+1; with
+                    // no other proposals. The proposal expires in the transition from e+1 to e+2, so
+                    // that e+2 shall be considered dormant.
+                    //
+                    //                 │ ratifying       │ ratifying       │ ratifying
+                    //                 │ for e - 2       │ for e - 1       │ for e
+                    //                 │                 │                 │
+                    //                 ╽                 ╽                 ╽
+                    // ━━━━━━━━━━━━╸╸╸╋╸╸╸╸━██━██━██━╸╸╸╋╸╸╸╸━██━██━██━╸╸╸╋╸╸╸╸━██━██━██━╸╸╸━━━>
+                    //      e - 1              e               e + 1             e + 2
+                    //
+                    is_dormant_epoch = is_dormant_epoch && proposal.valid_until < ctx.epoch + 2;
                 }
             }
 
