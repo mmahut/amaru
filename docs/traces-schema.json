@@ -761,9 +761,20 @@
     },
     "amaru::ledger::state::COMPUTE_REWARDS": {
       "type": "object",
-      "properties": {},
-      "required": [],
-      "optional": [],
+      "properties": {
+        "current_epoch": {
+          "type": "integer"
+        },
+        "stake_distribution_epoch": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "current_epoch"
+      ],
+      "optional": [
+        "stake_distribution_epoch"
+      ],
       "additionalProperties": false,
       "name": "compute_rewards",
       "level": "TRACE",

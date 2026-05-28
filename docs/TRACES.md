@@ -324,7 +324,7 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 | name | level | public | description | required fields | optional fields |
 | --- | --- | --- | --- | --- | --- |
 | `apply_block` | `TRACE` | public | Apply a block to stable state | point_slot |  |
-| `compute_rewards` | `TRACE` | public | Compute rewards for epoch |  |  |
+| `compute_rewards` | `TRACE` | public | Compute rewards for epoch | current_epoch | stake_distribution_epoch |
 | `compute_stake_distribution` | `TRACE` | public | Compute stake distribution for epoch | epoch |  |
 | `create_validation_context` | `TRACE` | public | Create validation context for a block | block_body_hash, block_number, block_body_size | total_inputs |
 | `prepare_block` | `TRACE` | public | Prepare block for validation |  |  |
@@ -339,6 +339,15 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 | field | type | required |
 | --- | --- | --- |
 | `point_slot` | `integer` | ✓ |
+
+</details>
+
+<details><summary>span: `compute_rewards`</summary>
+
+| field | type | required |
+| --- | --- | --- |
+| `current_epoch` | `integer` | ✓ |
+| `stake_distribution_epoch` | `integer` |  |
 
 </details>
 

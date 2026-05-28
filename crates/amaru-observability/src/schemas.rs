@@ -125,7 +125,10 @@ define_schemas! {
             public VALIDATE_BLOCK {}
 
             /// Compute rewards for epoch
-            public COMPUTE_REWARDS {}
+            public COMPUTE_REWARDS {
+                required current_epoch: u64
+                optional stake_distribution_epoch: u64
+            }
 
             /// Forward ledger state with new volatile state
             public PUSH_STATE {}

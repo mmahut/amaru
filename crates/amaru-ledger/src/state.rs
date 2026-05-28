@@ -414,6 +414,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     fn try_compute_rewards(&mut self, next_tip: Point) -> Result<(), StateError> {
         let next_slot = next_tip.slot_or_default();
         let next_relative_slot = unsafe_slot_in_epoch(&self.era_history, next_slot);
+        let next_epoch = unsafe_slot_to_epoch(&self.era_history, next_slot);
 
         // Once we reach the stability window, compute rewards unless we've already done so.
         let is_stake_distribution_stable = next_relative_slot >= self.global_parameters.stability_window;
@@ -424,35 +425,44 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         // tasks while rewards are being computed; they only need to be available at the epoch
         // boundary.
         if matches!(self.rewards(), RewardsState::NotReady) && is_stake_distribution_stable {
-            *self.rewards_mut() = RewardsState::Computed(self.compute_rewards()?.into());
+            *self.rewards_mut() = RewardsState::Computed(self.compute_rewards(next_epoch)?.into());
         }
 
         Ok(())
     }
 
     #[expect(clippy::unwrap_used)]
-    fn compute_rewards(&mut self) -> Result<RewardsSummary, StateError> {
-        info_span!(amaru_observability::amaru::ledger::state::COMPUTE_REWARDS).in_scope(|| {
-            let mut stake_distributions = self.stake_distributions.lock().unwrap();
-            let stake_distribution =
-                stake_distributions.pop_back().ok_or(StateError::StakeDistributionNotAvailableForRewards)?;
+    fn compute_rewards(&mut self, epoch: Epoch) -> Result<RewardsSummary, StateError> {
+        info_span!(amaru_observability::amaru::ledger::state::COMPUTE_REWARDS, current_epoch = u64::from(epoch))
+            .in_scope(|| {
+                let mut stake_distributions = self.stake_distributions.lock().unwrap();
+                let stake_distribution =
+                    stake_distributions.pop_back().ok_or(StateError::StakeDistributionNotAvailableForRewards)?;
 
-            let epoch = stake_distribution.epoch + 2;
+                assert_eq!(stake_distribution.epoch, epoch - 3, "unexpected stake distribution for epoch");
 
-            let snapshot = self.snapshots.for_epoch(epoch)?;
+                Span::current().record("stake_distribution_epoch", u64::from(stake_distribution.epoch));
 
-            let rewards_summary =
-                RewardsSummary::new(&snapshot, stake_distribution, &self.global_parameters, self.protocol_parameters())
-                    .map_err(StateError::Storage)?;
+                let snapshot = self.snapshots.for_epoch(epoch - 1)?;
 
-            stake_distributions.push_front(compute_stake_distribution(
-                &snapshot,
-                &self.era_history,
-                self.protocol_parameters(),
-            )?);
+                let rewards_summary = RewardsSummary::new(
+                    &snapshot,
+                    stake_distribution,
+                    &self.global_parameters,
+                    self.protocol_parameters(),
+                )
+                .map_err(StateError::Storage)?;
 
-            Ok(rewards_summary)
-        })
+                if stake_distributions.front().map(|distr| distr.epoch < snapshot.epoch()).unwrap_or(true) {
+                    stake_distributions.push_front(compute_stake_distribution(
+                        &snapshot,
+                        &self.era_history,
+                        self.protocol_parameters(),
+                    )?);
+                }
+
+                Ok(rewards_summary)
+            })
     }
 
     /// Push a next state into the ledger volatile storage. Once the volatile is full (i.e. filled
@@ -861,11 +871,11 @@ pub fn initial_stake_distributions(
 
     let mut stake_distributions = VecDeque::new();
 
-    let epoch_for_rewards = latest_epoch - Epoch::from(2);
-    let epoch_for_leader_schedule = latest_epoch - Epoch::from(1);
+    let epoch_for_rewards = Epoch::from(latest_epoch - Epoch::from(2));
+    let epoch_for_leader_schedule = Epoch::from(latest_epoch - Epoch::from(1));
 
-    for epoch in [epoch_for_rewards, epoch_for_leader_schedule] {
-        let snapshot = snapshots.for_epoch(Epoch::from(epoch))?;
+    for epoch in [epoch_for_rewards, epoch_for_leader_schedule, latest_epoch] {
+        let snapshot = snapshots.for_epoch(epoch)?;
 
         let protocol_parameters = snapshot.protocol_parameters()?;
 
