@@ -24,7 +24,7 @@ use crate::{
     },
     state::StateError,
     store::{
-        EpochTransitionProgress, Store, TransactionalContext, enact_governance_updates, pay_or_refund_accounts,
+        EpochTransitionProgress, Store, TransactionalContext, apply_governance_updates, pay_or_refund_accounts,
         pay_rewards, reset_blocks_count, reset_fees, update_or_retire_pools,
     },
 };
@@ -168,7 +168,7 @@ impl StateOverlay {
 
                     if let Some(governance_updates) = mem::take(&mut self.governance_updates) {
                         let (protocol_parameters, governance_activity) =
-                            enact_governance_updates(batch, governance_updates)?;
+                            apply_governance_updates(batch, governance_updates)?;
                         self.protocol_parameters = protocol_parameters;
                         self.governance_activity = governance_activity;
                     }

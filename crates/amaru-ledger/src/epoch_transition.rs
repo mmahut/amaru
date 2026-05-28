@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use amaru_kernel::{Epoch, EraHistory};
+use amaru_kernel::{Epoch, EraHistory, ProtocolParameters};
 use amaru_observability::info_span;
 
 use crate::{
@@ -45,6 +45,7 @@ pub fn begin_epoch<'distr, 'volatile, 'store, DB: ReadStore>(
     view: &mut VolatileView<'volatile, 'store, DB>,
     epoch: Epoch,
     era_history: &EraHistory,
+    protocol_parameters: &ProtocolParameters,
     ratification_context: RatificationContext<'distr>,
 ) -> Result<(PoolsEpochTransitionUpdates, GovernanceUpdates), StateError> {
     info_span!(amaru_observability::amaru::ledger::epoch_transition::BEGIN_EPOCH).in_scope(|| {
@@ -57,8 +58,13 @@ pub fn begin_epoch<'distr, 'volatile, 'store, DB: ReadStore>(
         // immutable store in any fashion (db is read-only here) but produces a series of
         // governance updates to be applied to the database once stable; and use in-memory in the
         // meantime.
-        let governance_updates =
-            GovernanceUpdates::new(view.proposals_roots()?, view.iter_proposals()?, era_history, ratification_context)?;
+        let governance_updates = GovernanceUpdates::new(
+            view.proposals_roots()?,
+            view.iter_proposals()?,
+            era_history,
+            protocol_parameters,
+            ratification_context,
+        )?;
 
         // FIXME: unbind accounts of unregistered pools
         //

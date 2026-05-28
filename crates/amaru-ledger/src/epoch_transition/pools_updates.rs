@@ -48,16 +48,15 @@ impl PoolsEpochTransitionUpdates {
     /// Create a new transition update from a read-only store and the epoch that is *beginning*. So
     /// when transitioning from e -> e + 1; 'epoch' is e + 1.
     pub fn new(pools_iter: impl Iterator<Item = (PoolId, Pool)>, epoch: Epoch) -> Self {
-        info_span!(amaru_observability::amaru::ledger::epoch_transition::POOLS_UPDATES_NEW, epoch = u64::from(epoch))
-            .in_scope(|| {
-                let mut pools_updates = Self::default();
+        info_span!(amaru_observability::amaru::ledger::epoch_transition::NEW_POOLS_UPDATES).in_scope(|| {
+            let mut pools_updates = Self::default();
 
-                for (_pool_id, pool) in pools_iter {
-                    pools_updates.tick_pool(epoch, pool)
-                }
+            for (_pool_id, pool) in pools_iter {
+                pools_updates.tick_pool(epoch, pool)
+            }
 
-                pools_updates
-            })
+            pools_updates
+        })
     }
 
     pub fn retired(&self) -> &BTreeSet<PoolId> {

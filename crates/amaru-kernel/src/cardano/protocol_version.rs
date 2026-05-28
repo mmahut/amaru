@@ -26,6 +26,10 @@ impl HasMajorVersion for ProtocolVersion {
     }
 }
 
+pub fn fmt(version: &ProtocolVersion) -> String {
+    format!("{}.{}", version.0, version.1)
+}
+
 #[cfg(any(test, feature = "test-utils"))]
 pub use proxy::*;
 

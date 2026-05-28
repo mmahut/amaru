@@ -163,13 +163,10 @@ define_schemas! {
             }
 
             /// Create pools updates
-            public POOLS_UPDATES_NEW {
-                /// Epoch for which those updates are for. This is the epoch that is just starting.
-                required epoch: u64
-            }
+            public NEW_POOLS_UPDATES {}
 
             /// Create governance updates (i.e. ratify proposals) at an epoch boundary.
-            public GOVERNANCE_UPDATES_NEW {
+            public NEW_GOVERNANCE_UPDATES {
                 /// Total number of proposals in scope. This also includes proposals that have
                 /// *just* been submitted.
                 required proposals_count: u64
@@ -210,7 +207,7 @@ define_schemas! {
             }
 
             /// Enact all governance updates and flush their outcome to disk
-            public ENACT_GOVERNANCE_UPDATES {}
+            public APPLY_GOVERNANCE_UPDATES {}
 
             /// Add or remove CC members; or switch to a no-confidence state
             public UPDATE_CONSTITUTIONAL_COMMITTEE {
@@ -324,9 +321,9 @@ define_schemas! {
 
         governance {
             /// Create ratification context
-            public RATIFICATION_CONTEXT_NEW {
+            public NEW_RATIFICATION_CONTEXT {
                 /// Epoch to ratify; distinct from the actual epoch this calculation is happening.
-                required epoch: u64
+                required ratifying_epoch: u64
                 /// Value of the treasury considered for this ratification round.
                 optional treasury: u64
                 /// Total number of votes to ratify.

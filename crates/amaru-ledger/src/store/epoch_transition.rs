@@ -197,11 +197,11 @@ pub fn update_or_retire_pools<'store, 'iter>(
 ///
 /// Note that this also removes proposals that are now either enacted, expired or simply pruned to
 /// a parent also being pruned.
-pub fn enact_governance_updates<'store, 'iter>(
+pub fn apply_governance_updates<'store, 'iter>(
     db: &impl TransactionalContext<'store>,
     mut updates: GovernanceUpdates,
 ) -> Result<(ProtocolParameters, GovernanceActivity), StoreError> {
-    trace_span!(amaru_observability::amaru::ledger::epoch_transition::ENACT_GOVERNANCE_UPDATES).in_scope(|| {
+    trace_span!(amaru_observability::amaru::ledger::epoch_transition::APPLY_GOVERNANCE_UPDATES).in_scope(|| {
         db.set_proposals_roots(&updates.roots)?;
 
         if let Some(new_constitution) = updates.new_constitution.take() {

@@ -99,60 +99,63 @@ impl<'distr> RatificationContext<'distr> {
         protocol_parameters: ProtocolParameters,
         treasury: Lovelace,
     ) -> Result<Self, StoreError> {
-        let epoch = snapshot.epoch() + 1;
-        info_span!(amaru_observability::amaru::ledger::governance::RATIFICATION_CONTEXT_NEW, epoch = u64::from(epoch))
-            .in_scope(|| {
-                let constitutional_committee = match snapshot.constitutional_committee()? {
-                    ConstitutionalCommitteeStatus::NoConfidence => None,
-                    ConstitutionalCommitteeStatus::Trusted { threshold } => {
-                        let members = snapshot
-                            .iter_cc_members()?
-                            .filter_map(|(cold_credential, row)| {
-                                row.valid_until.map(|valid_until| (cold_credential, (row.hot_credential, valid_until)))
-                            })
-                            .collect();
+        let epoch = snapshot.epoch();
+        info_span!(
+            amaru_observability::amaru::ledger::governance::NEW_RATIFICATION_CONTEXT,
+            ratifying_epoch = u64::from(epoch)
+        )
+        .in_scope(|| {
+            let constitutional_committee = match snapshot.constitutional_committee()? {
+                ConstitutionalCommitteeStatus::NoConfidence => None,
+                ConstitutionalCommitteeStatus::Trusted { threshold } => {
+                    let members = snapshot
+                        .iter_cc_members()?
+                        .filter_map(|(cold_credential, row)| {
+                            row.valid_until.map(|valid_until| (cold_credential, (row.hot_credential, valid_until)))
+                        })
+                        .collect();
 
-                        Some(ConstitutionalCommittee::new(into_safe_ratio(&threshold), members))
-                    }
-                };
+                    Some(ConstitutionalCommittee::new(into_safe_ratio(&threshold), members))
+                }
+            };
 
-                // FIXME: votes entirely stored in-memory
-                //
-                // This isn't ideal , as we collect all votes in memory here. This is okay-ish on most
-                // networks because the number of votes is rather small. Even with 1M+ votes, this shouldn't
-                // require much memory; but it becomes a potential attack vector.
-                //
-                // We must avoid loading ALL votes in memory at once. Especially since we do not prune
-                // votes at the moment...
-                let mut votes_count: u64 = 0;
-                let votes = snapshot.iter_votes()?.fold(BTreeMap::new(), |mut votes, (k, v)| {
-                    votes_count += 1;
-                    votes.entry(k.proposal).or_insert_with(Vec::new).push((k.voter, v));
-                    votes
-                });
+            // FIXME: votes entirely stored in-memory
+            //
+            // This isn't ideal , as we collect all votes in memory here. This is okay-ish on most
+            // networks because the number of votes is rather small. Even with 1M+ votes, this shouldn't
+            // require much memory; but it becomes a potential attack vector.
+            //
+            // We must avoid loading ALL votes in memory at once. Especially since we do not prune
+            // votes at the moment...
+            let mut votes_count: u64 = 0;
+            let votes = snapshot.iter_votes()?.fold(BTreeMap::new(), |mut votes, (k, v)| {
+                votes_count += 1;
+                votes.entry(k.proposal).or_insert_with(Vec::new).push((k.voter, v));
+                votes
+            });
 
-                let span = Span::current();
-                span.record("treasury", treasury);
-                span.record("votes", votes_count);
+            let span = Span::current();
+            span.record("treasury", treasury);
+            span.record("votes", votes_count);
 
-                Ok(RatificationContext {
-                    // Ratification happens with one epoch of delay, and at the next epoch transition. So,
-                    // if we ratify votes that happened in epoch `e`, the ratification is done during the
-                    // transition from `e + 1` to `e + 2`; but it is done "as if" it was happening at the
-                    // beginning of epoch `e + 1`. So, the epoch we consider for DRep mandates and proposal
-                    // expiry is the one from after the snapshot.
-                    epoch,
-                    treasury,
-                    stake_distribution,
-                    protocol_parameters,
-                    pruned_proposals: BTreeSet::new(),
-                    withdrawals: BTreeMap::new(),
-                    constitutional_committee,
-                    constitutional_committee_update: None,
-                    new_constitution: None,
-                    votes,
-                })
+            Ok(RatificationContext {
+                // Ratification happens with one epoch of delay, and at the next epoch transition. So,
+                // if we ratify votes that happened in epoch `e`, the ratification is done during the
+                // transition from `e + 1` to `e + 2`; but it is done "as if" it was happening at the
+                // beginning of epoch `e + 1`. So, the epoch we consider for DRep mandates and proposal
+                // expiry is the one from after the snapshot.
+                epoch,
+                treasury,
+                stake_distribution,
+                protocol_parameters,
+                pruned_proposals: BTreeSet::new(),
+                withdrawals: BTreeMap::new(),
+                constitutional_committee,
+                constitutional_committee_update: None,
+                new_constitution: None,
+                votes,
             })
+        })
     }
 
     pub fn ratify_proposals(

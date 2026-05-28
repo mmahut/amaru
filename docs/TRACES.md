@@ -184,15 +184,15 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 
 | name | level | public | description | required fields | optional fields |
 | --- | --- | --- | --- | --- | --- |
+| `apply_governance_updates` | `TRACE` | public | Enact all governance updates and flush their outcome to disk |  |  |
 | `applying_overlay` | `TRACE` | public | Flushing the epoch transition overlay to disk | epoch | should_end_epoch, should_snapshot, should_begin_epoch |
 | `begin_epoch` | `TRACE` | public | Perform start-of-epoch epoch boundary computations |  |  |
-| `enact_governance_updates` | `TRACE` | public | Enact all governance updates and flush their outcome to disk |  |  |
 | `end_epoch` | `TRACE` | public | Perform end-of-epoch epoch boundary computations |  |  |
 | `epoch_transition` | `TRACE` | public | Epoch transition processing | from, into |  |
-| `governance_updates_new` | `TRACE` | public | Create governance updates (i.e. ratify proposals) at an epoch boundary. | proposals_count |  |
+| `new_governance_updates` | `TRACE` | public | Create governance updates (i.e. ratify proposals) at an epoch boundary. | proposals_count |  |
+| `new_pools_updates` | `TRACE` | public | Create pools updates |  |  |
 | `pay_or_refund_accounts` | `TRACE` | public | Pay withdrawals to accounts, or refund deposits | total_paid_or_refunded, treasury_leftovers |  |
 | `pay_rewards` | `TRACE` | public | Pay rewards to all accounts before the epoch end | accounts_paid, rewards_paid, treasury_delta, reserves_delta |  |
-| `pools_updates_new` | `TRACE` | public | Create pools updates | epoch |  |
 | `reset_blocks_count` | `TRACE` | public | Reset blocks count to zero |  |  |
 | `reset_fees` | `TRACE` | public | Reset fees to zero |  |  |
 | `update_constitutional_committee` | `TRACE` | public | Add or remove CC members; or switch to a no-confidence state | no_confidence |  |
@@ -218,7 +218,7 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 
 </details>
 
-<details><summary>span: `governance_updates_new`</summary>
+<details><summary>span: `new_governance_updates`</summary>
 
 | field | type | required |
 | --- | --- | --- |
@@ -246,14 +246,6 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 
 </details>
 
-<details><summary>span: `pools_updates_new`</summary>
-
-| field | type | required |
-| --- | --- | --- |
-| `epoch` | `integer` | ✓ |
-
-</details>
-
 <details><summary>span: `update_constitutional_committee`</summary>
 
 | field | type | required |
@@ -276,7 +268,7 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 | name | level | public | description | required fields | optional fields |
 | --- | --- | --- | --- | --- | --- |
 | `enacting` | `TRACE` | public | Computing enactment of a ratified proposal | proposal_id, proposal_kind | pruned_relatives |
-| `ratification_context_new` | `TRACE` | public | Create ratification context | epoch | treasury, votes |
+| `new_ratification_context` | `TRACE` | public | Create ratification context | ratifying_epoch | treasury, votes |
 | `ratify_proposals` | `TRACE` | public | Ratify proposals at epoch boundary | epoch | roots_protocol_parameters, roots_hard_fork, roots_constitutional_committee, roots_constitution |
 | `ratifying` | `TRACE` | public | Ratify a proposal while traversing the governance forest | proposal_id, proposal_kind | approved_by_constitutional_committee, committee_approval_threshold, approved_by_pools, pools_approval_threshold, approved_by_dreps, dreps_approval_threshold |
 
@@ -290,11 +282,11 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 
 </details>
 
-<details><summary>span: `ratification_context_new`</summary>
+<details><summary>span: `new_ratification_context`</summary>
 
 | field | type | required |
 | --- | --- | --- |
-| `epoch` | `integer` | ✓ |
+| `ratifying_epoch` | `integer` | ✓ |
 | `treasury` | `integer` |  |
 | `votes` | `integer` |  |
 
@@ -335,13 +327,12 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 | `compute_rewards` | `TRACE` | public | Compute rewards for epoch |  |  |
 | `compute_stake_distribution` | `TRACE` | public | Compute stake distribution for epoch | epoch |  |
 | `create_validation_context` | `TRACE` | public | Create validation context for a block | block_body_hash, block_number, block_body_size | total_inputs |
-| `forward` | `TRACE` | public | Forward ledger state with new volatile state |  |  |
 | `prepare_block` | `TRACE` | public | Prepare block for validation |  |  |
+| `push_state` | `TRACE` | public | Forward ledger state with new volatile state |  |  |
 | `resolve_inputs` | `TRACE` | public | Resolve transaction inputs from various sources | resolved_from_context, resolved_from_volatile, resolved_from_db |  |
 | `roll_backward` | `TRACE` | public | Roll backward to a specific point | rollback_point |  |
 | `roll_forward` | `TRACE` | public | Roll forward ledger state with a new block |  |  |
 | `validate_block` | `TRACE` | public | Validate block against rules |  |  |
-| `volatile_to_stable` | `TRACE` | public | Persist the oldest volatile block to stable storage once the security parameter is reached | persisted_point, volatile_len_before, volatile_len_after, k |  |
 
 <details><summary>span: `apply_block`</summary>
 
@@ -385,17 +376,6 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 | field | type | required |
 | --- | --- | --- |
 | `rollback_point` | `string` | ✓ |
-
-</details>
-
-<details><summary>span: `volatile_to_stable`</summary>
-
-| field | type | required |
-| --- | --- | --- |
-| `persisted_point` | `string` | ✓ |
-| `volatile_len_before` | `integer` | ✓ |
-| `volatile_len_after` | `integer` | ✓ |
-| `k` | `integer` | ✓ |
 
 </details>
 
@@ -600,7 +580,7 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 | `dreps_delegation_remove` | `TRACE` | public | Remove DRep delegations | drep_hash, drep_type, db_system_name, db_operation_name, db_collection_name |  |
 | `prune` | `TRACE` | public | Prune old snapshots | functional_minimum, db_system_name, db_operation_name |  |
 | `snapshot` | `TRACE` | public | Create ledger snapshot for epoch | epoch, db_system_name, db_operation_name |  |
-| `try_epoch_transition` | `TRACE` | public | Epoch transition tracking | db_system_name, db_operation_name | has_from, has_to, point, snapshots |
+| `try_epoch_transition` | `TRACE` | public | Epoch transition tracking | from, to, db_system_name, db_operation_name |  |
 
 <details><summary>span: `dreps_delegation_remove`</summary>
 
@@ -638,12 +618,10 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 
 | field | type | required |
 | --- | --- | --- |
+| `from` | `string` | ✓ |
+| `to` | `string` | ✓ |
 | `db_system_name` | `string` | ✓ |
 | `db_operation_name` | `string` | ✓ |
-| `has_from` | `boolean` |  |
-| `has_to` | `boolean` |  |
-| `point` | `string` |  |
-| `snapshots` | `string` |  |
 
 </details>
 
