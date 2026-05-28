@@ -25,31 +25,75 @@ The central runtime type is [`State<S, HS>`](src/state.rs). It combines:
 
 The runtime dataflow is intentionally split into small layers instead of centering everything around a single monolithic state structure:
 
+### State Initialisation (from snapshots)
+
 ```mermaid
 flowchart LR
-    BT["Bootstrap"] --> SS["Stable store"]
-    BT["Bootstrap"] --> HS["Historical snapshots"]
-    HS --> ST["State<S, HS>"]
-    SS --> ST
-    VS["VolatileDB"] --> ST
+    BT["Bootstrap"]
+    HS["Historical snapshots"]
+    LS["State"]
+    RW["Rewards"]
+    SD["Stake distribution"]
+    SS["Stable store"]
+    SO["State overlay"]
 
-    BK["Block"] --> LR["Ledger rules"]
-    ST --> LR["Ledger rules"]
-    LR --> VD["Volatile State diff"]
-    VD --> VS
+    BT --> HS
+    BT --> SS
+    SS --> LS
+    HS --> SD
+    HS --> RW
+    SD --> RW
+    RW --> SO
+    SO --> LS
+```
+### Block Validations
 
-    ST --> SD["Stake Distribution"]
-    SD --> RW["Rewards"]
-    RW --> ET["Epoch Transition"]
-    ET --> OS["State overlay"]
-    OS --> ST
+```mermaid
+flowchart LR
+    BK["Block"]
+    LR["Ledger rules"]
+    VC["Validation context"]
+    SO["State overlay"]
+    SS["Stable store"]
+    VD["Volatile DB"]
+    VV["Volatile view"]
 
+    VD --> VV
+    SS --> VV
+    VV --> VC
+    BK --> LR
+    VC --> LR
+    SO --> LR
+```
+
+
+### Epoch Transitions
+
+```mermaid
+flowchart LR
+    ET["Epoch transition"]
+    HS["Historical snapshots"]
+    RW["Rewards"]
+    SO["State overlay"]
+    SS["Stable store"]
+    VD["Volatile DB"]
+    VV["Volatile view"]
+
+    VD --> VV
+    SS --> VV
+    VV --> ET
+    HS --> ET
+    RW --> ET
+    ET --> SO
+    SO --> HS
 ```
 
 ### Module map
 
 - [`src/state.rs`](src/state.rs), [`src/state/`](src/state): the main ledger runtime. This is where stable state, volatile diffs, overlay state, rollback, persistence, and epoch transitions are orchestrated.
+- [`src/state/volatile.rs`](src/state/volatile.rs), [`src/state/volatile/`](src/state/volatile): the volatile-state subsystem. This now splits the in-memory unstable window into the database, view, and per-block fragment types.
 - [`src/store.rs`](src/store.rs), [`src/store/`](src/store): storage traits and column layouts. The ledger logic is written against `ReadStore`, `Store`, `Snapshot`, and `HistoricalStores` rather than against a single concrete backend.
+- [`src/store/epoch_transition.rs`](src/store/epoch_transition.rs): persistence helpers for epoch-boundary effects once rewards, pool updates, and governance updates are ready to be flushed to stable storage.
 - [`src/context.rs`](src/context.rs), [`src/context/default/`](src/context/default): slice-based preparation and validation contexts. Ledger rules operate on traits describing the pieces of state they need instead of directly reaching into storage.
 - [`src/rules/`](src/rules): ledger validation rules. This contains block-level checks plus transaction phase one and phase two execution.
 - [`src/epoch_transition.rs`](src/epoch_transition.rs), [`src/epoch_transition/`](src/epoch_transition): delayed epoch-boundary logic, including rewards finalization, pool updates, and governance updates.
@@ -65,8 +109,8 @@ The normal validation path looks like this:
 1. [`rules::prepare_block`](src/rules.rs) or `prepare_transaction` collects the inputs that must be resolved before validation.
 2. [`State`](src/state.rs) resolves those pieces from the stable store plus the current volatile window and builds a [`DefaultValidationContext`](src/context/default/validation.rs).
 3. [`rules::block::execute`](src/rules/block.rs) runs block-level checks and then validates each transaction through phase one and phase two.
-4. Successful validation does not immediately mutate the stable store. Instead, the validation context accumulates a [`VolatileState`](src/state/volatile_db.rs) diff.
-5. [`State`](src/state.rs) appends that diff to the volatile window, persists blocks that have become stable, and triggers epoch-boundary logic when the chain crosses into a new epoch.
+4. Successful validation does not immediately mutate the stable store. Instead, the validation context accumulates a [`VolatileFragment`](src/state/volatile/fragment.rs).
+5. [`State`](src/state.rs) appends that fragment to the [`VolatileDB`](src/state/volatile/db.rs), materializes a [`VolatileView`](src/state/volatile/view.rs) when needed, persists blocks that have become stable, and triggers epoch-boundary logic when the chain crosses into a new epoch.
 
 This split is important. It keeps pure ledger-rule evaluation separate from storage concerns and from the mechanics of delayed application.
 
