@@ -128,17 +128,31 @@ impl PoolsEpochTransitionUpdates {
 
                 let current_params = &mut pool.current_params;
 
+                // NOTE: /!\ IMPORTANT /!\ DO NOT INLINE
+                //
+                // It is tempting to inline all the identifier in the log event below. But don't.
+                // This would make the mutation conditioned to the trace severity level. We do need
+                // to update the pool parameters irrespective of the severity!
+                let vrf = set(&mut current_params.vrf, vrf, Hash::to_string);
+                let pledge = set(&mut current_params.pledge, pledge, Lovelace::to_string);
+                let cost = set(&mut current_params.cost, cost, Lovelace::to_string);
+                let margin = set(&mut current_params.margin, margin, rational_number::fmt);
+                let reward_account = set(&mut current_params.reward_account, reward_account, RewardAccount::to_string);
+                let owners = set(&mut current_params.owners, owners, |s| hash::fmt(s.deref()));
+                let relays = set(&mut current_params.relays, relays, |r| relay::fmt(r));
+                let metadata = set(&mut current_params.metadata, metadata, pool_metadata::fmt);
+
                 debug!(
                     name: "pool.update",
                     id = %pool_id,
-                    vrf = set(&mut current_params.vrf, vrf, Hash::to_string),
-                    pledge = set(&mut current_params.pledge, pledge, Lovelace::to_string),
-                    cost = set(&mut current_params.cost, cost, Lovelace::to_string),
-                    margin = set(&mut current_params.margin, margin, rational_number::fmt),
-                    reward_account = set(&mut current_params.reward_account, reward_account, RewardAccount::to_string),
-                    owners = set(&mut current_params.owners, owners, |s| hash::fmt(s.deref())),
-                    relays = set(&mut current_params.relays, relays, |r| relay::fmt(r)),
-                    metadata = set(&mut current_params.metadata, metadata, pool_metadata::fmt),
+                    vrf,
+                    pledge,
+                    cost,
+                    margin,
+                    reward_account,
+                    owners,
+                    relays,
+                    metadata,
                 );
             }
 
