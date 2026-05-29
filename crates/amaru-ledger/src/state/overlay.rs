@@ -82,7 +82,7 @@ impl StateOverlay {
     /// Rollback an existing overlay, throwing away the epoch transition calculations.
     pub fn rollback(&mut self) {
         let to = self.epoch - 1;
-        debug!(name: "state_overlay.rollback", from = %self.epoch, %to);
+        debug!(name: "overlay.rollback", from = %self.epoch, %to, "overlay.rollback");
 
         self.epoch = to;
         self.rewards = match mem::take(&mut self.rewards) {
@@ -101,7 +101,7 @@ impl StateOverlay {
         governance_updates: GovernanceUpdates,
     ) {
         let to = self.epoch + 1;
-        debug!(name: "state_overlay.transition", from = %self.epoch, %to);
+        debug!(name: "overlay.transition", from = %self.epoch, %to, "overlay.transition");
 
         self.epoch = to;
         self.rewards = effective_rewards.map(RewardsState::Effective).unwrap_or(RewardsState::NotReady);
@@ -164,6 +164,8 @@ impl StateOverlay {
                     if let Some(mut pools_updates) = mem::take(&mut self.pools_updates) {
                         update_or_retire_pools(batch, pools_updates.take_updated(), pools_updates.take_retired())?;
                         pay_or_refund_accounts(batch, pools_updates.refunds())?;
+                    } else {
+                        debug!(name: "overlay.no_pools_updates", "overlay.no_pools_updates");
                     }
 
                     if let Some(governance_updates) = mem::take(&mut self.governance_updates) {
@@ -171,6 +173,8 @@ impl StateOverlay {
                             apply_governance_updates(batch, governance_updates)?;
                         self.protocol_parameters = protocol_parameters;
                         self.governance_activity = governance_activity;
+                    } else {
+                        debug!(name: "overlay.no_governance_updates", "overlay.no_governance_updates");
                     }
                 } else {
                     mem::take(&mut self.pools_updates);

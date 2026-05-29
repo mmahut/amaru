@@ -239,7 +239,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          AMARU_TRACE=amaru=info \
+          AMARU_TRACE=amaru=info,amaru::ledger=debug,amaru_ledger=debug \
           make AMARU_MAX_EXTRA_LEDGER_SNAPSHOTS=all run-until
 
       - name: Run traced contract check (preprod only)
