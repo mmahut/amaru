@@ -50,7 +50,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   INPUT_TIMEOUT: ${{ inputs.timeout }}
-  AMARU_TRACE: ${{ inputs.run_until_trace_level || 'info,amaru::consensus=debug,amaru::ledger=debug,amaru_ledger=debug,pure_stage=warn,amaru_protocols=warn,amaru_consensus=info' }}
+  AMARU_TRACE: ${{ inputs.run_until_trace_level || 'info,amaru::consensus=debug,amaru::ledger=debug,pure_stage=warn,amaru_protocols=warn,amaru_consensus=info' }}
   RUSTUP_LOG: error
   LEDGER_CACHE_VERSION: "v13"
 
@@ -239,7 +239,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          AMARU_TRACE=warn,amaru_ledger=debug,amaru::ledger=debug,tmp=debug \
+          AMARU_TRACE=amaru=info \
           make AMARU_MAX_EXTRA_LEDGER_SNAPSHOTS=all run-until
 
       - name: Run traced contract check (preprod only)

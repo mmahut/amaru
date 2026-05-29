@@ -20,9 +20,9 @@ use amaru_ledger::store::{
         unsafe_decode,
     },
 };
-use amaru_observability::{debug_span, trace_span};
+use amaru_observability::trace_span;
 use rocksdb::{DBPinnableSlice, Transaction};
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::rocksdb::common::{PREFIX_LEN, as_key, as_value};
 
@@ -46,6 +46,14 @@ pub fn get<'a>(
 }
 
 pub fn add<DB>(db: &Transaction<'_, DB>, rows: impl Iterator<Item = Value>) -> Result<(), StoreError> {
+    let _span = trace_span!(
+        amaru_observability::amaru::stores::ledger::columns::POOLS_ADD,
+        db_system_name = "rocksdb".to_string(),
+        db_operation_name = "write".to_string(),
+        db_collection_name = "pool".to_string()
+    );
+    let _guard = _span.enter();
+
     for (params, registered_at, epoch) in rows {
         let pool = params.id;
 
@@ -71,9 +79,15 @@ pub fn add<DB>(db: &Transaction<'_, DB>, rows: impl Iterator<Item = Value>) -> R
 }
 
 pub fn remove<DB>(db: &Transaction<'_, DB>, rows: impl Iterator<Item = (Key, Epoch)>) -> Result<(), StoreError> {
-    for (pool, epoch) in rows {
-        debug!(target: "tmp", %pool, %epoch, "store::pool.remove");
+    let _span = trace_span!(
+        amaru_observability::amaru::stores::ledger::columns::POOLS_REMOVE,
+        db_system_name = "rocksdb".to_string(),
+        db_operation_name = "write".to_string(),
+        db_collection_name = "pool".to_string()
+    );
+    let _guard = _span.enter();
 
+    for (pool, epoch) in rows {
         // We do not delete pool immediately but rather schedule the
         // removal as an empty parameter update. The 'pool reaping' happens on
         // every epoch boundary.

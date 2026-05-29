@@ -41,7 +41,7 @@ use amaru_observability::{info_span, trace_record, trace_span};
 use rocksdb::{
     DB, DBAccess, DBIteratorWithThreadMode, DBPinnableSlice, Direction, Env, IteratorMode, ReadOptions, Transaction,
 };
-use tracing::{debug, warn};
+use tracing::warn;
 
 pub mod ledger;
 use ledger::columns::*;
@@ -992,30 +992,15 @@ fn with_prefix_iterator<
         match v {
             Some(v) => {
                 rows_written += 1;
-
-                if prefix == pools::PREFIX {
-                    debug!(target: "tmp", ?k, ?v, "db.put");
-                }
-
                 db.put(k, as_value(v))
             }
             None => {
                 rows_deleted += 1;
-
-                if prefix == pools::PREFIX {
-                    debug!(target: "tmp", ?k, "db.delete");
-                }
-
                 db.delete(k)
             }
         }
         .map_err(|err| StoreError::Internal(err.into()))?;
     }
-
-    if prefix == pools::PREFIX {
-        debug!(target: "tmp", rows_written, rows_deleted, "post.with_prefix_iterator");
-    }
-
     trace_record!(
         amaru_observability::amaru::stores::ledger::columns::ITER_SCAN,
         rows_scanned = rows_scanned,
