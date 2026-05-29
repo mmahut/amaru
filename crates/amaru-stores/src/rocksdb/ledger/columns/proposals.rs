@@ -52,7 +52,7 @@ pub fn remove<'iter, DB, K>(db: &Transaction<'_, DB>, rows: impl Iterator<Item =
 where
     K: Deref<Target = ProposalId> + 'iter,
 {
-    let _span = debug_span!(
+    let _span = trace_span!(
         amaru_observability::amaru::stores::ledger::columns::PROPOSALS_REMOVE,
         db_system_name = "rocksdb".to_string(),
         db_operation_name = "delete".to_string(),

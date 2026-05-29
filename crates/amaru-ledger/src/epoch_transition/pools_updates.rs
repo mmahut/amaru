@@ -23,7 +23,7 @@ use amaru_kernel::{
     pool_metadata, rational_number, relay,
 };
 use amaru_observability::info_span;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::store::columns::pools::Row as Pool;
 
@@ -54,6 +54,8 @@ impl PoolsEpochTransitionUpdates {
             for (_pool_id, pool) in pools_iter {
                 pools_updates.tick_pool(epoch, pool)
             }
+
+            info!(target: "tmp", ?pools_updates, "PoolsEpochTransitionUpdates::new");
 
             pools_updates
         })

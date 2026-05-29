@@ -43,6 +43,7 @@ use amaru_kernel::{
 };
 use columns::*;
 use thiserror::Error;
+use tracing::debug;
 
 use crate::{epoch_transition::GovernanceActivity, governance::ratification::ProposalsRoots, summary::Pots};
 

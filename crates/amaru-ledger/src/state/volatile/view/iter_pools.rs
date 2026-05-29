@@ -15,6 +15,7 @@
 use std::{collections::BTreeMap, mem};
 
 use amaru_kernel::{CertificatePointer, Epoch, PoolId, PoolParams};
+use tracing::debug;
 
 use crate::{
     state::{diff_epoch_reg::Registrations, volatile::view::DiffEpochReg},
@@ -93,6 +94,7 @@ impl<'volatile, DBIter: Iterator<Item = (PoolId, Pool)>> Iterator for IterPools<
         if let Some((pool_id, mut pool)) = self.db_iterator.next() {
             // Pool is already registered, and has some updates.
             if let Some(update) = self.registrations.remove(&pool_id) {
+                debug!(name: "iter_pools.patch", %pool_id, ?update, "iter_pools.patch");
                 let mut future_params =
                     update.into_iter().map(|(pool_params, _)| (Some(pool_params.clone()), self.epoch + 1)).collect();
                 pool.future_params.append(&mut future_params);
@@ -100,6 +102,7 @@ impl<'volatile, DBIter: Iterator<Item = (PoolId, Pool)>> Iterator for IterPools<
 
             // Pool has announced its retirement.
             if let Some(retirement_epoch) = self.retirements.remove(&pool_id) {
+                debug!(name: "iter_pools.patch", %pool_id, %retirement_epoch, "iter_pools.patch");
                 pool.future_params.append(&mut vec![(None, retirement_epoch)])
             }
 
@@ -108,6 +111,8 @@ impl<'volatile, DBIter: Iterator<Item = (PoolId, Pool)>> Iterator for IterPools<
 
         // Then, we must add any pool that only appears in the volatile
         if let Some((pool_id, registrations)) = self.registrations.pop_first() {
+            debug!(name: "iter_pools.volatile", %pool_id, ?registrations, "iter_pools.volatile");
+
             let (registration, re_registration) = registrations.into_inner();
 
             let mut pool = Pool::new(registration.1, registration.0.clone());
