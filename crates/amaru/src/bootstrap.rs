@@ -760,9 +760,7 @@ async fn import_cbor_snapshot_file(
 
     db.next_snapshot(epoch)?;
 
-    let transaction = db.create_transaction();
-    transaction.try_epoch_transition(None, Some(EpochTransitionProgress::SnapshotTaken))?;
-    transaction.commit()?;
+    db.with_transaction(|batch| batch.try_epoch_transition(None, Some(EpochTransitionProgress::SnapshotTaken)))?;
 
     info!(epoch=%epoch, snapshot=%snapshot.display(), "Imported CBOR snapshot");
     Ok(ImportedSnapshot { epoch, initial_nonces })
@@ -808,9 +806,7 @@ async fn import_node_snapshot_dir(
 
     db.next_snapshot(epoch)?;
 
-    let transaction = db.create_transaction();
-    transaction.try_epoch_transition(None, Some(EpochTransitionProgress::SnapshotTaken))?;
-    transaction.commit()?;
+    db.with_transaction(|batch| batch.try_epoch_transition(None, Some(EpochTransitionProgress::SnapshotTaken)))?;
 
     info!(epoch=%epoch, snapshot=%snapshot_dir.display(), "Imported node snapshot directory");
     Ok(ImportedSnapshot { epoch, initial_nonces })

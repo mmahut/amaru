@@ -28,9 +28,9 @@ use thiserror::Error;
 
 use crate::{
     context::ValidationContext,
+    epoch_transition::GovernanceActivity,
     rules::transaction::{self, phase_one::PhaseOneError, phase_two::PhaseTwoError},
     state::ValidationContextError,
-    store::GovernanceActivity,
 };
 
 pub mod body_hash;
@@ -105,6 +105,18 @@ impl Display for InvalidBlockDetails {
     }
 }
 
+impl<A, E> From<Result<A, E>> for BlockValidation<A, anyhow::Error>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn from(result: Result<A, E>) -> Self {
+        match result {
+            Ok(a) => Self::Valid(a),
+            Err(e) => Self::anyhow(e),
+        }
+    }
+}
+
 impl<A> BlockValidation<A, anyhow::Error> {
     pub fn bail(msg: String) -> Self {
         BlockValidation::Err(anyhow::Error::msg(msg))
@@ -172,10 +184,10 @@ impl<A, E> Residual<A> for BlockValidationResidual<E> {
 pub fn execute<C, S: From<C>>(
     context: &mut C,
     arena_pool: &ArenaPool,
-    network: &NetworkName,
+    network: NetworkName,
     protocol_params: &ProtocolParameters,
     era_history: &EraHistory,
-    governance_activity: &GovernanceActivity,
+    governance_activity: GovernanceActivity,
     block: Block,
 ) -> BlockValidation<(), anyhow::Error>
 where
@@ -248,10 +260,10 @@ where
 pub fn validate_transaction<C>(
     context: &mut C,
     arena_pool: &ArenaPool,
-    network: &NetworkName,
+    network: NetworkName,
     protocol_params: &ProtocolParameters,
     era_history: &EraHistory,
-    governance_activity: &GovernanceActivity,
+    governance_activity: GovernanceActivity,
     pointer: TransactionPointer,
     transaction: &Transaction,
     tx_size: u64,

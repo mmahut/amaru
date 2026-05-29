@@ -14,7 +14,6 @@
 
 use std::collections::BTreeMap;
 
-use amaru_iter_borrow::borrowable_proxy::BorrowableProxy;
 use amaru_kernel::{
     DRep, Epoch, HasLovelace, Lovelace, Network, PoolId, ProtocolParameters, StakeCredential, expect_stake_credential,
 };
@@ -22,7 +21,8 @@ use serde::ser::SerializeStruct;
 use tracing::info;
 
 use crate::{
-    store::{Snapshot, StoreError, columns::*},
+    epoch_transition::PoolsEpochTransitionUpdates,
+    store::{Snapshot, StoreError},
     summary::{
         AccountState, PoolState,
         governance::{DRepState, GovernanceSummary},
@@ -30,8 +30,6 @@ use crate::{
         serde::{encode_drep, encode_pool_id, encode_stake_credential, serialize_map},
     },
 };
-
-const EVENT_TARGET: &str = "amaru::ledger::state::stake_distribution";
 
 /// A stake distribution snapshot useful for:
 ///
@@ -80,32 +78,24 @@ impl StakeDistribution {
     ) -> Result<Self, StoreError> {
         let epoch = db.epoch();
 
-        let mut refunds = BTreeMap::new();
+        let mut refunds: BTreeMap<StakeCredential, Lovelace> = BTreeMap::new();
+
         let mut pools = db
             .iter_pools()?
             .map(|(pool, row)| {
-                let reward_account = expect_stake_credential(&row.current_params.reward_account);
-
-                // NOTE(POOL_VOTING_STAKE_DISTRIBUTION):
+                // NOTE: Pool voting stake distribution & pool retirements
                 //
                 // We need to tick pool as part of the stake distribution calculation, in order to
                 // know whether a pool will retire in the next epoch. This is because, votes
                 // ratification happens *after* pools reaping, and thus, nullify voting power of
                 // pools that are retiring.
-                pools::Row::tick(
-                    Box::new(BorrowableProxy::new(Some(row.clone()), |dropped| {
-                        if dropped.is_none() {
-                            // FIXME: Store the deposit with the pool, and ensures the same deposit
-                            // it returned back.
-                            //
-                            // FIXME: Handle the case where there would be more than one refund (in
-                            // case where many pools with a same reward account retire all at
-                            // once).
-                            refunds.insert(reward_account, protocol_parameters.stake_pool_deposit);
-                        }
-                    })),
-                    epoch + 1,
-                );
+                if PoolsEpochTransitionUpdates::is_retiring(epoch + 1, &row) {
+                    // FIXME: Store the deposit with the pool, and ensures the same deposit
+                    // it returned back.
+                    let reward_account = expect_stake_credential(&row.current_params.reward_account);
+                    let deposit = protocol_parameters.stake_pool_deposit;
+                    refunds.entry(reward_account).and_modify(|refund| *refund += deposit).or_insert(deposit);
+                }
 
                 (
                     pool,
@@ -264,15 +254,13 @@ impl StakeDistribution {
         });
 
         info!(
-            target: EVENT_TARGET,
-            epoch = %epoch,
+            name: "stake_distribution.snapshot",
             accounts = %accounts.len(),
             pools = %pools.len(),
             active_stake = %active_stake,
             dreps = %dreps.len(),
             dreps_voting_stake = %dreps_voting_stake,
             pools_voting_stake = %pools_voting_stake,
-            "stake_distribution.snapshot",
         );
 
         Ok(StakeDistribution { epoch, active_stake, dreps_voting_stake, pools_voting_stake, accounts, pools, dreps })

@@ -22,6 +22,7 @@ use amaru_kernel::{
 use serde::Deserialize;
 
 use crate::{
+    epoch_transition::GovernanceActivity,
     rules::{
         WithPosition,
         transaction::phase_one::{
@@ -30,7 +31,6 @@ use crate::{
             outputs::{InvalidOutput, InvalidOutputs},
         },
     },
-    store::GovernanceActivity,
 };
 
 #[derive(Deserialize)]
@@ -52,8 +52,7 @@ pub(super) struct Fixture {
 pub(super) struct InitialState {
     #[serde(deserialize_with = "deserialize_utxo")]
     pub(super) utxo: BTreeMap<TransactionInput, MemoizedTransactionOutput>,
-    #[serde(deserialize_with = "deserialize_proxy")]
-    pub(super) voting_state: GovernanceActivity,
+    pub(super) governance_activity: GovernanceActivity,
 }
 
 pub(super) enum Expected {

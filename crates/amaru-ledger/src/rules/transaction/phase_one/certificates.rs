@@ -24,7 +24,7 @@ use crate::{
         AccountState, AccountsSlice, CCMember, CommitteeSlice, DRepsSlice, DelegateError, PoolsSlice, RegisterError,
         UnregisterError, UpdateError, WitnessSlice,
     },
-    store::GovernanceActivity,
+    epoch_transition::GovernanceActivity,
 };
 
 #[derive(Debug, Error)]
@@ -77,7 +77,7 @@ pub(crate) fn execute<C>(
     network: Network,
     protocol_parameters: &ProtocolParameters,
     era_history: &EraHistory,
-    governance_activity: &GovernanceActivity,
+    governance_activity: GovernanceActivity,
     transaction: TransactionPointer,
     certificates: Option<NonEmptySet<Certificate>>,
 ) -> Result<(), InvalidCertificates>
@@ -105,7 +105,7 @@ fn execute_one<C>(
     network: Network,
     protocol_parameters: &ProtocolParameters,
     era_history: &EraHistory,
-    governance_activity: &GovernanceActivity,
+    governance_activity: GovernanceActivity,
     pointer: CertificatePointer,
     certificate: Certificate,
 ) -> Result<(), InvalidCertificates>

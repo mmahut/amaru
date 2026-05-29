@@ -23,20 +23,21 @@ use std::{
 use ::rocksdb::{self, OptimisticTransactionDB, Options, SliceTransform, checkpoint};
 use amaru_iter_borrow::{self, IterBorrow, borrowable_proxy::BorrowableProxy};
 use amaru_kernel::{
-    CertificatePointer, ComparableProposalId, Constitution, ConstitutionalCommitteeStatus, DRep, Epoch, EraHistory,
-    Lovelace, MemoizedTransactionOutput, PROTOCOL_VERSION_9, Point, PoolId, ProtocolParameters, StakeCredential,
+    CertificatePointer, Constitution, ConstitutionalCommitteeStatus, DRep, Epoch, EraHistory, Lovelace,
+    MemoizedTransactionOutput, PROTOCOL_VERSION_9, Point, PoolId, ProposalId, ProtocolParameters, StakeCredential,
     TransactionInput, cbor,
 };
 use amaru_ledger::{
-    governance::ratification::{ProposalsRoots, ProposalsRootsRc},
+    epoch_transition::GovernanceActivity,
+    governance::ratification::ProposalsRoots,
     state::diff_bind::Resettable,
     store::{
-        Columns, EpochTransitionProgress, GovernanceActivity, HistoricalStores, OpenErrorKind, ReadStore, Snapshot,
-        Store, StoreError, TransactionalContext, columns as scolumns,
+        Columns, EpochTransitionProgress, HistoricalStores, OpenErrorKind, ReadStore, Snapshot, Store, StoreError,
+        TransactionalContext, columns as scolumns,
     },
     summary::Pots,
 };
-use amaru_observability::{trace_record, trace_span};
+use amaru_observability::{info_span, trace_record, trace_span};
 use rocksdb::{
     DB, DBAccess, DBIteratorWithThreadMode, DBPinnableSlice, Direction, Env, IteratorMode, ReadOptions, Transaction,
 };
@@ -313,20 +314,22 @@ impl RocksDBHistoricalStores {
 
 impl HistoricalStores for RocksDBHistoricalStores {
     fn prune(&self, functional_minimum: Epoch) -> Result<(), StoreError> {
-        let _span = trace_span!(
+        info_span!(
             amaru::stores::ledger::PRUNE,
             functional_minimum = u64::from(functional_minimum),
             db_system_name = "rocksdb".to_string(),
             db_operation_name = "delete".to_string()
-        );
-        let _guard = _span.enter();
+        )
+        .in_scope(|| {
+            let desired_minimum = functional_minimum.saturating_sub(self.max_extra_ledger_snapshots);
+            with_snapshots(&self.config.dir, |path, epoch| {
+                if epoch < desired_minimum {
+                    fs::remove_dir_all(&path)
+                        .map_err(|err| StoreError::Open(OpenErrorKind::io_with_file(path, err)))?;
+                }
 
-        let desired_minimum = functional_minimum.saturating_sub(self.max_extra_ledger_snapshots);
-        with_snapshots(&self.config.dir, |path, epoch| {
-            if epoch < desired_minimum {
-                fs::remove_dir_all(&path).map_err(|err| StoreError::Open(OpenErrorKind::io_with_file(path, err)))?;
-            }
-            Ok(())
+                Ok(())
+            })
         })
     }
 
@@ -386,6 +389,15 @@ macro_rules! impl_ReadStore_body {
         $($header)* {
             fn tip(&self) -> Result<Point, StoreError> {
                 get_or_bail(|key| self.db.get_pinned(key), KEY_TIP)
+            }
+
+            fn epoch_transition_progress(&self) -> Result<Option<EpochTransitionProgress>, StoreError> {
+                self.db
+                    .get_pinned(KEY_PROGRESS)
+                    .map_err(|err| StoreError::Internal(err.into()))?
+                    .map(|bytes| cbor::decode(&bytes))
+                    .transpose()
+                    .map_err(StoreError::Undecodable)
             }
 
             fn protocol_parameters(
@@ -574,6 +586,10 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
         res
     }
 
+    fn reset_epoch_transition_progress(&self) -> Result<(), StoreError> {
+        self.db.delete(KEY_PROGRESS).map_err(|err| StoreError::Internal(err.into()))
+    }
+
     fn try_epoch_transition(
         &self,
         from: Option<EpochTransitionProgress>,
@@ -581,22 +597,14 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
     ) -> Result<bool, StoreError> {
         let _span = trace_span!(
             amaru::stores::ledger::TRY_EPOCH_TRANSITION,
-            has_from = from.is_some(),
-            has_to = to.is_some(),
+            from = from.map(|s| s.to_string()).unwrap_or_else(|| "None".to_string()),
+            to = to.map(|s| s.to_string()).unwrap_or_else(|| "None".to_string()),
             db_system_name = "rocksdb".to_string(),
             db_operation_name = "put".to_string()
         );
         let _guard = _span.enter();
 
-        let previous_progress = self
-            .db
-            .get_pinned(KEY_PROGRESS)
-            .map_err(|err| StoreError::Internal(err.into()))?
-            .map(|bytes| cbor::decode(&bytes))
-            .transpose()
-            .map_err(StoreError::Undecodable)?;
-
-        if previous_progress != from {
+        if self.epoch_transition_progress()? != from {
             return Ok(false);
         }
 
@@ -645,7 +653,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
         Ok(())
     }
 
-    fn set_proposals_roots(&self, roots: &ProposalsRootsRc) -> Result<(), StoreError> {
+    fn set_proposals_roots(&self, roots: &ProposalsRoots) -> Result<(), StoreError> {
         self.db.put(KEY_PROPOSALS_ROOTS, as_value(roots)).map_err(|err| StoreError::Internal(err.into()))?;
         Ok(())
     }
@@ -655,7 +663,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
         Ok(())
     }
 
-    fn set_governance_activity(&self, governance_activity: &GovernanceActivity) -> Result<(), StoreError> {
+    fn set_governance_activity(&self, governance_activity: GovernanceActivity) -> Result<(), StoreError> {
         self.db
             .put(KEY_GOVERNANCE_ACTIVITY, as_value(governance_activity))
             .map_err(|err| StoreError::Internal(err.into()))?;
@@ -666,7 +674,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
     /// cause other proposals to become obsolete.
     fn remove_proposals<'iter, Id>(&self, proposals: impl IntoIterator<Item = Id>) -> Result<(), StoreError>
     where
-        Id: Deref<Target = ComparableProposalId> + 'iter,
+        Id: Deref<Target = ProposalId> + 'iter,
     {
         proposals::remove(&self.db, proposals.into_iter())
     }
@@ -682,7 +690,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
         &self,
         era_history: &EraHistory,
         protocol_parameters: &ProtocolParameters,
-        governance_activity: &mut GovernanceActivity,
+        mut governance_activity: GovernanceActivity,
         point: &Point,
         issuer: Option<&scolumns::pools::Key>,
         add: Columns<
@@ -704,7 +712,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
             impl Iterator<Item = ()>,
         >,
         withdrawals: impl Iterator<Item = scolumns::accounts::Key>,
-    ) -> Result<(), StoreError> {
+    ) -> Result<GovernanceActivity, StoreError> {
         match (point, self.tip().ok()) {
             (Point::Specific(new, _), Some(Point::Specific(current, _)))
                 if *new <= current && !self.host.incremental_save =>
@@ -785,7 +793,8 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
                 }
             }
         }
-        Ok(())
+
+        Ok(governance_activity)
     }
 
     fn with_pots<'db>(

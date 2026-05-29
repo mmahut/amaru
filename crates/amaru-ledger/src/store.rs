@@ -12,19 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod columns;
-
 use std::{
     borrow::BorrowMut,
     collections::{BTreeMap, BTreeSet},
-    io, iter,
+    fmt, io, iter,
     ops::Deref,
     path::Path,
 };
 
+use amaru_kernel::ProposalId;
 use amaru_kernel::{
     CertificatePointer,
-    ComparableProposalId,
     Constitution,
     ConstitutionalCommitteeStatus,
     DRep,
@@ -46,9 +44,14 @@ use amaru_kernel::{
 use columns::*;
 use thiserror::Error;
 
-use crate::{
-    governance::ratification::{ProposalsRoots, ProposalsRootsRc},
-    summary::Pots,
+use crate::{epoch_transition::GovernanceActivity, governance::ratification::ProposalsRoots, summary::Pots};
+
+pub mod columns;
+
+mod epoch_transition;
+pub use epoch_transition::{
+    apply_governance_updates, pay_or_refund_accounts, pay_rewards, reset_blocks_count, reset_fees,
+    update_constitutional_committee, update_or_retire_pools,
 };
 
 #[derive(Debug, Error)]
@@ -106,7 +109,7 @@ impl OpenErrorKind {
 /// A simple alias for alleviating the store interface annotations.
 pub type Result<A> = std::result::Result<A, StoreError>;
 
-#[derive(Debug, Clone, PartialEq, Eq, cbor::Encode, cbor::Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cbor::Encode, cbor::Decode)]
 pub enum EpochTransitionProgress {
     #[n(0)]
     EpochEnded,
@@ -116,37 +119,17 @@ pub enum EpochTransitionProgress {
     EpochStarted,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, cbor::Encode, cbor::Decode)]
-pub struct GovernanceActivity {
-    #[n(0)]
-    pub consecutive_dormant_epochs: u32,
-}
-
-#[cfg(any(test, feature = "test-utils"))]
-pub use governance_activity_proxy::*;
-
-#[cfg(any(test, feature = "test-utils"))]
-mod governance_activity_proxy {
-    use amaru_kernel::utils::serde::HasProxy;
-    use serde::Deserialize;
-
-    use super::GovernanceActivity;
-
-    /// Fixture JSON shape `{ "numDormantEpochs": <u32> }`.
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct GovernanceActivityProxy {
-        num_dormant_epochs: u32,
-    }
-
-    impl From<GovernanceActivityProxy> for GovernanceActivity {
-        fn from(p: GovernanceActivityProxy) -> Self {
-            GovernanceActivity { consecutive_dormant_epochs: p.num_dormant_epochs }
-        }
-    }
-
-    impl HasProxy for GovernanceActivity {
-        type Proxy = GovernanceActivityProxy;
+impl fmt::Display for EpochTransitionProgress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::EpochEnded => "Epoch Ended",
+                Self::SnapshotTaken => "Snapshot Taken",
+                Self::EpochStarted => "Epoch Started",
+            }
+        )
     }
 }
 
@@ -214,6 +197,9 @@ pub trait Store: ReadStore {
 pub trait ReadStore {
     /// Access the tip of the stable store, corresponding to the latest point that was saved.
     fn tip(&self) -> Result<Point>;
+
+    /// Get the current epoch transition progress in the store.
+    fn epoch_transition_progress(&self) -> Result<Option<EpochTransitionProgress>>;
 
     /// Get the current protocol parameters
     fn protocol_parameters(&self) -> Result<ProtocolParameters>;
@@ -287,7 +273,7 @@ pub trait HistoricalStores {
             .unwrap_or_default()
             .first()
             .copied()
-            .unwrap_or_else(|| panic!("called 'epoch' on empty database?!"))
+            .unwrap_or_else(|| panic!("called 'least_recent_snapshot' on empty database?!"))
     }
 
     /// The most recent snapshot. Note that we never starts from genesis; so there's always a
@@ -298,7 +284,7 @@ pub trait HistoricalStores {
             .unwrap_or_default()
             .last()
             .copied()
-            .unwrap_or_else(|| panic!("called 'epoch' on empty database?!"))
+            .unwrap_or_else(|| panic!("called 'most_recent_snapshot' on empty database?!"))
     }
 
     /// Access a `Snapshot` for a specific `Epoch`
@@ -315,6 +301,9 @@ pub trait TransactionalContext<'a>: ReadStore {
 
     /// Rollback the transaction. This will not persist any changes to the store.
     fn rollback(self) -> Result<()>;
+
+    /// Idempotently reset the epoch transition progress.
+    fn reset_epoch_transition_progress(&self) -> Result<()>;
 
     /// Try to update the epoch transition progress so that we can recover from interruption within an
     /// epoch transition, if this ever happens.
@@ -334,7 +323,7 @@ pub trait TransactionalContext<'a>: ReadStore {
         &self,
         era_history: &EraHistory,
         protocol_parameters: &ProtocolParameters,
-        governance_activity: &mut GovernanceActivity,
+        governance_activity: GovernanceActivity,
         point: &Point,
         issuer: Option<&pools::Key>,
         add: Columns<
@@ -356,7 +345,7 @@ pub trait TransactionalContext<'a>: ReadStore {
             impl Iterator<Item = ()>,
         >,
         withdrawals: impl Iterator<Item = accounts::Key>,
-    ) -> Result<()>;
+    ) -> Result<GovernanceActivity>;
 
     /// Refund a deposit into an account. If the account no longer exists, returns the unrefunded
     /// deposit.
@@ -374,19 +363,19 @@ pub trait TransactionalContext<'a>: ReadStore {
     ) -> Result<()>;
 
     /// Persist the latest proposal roots for the ongoing epoch.
-    fn set_proposals_roots(&self, roots: &ProposalsRootsRc) -> Result<()>;
+    fn set_proposals_roots(&self, roots: &ProposalsRoots) -> Result<()>;
 
     /// Persist the latest enacted constitution
     fn set_constitution(&self, constitution: &Constitution) -> Result<()>;
 
     /// Track the current governance activity.
-    fn set_governance_activity(&self, dormant_epochs: &GovernanceActivity) -> Result<()>;
+    fn set_governance_activity(&self, dormant_epochs: GovernanceActivity) -> Result<()>;
 
     /// Remove a list of proposals from the database. This is done when enacting proposals that
     /// cause other proposals to become obsolete.
     fn remove_proposals<'iter, Id>(&self, proposals: impl IntoIterator<Item = Id>) -> Result<()>
     where
-        Id: Deref<Target = ComparableProposalId> + 'iter;
+        Id: Deref<Target = ProposalId> + 'iter;
 
     /// Import delegation relationships between delegators and dreps.
     fn add_drep_delegations(

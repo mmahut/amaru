@@ -15,11 +15,12 @@
 use std::collections::VecDeque;
 
 use amaru_kernel::{
-    BlockHeight, EraHistory, GlobalParameters, Hash, NetworkName, Point, ProtocolParameters, Slot, Tip,
+    BlockHeight, Epoch, EraHistory, GlobalParameters, Hash, NetworkName, Point, ProtocolParameters, Slot, Tip,
 };
 use amaru_ledger::{
-    state::{BackwardError, State, VolatileState},
-    store::{GovernanceActivity, ReadStore, Store, StoreError},
+    epoch_transition::GovernanceActivity,
+    state::{BackwardError, State, volatile::VolatileFragment},
+    store::{EpochTransitionProgress, ReadStore, Store, StoreError},
 };
 use amaru_stores::rocksdb::{RocksDB, RocksDBHistoricalStores, RocksDbConfig};
 
@@ -55,7 +56,7 @@ fn rollback_before_volatile_front_is_rejected() {
 
     assert!(matches!(
         dbg!(state.rollback_to(&to)),
-        Err(BackwardError::UnknownRollbackPoint { rollback_point, .. }) if rollback_point == to,
+        Err(err @ BackwardError::UnknownRollbackPoint { .. }) if err.rollback_point() == to,
     ));
     assert_eq!(*state.tip(), point(200, 2), "tip is unchanged after a rejected rollback");
 }
@@ -70,7 +71,7 @@ fn rollback_within_volatile_but_unknown_hash_is_rejected() {
 
     assert!(matches!(
         dbg!(state.rollback_to(&to)),
-        Err(BackwardError::UnknownRollbackPoint { rollback_point, .. }) if rollback_point == to,
+        Err(err @ BackwardError::UnknownRollbackPoint { .. }) if err.rollback_point() == to,
     ));
     assert_eq!(*state.tip(), point(200, 2), "tip is unchanged after a rejected rollback");
 }
@@ -85,7 +86,7 @@ fn rollback_within_volatile_but_unknown_slot_is_rejected() {
 
     assert!(matches!(
         dbg!(state.rollback_to(&to)),
-        Err(BackwardError::UnknownRollbackPoint { rollback_point, .. }) if rollback_point == to,
+        Err(err @ BackwardError::UnknownRollbackPoint { .. }) if err.rollback_point() == to,
     ));
     assert_eq!(*state.tip(), point(200, 2), "tip is unchanged after a rejected rollback");
 }
@@ -99,7 +100,7 @@ fn rollback_after_volatile_front_is_rejected() {
 
     assert!(matches!(
         dbg!(state.rollback_to(&to)),
-        Err(BackwardError::RollbackPointInFuture { rollback_point, .. }) if rollback_point == to,
+        Err(err @ BackwardError::RollbackPointInFuture { .. }) if err.rollback_point() == to,
     ));
     assert_eq!(*state.tip(), point(100, 1), "tip is unchanged after a rejected rollback");
 }
@@ -123,11 +124,12 @@ fn make_state() -> State<MockStore, RocksDBHistoricalStores> {
     State::new_with(
         MockStore(store),
         snapshots,
+        Epoch::default(),
         network,
         era_history,
         global_parameters,
         protocol_parameters,
-        GovernanceActivity { consecutive_dormant_epochs: 0 },
+        GovernanceActivity::default(),
         VecDeque::new(),
     )
 }
@@ -136,9 +138,8 @@ fn make_state() -> State<MockStore, RocksDBHistoricalStores> {
 #[expect(clippy::expect_used)]
 fn forward_to(state: &mut State<MockStore, RocksDBHistoricalStores>, point: Point, height: u64) {
     let issuer = Hash::new([0u8; 28]);
-    state
-        .forward(VolatileState::default().anchor(Tip::new(point, BlockHeight::from(height)), issuer))
-        .expect("forward");
+    let tip = Tip::new(point, BlockHeight::from(height));
+    state.push_fragment(VolatileFragment::default().anchor(tip, issuer)).expect("forward");
 }
 
 fn point(slot: u64, tag: u8) -> Point {
@@ -151,6 +152,10 @@ struct MockStore(RocksDB);
 impl ReadStore for MockStore {
     fn tip(&self) -> amaru_ledger::store::Result<Point> {
         Ok(Point::Origin)
+    }
+
+    fn epoch_transition_progress(&self) -> amaru_ledger::store::Result<Option<EpochTransitionProgress>> {
+        Err(StoreError::Internal(anyhow::anyhow!("mock").into()))
     }
 
     fn protocol_parameters(&self) -> amaru_ledger::store::Result<ProtocolParameters> {

@@ -21,8 +21,8 @@ use amaru_kernel::{
 use thiserror::Error;
 
 use crate::{
-    context::ValidationContext, rules::transaction::phase_one::outputs::SupplementalDatumPolicy,
-    store::GovernanceActivity,
+    context::ValidationContext, epoch_transition::GovernanceActivity,
+    rules::transaction::phase_one::outputs::SupplementalDatumPolicy,
 };
 
 pub mod certificates;
@@ -111,10 +111,10 @@ pub enum PhaseOneError {
 #[expect(clippy::too_many_arguments)]
 pub fn execute<C>(
     context: &mut C,
-    network_name: &NetworkName,
+    network_name: NetworkName,
     protocol_parameters: &ProtocolParameters,
     era_history: &EraHistory,
-    governance_activity: &GovernanceActivity,
+    governance_activity: GovernanceActivity,
     pointer: TransactionPointer,
     is_valid: bool,
     mut transaction_body: TransactionBody,
@@ -127,7 +127,7 @@ where
 {
     let transaction_id = transaction_body.tx_id();
 
-    let network: Network = (*network_name).into();
+    let network: Network = network_name.into();
 
     fail_on_network_mismatch(transaction_body.network_id, network)?;
 
@@ -348,10 +348,10 @@ mod tests {
 
         let result = super::execute(
             &mut ctx,
-            &fixture.network,
+            fixture.network,
             &protocol_parameters,
             &era_history,
-            &fixture.initial_state.voting_state,
+            fixture.initial_state.governance_activity,
             fixture.ledger_env,
             tx.is_expected_valid,
             tx.body,

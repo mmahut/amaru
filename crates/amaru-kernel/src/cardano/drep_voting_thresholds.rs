@@ -16,6 +16,49 @@ pub use pallas_primitives::conway::DRepVotingThresholds;
 #[cfg(any(test, feature = "test-utils"))]
 pub use proxy::*;
 
+use crate::rational_number;
+
+pub fn fmt(thresholds: &DRepVotingThresholds) -> String {
+    // NOTE: destructuring for completeness static checks
+    let DRepVotingThresholds {
+        motion_no_confidence,
+        committee_normal,
+        committee_no_confidence,
+        update_constitution,
+        hard_fork_initiation,
+        pp_network_group,
+        pp_economic_group,
+        pp_technical_group,
+        pp_governance_group,
+        treasury_withdrawal,
+    } = thresholds;
+
+    format!(
+        "{{\
+            committee_normal={}, \
+            committee_no_confidence={}, \
+            motion_no_confidence={}, \
+            treasury_withdrawal={}, \
+            update_constitution={}, \
+            pp_network_group={}, \
+            pp_economic_group={}, \
+            pp_technical_group={}, \
+            pp_governance_group={}, \
+            hard_fork_initiation={}\
+        }}",
+        rational_number::fmt(committee_normal),
+        rational_number::fmt(committee_no_confidence),
+        rational_number::fmt(motion_no_confidence),
+        rational_number::fmt(treasury_withdrawal),
+        rational_number::fmt(update_constitution),
+        rational_number::fmt(pp_network_group),
+        rational_number::fmt(pp_economic_group),
+        rational_number::fmt(pp_technical_group),
+        rational_number::fmt(pp_governance_group),
+        rational_number::fmt(hard_fork_initiation),
+    )
+}
+
 #[cfg(any(test, feature = "test-utils"))]
 mod proxy {
     use serde::Deserialize;

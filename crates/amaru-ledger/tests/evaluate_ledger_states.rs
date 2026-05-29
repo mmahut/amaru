@@ -20,7 +20,9 @@ pub mod tests {
         Bytes, Epoch, EraHistory, NetworkName, ProtocolParameters, Transaction, TransactionPointer, WitnessSet, cbor,
         cbor as minicbor,
     };
-    use amaru_ledger::{self, context::DefaultValidationContext, rules::transaction, store::GovernanceActivity};
+    use amaru_ledger::{
+        self, context::DefaultValidationContext, epoch_transition::GovernanceActivity, rules::transaction,
+    };
 
     // Tests cases are constructed in build.rs, which generates the test_cases.rs file
     include!(concat!(env!("OUT_DIR"), "/test_cases.rs"));
@@ -205,10 +207,10 @@ pub mod tests {
             // Run the transaction against the imported ledger state
             let result = transaction::phase_one::execute(
                 &mut validation_context,
-                &NetworkName::Preprod,
+                NetworkName::Preprod,
                 &protocol_parameters,
                 era_history,
-                &governance_activity,
+                governance_activity,
                 pointer,
                 true,
                 tx.body,

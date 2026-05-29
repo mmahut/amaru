@@ -68,8 +68,8 @@ pub(crate) mod tests {
     use super::*;
     use crate::{
         context::assert::{AssertPreparationContext, AssertValidationContext},
+        epoch_transition::GovernanceActivity,
         rules::block::{BlockValidation, InvalidBlockDetails},
-        store::GovernanceActivity,
         tests::{fake_input, fake_output},
     };
 
@@ -107,10 +107,10 @@ pub(crate) mod tests {
         let results = block::execute(
             &mut AssertValidationContext::from(ctx),
             &ARENA_POOL,
-            &NetworkName::Preprod,
+            NetworkName::Preprod,
             &protocol_parameters,
             <&EraHistory>::from(NetworkName::Preprod),
-            &GovernanceActivity { consecutive_dormant_epochs: 0 },
+            GovernanceActivity { consecutive_dormant_epochs: 0 },
             block,
         );
 
@@ -135,10 +135,10 @@ pub(crate) mod tests {
         let results = block::execute(
             &mut AssertValidationContext::from(ctx),
             &ARENA_POOL,
-            &NetworkName::Preprod,
+            NetworkName::Preprod,
             &pp,
             <&EraHistory>::from(NetworkName::Preprod),
-            &GovernanceActivity { consecutive_dormant_epochs: 0 },
+            GovernanceActivity { consecutive_dormant_epochs: 0 },
             block,
         );
 

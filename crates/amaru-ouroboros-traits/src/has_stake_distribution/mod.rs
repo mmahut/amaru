@@ -31,8 +31,8 @@ pub struct PoolSummary {
 pub enum GetPoolError {
     #[error("slot to epoch conversion failed {0}.")]
     SlotToEpochConversionFailure(#[from] EraHistoryError),
-    #[error("no stake distribution available for pool access {0}.")]
-    StakeDistributionNotAvailable(Epoch),
+    #[error("no stake distribution available for pool for slot {0} at epoch {1}.")]
+    StakeDistributionNotAvailable(Slot, Epoch),
 }
 
 /// The HasStakeDistribution trait provides a lookup mechanism for various information sourced from the ledger
