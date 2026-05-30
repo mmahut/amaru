@@ -21,11 +21,18 @@ pub struct TerminalProgressBar {
     inner: indicatif::ProgressBar,
 }
 
-#[expect(clippy::unwrap_used)]
-pub fn new_terminal_progress_bar(size: usize, template: &str) -> Box<dyn ProgressBar> {
-    Box::new(TerminalProgressBar {
-        inner: indicatif::ProgressBar::new(size as u64).with_style(ProgressStyle::with_template(template).unwrap()),
-    })
+impl TerminalProgressBar {
+    #[expect(clippy::unwrap_used)]
+    pub fn new(size: impl Into<u64>, template: impl AsRef<str>) -> Self {
+        Self {
+            inner: indicatif::ProgressBar::new(size.into())
+                .with_style(ProgressStyle::with_template(template.as_ref()).unwrap().progress_chars("█▉▊▋▌▍▎▏-")),
+        }
+    }
+
+    pub fn boxed(self) -> Box<dyn ProgressBar> {
+        Box::new(self)
+    }
 }
 
 impl ProgressBar for TerminalProgressBar {

@@ -97,7 +97,7 @@ fn default_utxo_size(network: NetworkName) -> usize {
     match network {
         NetworkName::Mainnet => 11_000_000,
         NetworkName::Preview => 1_500_000,
-        NetworkName::Preprod => 1_500_000,
+        NetworkName::Preprod => 4_000_000,
         NetworkName::Testnet(..) => 1,
     }
 }
@@ -143,7 +143,7 @@ where
 
     let estimated_size = size.unwrap_or(default_utxo_size(network));
 
-    let progress = with_progress(estimated_size, "  UTxO entries {bar:70} {pos:>7}/{len:7}");
+    let progress = with_progress(estimated_size, "UTxO entries [{pos:>7}/{len:7}] {bar:40.green} ({eta} remaining)");
 
     let mut actual_size = 0_usize;
     loop {
@@ -216,8 +216,8 @@ where
         }
     }
 
-    info!(size = actual_size, "utxo");
     progress.clear();
+    info!(size = actual_size, "utxo");
 
     Ok(())
 }

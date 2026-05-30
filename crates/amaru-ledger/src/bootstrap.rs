@@ -646,7 +646,7 @@ fn import_accounts(
 
     info!(size = credentials.len(), "credentials");
 
-    let progress = with_progress(credentials.len(), "  Accounts {bar:70} {pos:>7}/{len:7}");
+    let progress = with_progress(credentials.len(), "Accounts [{pos:>7}/{len:7}] {bar:40.green} ({eta} remaining)");
 
     while !credentials.is_empty() {
         let n = std::cmp::min(BATCH_SIZE, credentials.len());
