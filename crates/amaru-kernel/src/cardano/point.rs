@@ -54,7 +54,10 @@ impl Debug for Point {
 
 impl Display for Point {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}", self.slot_or_default(), self.hash())
+        match self {
+            Point::Origin => write!(f, "origin"),
+            Point::Specific(slot, hash) => write!(f, "{slot}.{hash}"),
+        }
     }
 }
 
@@ -187,7 +190,7 @@ mod tests {
         }
 
         #[test_case(
-            Point::Origin => "0.0000000000000000000000000000000000000000000000000000000000000000";
+            Point::Origin => "origin";
            "origin"
         )]
         #[test_case(

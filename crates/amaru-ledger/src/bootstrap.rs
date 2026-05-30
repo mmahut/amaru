@@ -696,11 +696,16 @@ fn import_proposals_roots(
         constitution: Option::from(constitution),
     };
 
+    let roots_constitution = roots.constitution.as_ref().map(|s| s.to_string());
+    let roots_constitutional_committee = roots.constitutional_committee.as_ref().map(|s| s.to_string());
+    let roots_hard_fork = roots.hard_fork.as_ref().map(|s| s.to_string());
+    let roots_protocol_parameters = roots.protocol_parameters.as_ref().map(|s| s.to_string());
+
     info!(
-        protocol_parameters = ?roots.protocol_parameters,
-        hard_fork = ?roots.hard_fork,
-        constitutional_committee = ?roots.constitutional_committee,
-        constitution = ?roots.constitution,
+        constitution = roots_constitution.as_deref().unwrap_or("none"),
+        constitutional_committee = roots_constitutional_committee.as_deref().unwrap_or("none"),
+        hard_fork = roots_hard_fork.as_deref().unwrap_or("none"),
+        protocol_parameters = roots_protocol_parameters.as_deref().unwrap_or("none"),
         "proposal roots"
     );
 
