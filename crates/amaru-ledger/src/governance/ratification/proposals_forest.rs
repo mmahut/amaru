@@ -418,8 +418,15 @@ impl ProposalsForestCompass {
         // - `forest.current_epoch` contains the minimum epoch for which we might consider
         // for ratification. If a proposal was submitted in the epoch that just ended, we
         // skip it.
-        if proposed_in >= &forest.current_epoch {
-            debug!(id = %id, reason = "too fresh; ratification will begin next epoch", "skipping proposal");
+        if proposed_in > &forest.current_epoch {
+            debug!(
+                name: "proposals_forest::step::skip",
+                id = %id,
+                %proposed_in,
+                ratifying_epoch = %forest.current_epoch,
+                reason = "too fresh; ratification will begin next epoch",
+                "proposals_forest::step::skip"
+            );
             return None;
         }
 
@@ -973,7 +980,7 @@ mod tests {
                 }
 
                 prop_assert!(
-                    ERA_HISTORY.slot_to_epoch(pointer.slot(), pointer.slot()).unwrap() < forest.current_epoch,
+                    ERA_HISTORY.slot_to_epoch(pointer.slot(), pointer.slot()).unwrap() <= forest.current_epoch,
                     "yielded proposal too early for ratification",
                 );
 
