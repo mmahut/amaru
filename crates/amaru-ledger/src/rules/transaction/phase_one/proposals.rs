@@ -41,9 +41,6 @@ pub enum InvalidProposals {
     #[error("conflicting committee update: members appear in both add and remove sets")]
     ConflictingCommitteeUpdate,
 
-    #[error("disallowed proposal during bootstrap phase")]
-    DisallowedDuringBootstrap,
-
     #[error("hardfork version {new:?} cannot follow current version {current:?}")]
     HardforkCantFollow { current: ProtocolVersion, new: ProtocolVersion },
 
@@ -112,13 +109,8 @@ fn validate_proposal(
         _ => return Err(InvalidProposals::MalformedReturnAddress),
     }
 
-    let is_bootstrap = protocol_parameters.protocol_version.0 == 9;
-
     match &proposal.gov_action {
         GovernanceAction::TreasuryWithdrawals(wdrls, _) => {
-            if is_bootstrap {
-                return Err(InvalidProposals::DisallowedDuringBootstrap);
-            }
             for (account, _) in wdrls.iter() {
                 match Address::from_bytes(&account[..]) {
                     Ok(Address::Stake(addr)) => {
@@ -136,9 +128,6 @@ fn validate_proposal(
         }
 
         GovernanceAction::UpdateCommittee(_, removed, added, _) => {
-            if is_bootstrap {
-                return Err(InvalidProposals::DisallowedDuringBootstrap);
-            }
             let added_keys: std::collections::BTreeSet<_> = added.iter().map(|(k, _)| k).collect();
             let removed_keys: std::collections::BTreeSet<_> = removed.iter().collect();
             if !added_keys.is_disjoint(&removed_keys) {
@@ -155,11 +144,7 @@ fn validate_proposal(
             }
         }
 
-        GovernanceAction::NoConfidence(_) | GovernanceAction::NewConstitution(..) => {
-            if is_bootstrap {
-                return Err(InvalidProposals::DisallowedDuringBootstrap);
-            }
-        }
+        GovernanceAction::NoConfidence(_) | GovernanceAction::NewConstitution(..) => {}
 
         GovernanceAction::HardForkInitiation(_, new_version) => {
             if !pv_can_follow(protocol_parameters.protocol_version, *new_version) {
@@ -171,7 +156,7 @@ fn validate_proposal(
         }
 
         GovernanceAction::ParameterChange(_, ppu, _) => {
-            ppu_well_formed(protocol_parameters.protocol_version, ppu)?;
+            ppu_well_formed(ppu)?;
         }
 
         GovernanceAction::Information => {}
@@ -186,7 +171,7 @@ fn pv_can_follow(current: ProtocolVersion, new: ProtocolVersion) -> bool {
     (new_major == cur_major + 1 && new_minor == 0) || (new_major == cur_major && new_minor == cur_minor + 1)
 }
 
-fn ppu_well_formed(pv: ProtocolVersion, ppu: &ProtocolParamUpdate) -> Result<(), InvalidProposals> {
+fn ppu_well_formed(ppu: &ProtocolParamUpdate) -> Result<(), InvalidProposals> {
     fn reject_zero(field: Option<u64>, field_name: &str) -> Result<(), InvalidProposals> {
         if field == Some(0) {
             return Err(InvalidProposals::MalformedProposal { reason: format!("{field_name} cannot be 0") });
@@ -205,9 +190,7 @@ fn ppu_well_formed(pv: ProtocolVersion, ppu: &ProtocolParamUpdate) -> Result<(),
     reject_zero(ppu.governance_action_deposit, "governance_action_deposit")?;
     reject_zero(ppu.drep_deposit, "drep_deposit")?;
 
-    if pv.0 != 9 {
-        reject_zero(ppu.ada_per_utxo_byte, "ada_per_utxo_byte")?;
-    }
+    reject_zero(ppu.ada_per_utxo_byte, "ada_per_utxo_byte")?;
 
     let is_empty = ppu.minfee_a.is_none()
         && ppu.minfee_b.is_none()

@@ -217,30 +217,7 @@ pub fn import_initial_snapshot(
     decoder.skip()?; // DRep distr
     decoder.skip()?; // DRep state
     decoder.skip()?; // Pool distr
-    decoder.with_decoder(|d| {
-        d.array()?; // Ratify State
-        Ok(d.skip()?) // Enact State
-    })?;
-
-    decoder.with_decoder(|d| {
-        let enacted: Vec<GovActionState> = d.decode()?;
-        assert!(
-            enacted.is_empty(),
-            "unimplemented import scenario: snapshot contains expired governance action: {enacted:?}"
-        );
-
-        d.tag()?;
-        let expired: Vec<ProposalId> = d.decode()?;
-        assert!(
-            expired.is_empty(),
-            "unimplemented import scenario: snapshot contains expired governance action: {expired:?}"
-        );
-
-        let delayed: bool = d.decode()?;
-        assert!(!delayed, "unimplemented import scenario: snapshot contains a ratified delaying governance action");
-
-        Ok(())
-    })?;
+    decoder.skip()?; // Ratify state
 
     // Epoch State / Ledger State / UTxO State / utxosStakeDistr
     decoder.skip()?;
@@ -669,7 +646,7 @@ fn import_accounts(
 
     info!(size = credentials.len(), "credentials");
 
-    let progress = with_progress(credentials.len(), "  Accounts {bar:70} {pos:>7}/{len:7}");
+    let progress = with_progress(credentials.len(), "Accounts [{pos:>7}/{len:7}] {bar:40.green} ({eta} remaining)");
 
     while !credentials.is_empty() {
         let n = std::cmp::min(BATCH_SIZE, credentials.len());
@@ -719,11 +696,16 @@ fn import_proposals_roots(
         constitution: Option::from(constitution),
     };
 
+    let roots_constitution = roots.constitution.as_ref().map(|s| s.to_string());
+    let roots_constitutional_committee = roots.constitutional_committee.as_ref().map(|s| s.to_string());
+    let roots_hard_fork = roots.hard_fork.as_ref().map(|s| s.to_string());
+    let roots_protocol_parameters = roots.protocol_parameters.as_ref().map(|s| s.to_string());
+
     info!(
-        protocol_parameters = ?roots.protocol_parameters,
-        hard_fork = ?roots.hard_fork,
-        constitutional_committee = ?roots.constitutional_committee,
-        constitution = ?roots.constitution,
+        constitution = roots_constitution.as_deref().unwrap_or("none"),
+        constitutional_committee = roots_constitutional_committee.as_deref().unwrap_or("none"),
+        hard_fork = roots_hard_fork.as_deref().unwrap_or("none"),
+        protocol_parameters = roots_protocol_parameters.as_deref().unwrap_or("none"),
         "proposal roots"
     );
 

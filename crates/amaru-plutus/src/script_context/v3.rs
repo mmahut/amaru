@@ -184,30 +184,16 @@ impl ToPlutusData<3> for DRep {
 }
 
 impl ToPlutusData<3> for Certificate<'_> {
-    /// There is a bug in protocol version 9 that omitted the deposit values of new certificates.
-    /// This was fixed in protocol version 10, but we must make sure that, for protocol version 9, the bug is included
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         match self.certificate {
             PallasCertificate::StakeRegistration(stake_credential) => {
                 constr_v3!(0, [stake_credential, None::<PlutusData>])
             }
-            PallasCertificate::Reg(stake_credential, coin) => {
-                if self.protocol_version.0 > 9 {
-                    constr_v3!(0, [stake_credential, Some(coin)])
-                } else {
-                    constr_v3!(0, [stake_credential, None::<PlutusData>])
-                }
-            }
+            PallasCertificate::Reg(stake_credential, coin) => constr_v3!(0, [stake_credential, Some(coin)]),
             PallasCertificate::StakeDeregistration(stake_credential) => {
                 constr_v3!(1, [stake_credential, None::<PlutusData>])
             }
-            PallasCertificate::UnReg(stake_credential, coin) => {
-                if self.protocol_version.0 > 9 {
-                    constr_v3!(1, [stake_credential, Some(coin)])
-                } else {
-                    constr_v3!(1, [stake_credential, None::<PlutusData>])
-                }
-            }
+            PallasCertificate::UnReg(stake_credential, coin) => constr_v3!(1, [stake_credential, Some(coin)]),
             PallasCertificate::StakeDelegation(stake_credential, pool_id) => {
                 constr_v3!(2, [stake_credential, constr_v3!(0, [pool_id])?])
             }
@@ -603,7 +589,7 @@ impl ToPlutusData<3> for StakeAddress {
 
 #[cfg(test)]
 mod tests {
-    use amaru_kernel::{NetworkName, PROTOCOL_VERSION_10, Transaction, cbor, to_cbor};
+    use amaru_kernel::{NetworkName, Transaction, cbor, to_cbor};
     use test_case::test_case;
 
     use super::{
@@ -622,9 +608,6 @@ mod tests {
     #[test_case(fixture!("mint"); "mint")]
     #[test_case(fixture!("certificates_v10"); "certificates (protocol ver 10")]
     #[test_case(fixture!("duplicate_redeemers_last_wins"); "duplicate redeemers last wins")]
-    // The following test is commented out because we are disregarding protocol version 9.
-    // See the comment on the `ToPlutusData` implementation for `Certificate` for more information
-    // #[test_case(fixture!("certificates_v9"); "certificates (protocol ver 9")]
     fn test_plutus_v3(test_vector: &TestVector) {
         // Ensure we're testing against the right Plutus version.
         // If not, we should fail early.
@@ -644,7 +627,6 @@ mod tests {
             &0.into(),
             network,
             network.into(),
-            PROTOCOL_VERSION_10,
         )
         .unwrap();
 

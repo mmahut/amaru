@@ -25,7 +25,6 @@ use amaru_kernel::{
     CertificatePointer,
     Constitution,
     ConstitutionalCommitteeStatus,
-    DRep,
     Epoch,
     EraHistory,
     Lovelace,
@@ -376,12 +375,6 @@ pub trait TransactionalContext<'a>: ReadStore {
     fn remove_proposals<'iter, Id>(&self, proposals: impl IntoIterator<Item = Id>) -> Result<()>
     where
         Id: Deref<Target = ProposalId> + 'iter;
-
-    /// Import delegation relationships between delegators and dreps.
-    fn add_drep_delegations(
-        &self,
-        delegations: impl IntoIterator<Item = (StakeCredential, DRep, CertificatePointer)>,
-    ) -> Result<()>;
 
     /// Get current values of the treasury and reserves accounts, and possibly modify them.
     fn with_pots(&self, with: impl FnMut(Box<dyn BorrowMut<pots::Row> + '_>)) -> Result<()>;

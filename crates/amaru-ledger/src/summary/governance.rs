@@ -39,8 +39,6 @@ pub struct DRepState {
     pub stake: Lovelace,
     #[serde(skip)]
     pub registered_at: CertificatePointer,
-    #[serde(skip)]
-    pub previous_deregistration: Option<CertificatePointer>,
 }
 
 impl DRepState {
@@ -96,10 +94,7 @@ impl GovernanceSummary {
 
         let mut dreps = db
             .iter_dreps()?
-            .filter(|(_, dreps::Row { registered_at, previous_deregistration, .. })| {
-                Some(registered_at) > previous_deregistration.as_ref()
-            })
-            .map(|(k, dreps::Row { registered_at, previous_deregistration, valid_until, anchor, .. })| {
+            .map(|(k, dreps::Row { registered_at, valid_until, anchor, .. })| {
                 let drep = match k {
                     StakeCredential::AddrKeyhash(hash) => DRep::Key(hash),
                     StakeCredential::ScriptHash(hash) => DRep::Script(hash),
@@ -109,7 +104,6 @@ impl GovernanceSummary {
                     drep,
                     DRepState {
                         registered_at,
-                        previous_deregistration,
                         metadata: anchor,
                         valid_until: Some(valid_until + consecutive_dormant_epochs as u64),
                         // The actual stake is filled later when computing the stake distribution.
@@ -127,7 +121,6 @@ impl GovernanceSummary {
                 transaction: TransactionPointer { slot: Slot::from(0), transaction_index: 0 },
                 certificate_index: 0,
             },
-            previous_deregistration: None,
         };
 
         dreps.insert(DRep::Abstain, default_protocol_drep());

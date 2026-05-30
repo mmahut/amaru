@@ -107,7 +107,7 @@ pub use cardano::{
         PREVIEW_GLOBAL_PARAMETERS, ProtocolParameters, TESTNET_GLOBAL_PARAMETERS,
     },
     protocol_parameters_update::{ProtocolParamUpdate, display_protocol_parameters_update},
-    protocol_version::{self, PROTOCOL_VERSION_9, PROTOCOL_VERSION_10, ProtocolVersion},
+    protocol_version::{self, PROTOCOL_VERSION_10, ProtocolVersion},
     rational_number::{self, RationalNumber},
     raw_block::RawBlock,
     redeemer::Redeemer,

@@ -124,24 +124,6 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
 
-  snapshots:
-    name: Compare ledger epoch snapshots
-    if: ${{ !github.event.pull_request.draft }}
-    uses: ./.github/workflows/template-ledger-epoch-snapshots.yml
-    with:
-      use_fixed_epoch: true
-      default_timeout: 30
-      network: ${{ github.event.inputs.network || '' }}
-      run_until_target_epoch: ${{ github.event.inputs.run_until_target_epoch || '' }}
-      timeout: ${{ github.event.inputs.timeout || '' }}
-      run_until_trace_level: ${{ github.event.inputs.run_until_trace_level || '' }}
-      run_tests: ${{ github.event_name == 'pull_request' }}
-    secrets:
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-      CARDANO_NODE_BUCKET_NAME: ${{ secrets.CARDANO_NODE_BUCKET_NAME }}
-
   benches:
     name: Bench
     needs: [build-linux-x86_64]

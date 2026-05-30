@@ -29,7 +29,7 @@ use amaru_ledger::{
 };
 use amaru_network::chain_sync_client::ChainSyncClient;
 use amaru_ouroboros::{ChainStore, Nonces};
-use amaru_progress_bar::new_terminal_progress_bar;
+use amaru_progress_bar::{ProgressBar, TerminalProgressBar};
 use amaru_stores::rocksdb::{RocksDB, RocksDbConfig, consensus::RocksDBStore};
 use async_compression::tokio::bufread::GzipDecoder as AsyncGzipDecoder;
 use flate2::read::GzDecoder;
@@ -51,7 +51,7 @@ use crate::{
         ParsedStateSnapshot, decode_node_accounts, decode_node_pool_state, parse_state_snapshot_with_nonces,
         tvar::import_snapshot_from_tvar,
     },
-    default_snapshots_dir, get_bootstrap_file,
+    default_data_dir, default_snapshots_dir, get_bootstrap_file,
 };
 
 /// Configuration for a single ledger state's snapshot to be imported.
@@ -144,13 +144,56 @@ fn snapshot_hash(snapshot: &Snapshot) -> Result<HeaderHash, Box<dyn Error>> {
     }
 }
 
+#[derive(Deserialize)]
+struct LocalEpochMetadata {
+    epoch: Epoch,
+    slot: u64,
+    hash: String,
+    #[serde(default, alias = "header_parent")]
+    parent_point: Option<String>,
+}
+
+fn load_local_epoch_snapshots(network: NetworkName) -> Vec<Snapshot> {
+    let metadata_dir = PathBuf::from(default_data_dir(network)).join("epoch-snapshots").join("epochs");
+    if !metadata_dir.is_dir() {
+        return Vec::new();
+    }
+
+    let Ok(entries) = std::fs::read_dir(&metadata_dir) else {
+        return Vec::new();
+    };
+
+    entries
+        .flatten()
+        .filter(|entry| entry.path().extension().and_then(|e| e.to_str()) == Some("json"))
+        .filter_map(|entry| std::fs::read(entry.path()).ok())
+        .filter_map(|bytes| serde_json::from_slice::<LocalEpochMetadata>(&bytes).ok())
+        .map(|meta| Snapshot {
+            epoch: meta.epoch,
+            point: format!("{}.{}", meta.slot, meta.hash),
+            url: String::new(),
+            parent_point: meta.parent_point,
+        })
+        .collect()
+}
+
 fn bootstrap_snapshots(network: NetworkName) -> Result<(PathBuf, Vec<Snapshot>), Box<dyn Error>> {
     let snapshot_file_name = "snapshots.json";
     let snapshots_dir: PathBuf = default_snapshots_dir(network).into();
     let snapshots_file = get_bootstrap_file(network, snapshot_file_name)?
         .ok_or(BootstrapError::MissingConfigFile(snapshot_file_name.into()))?;
-    let snapshots: Vec<Snapshot> = serde_json::from_slice(&snapshots_file)
+    let mut snapshots: Vec<Snapshot> = serde_json::from_slice(&snapshots_file)
         .map_err(|source| BootstrapError::MalformedSnapshotsFile { path: snapshot_file_name.into(), source })?;
+
+    let local_snapshots = load_local_epoch_snapshots(network);
+    if !local_snapshots.is_empty() {
+        info!(count = local_snapshots.len(), "detected locally-created snapshots from create-snapshots");
+        for local_snapshot in local_snapshots {
+            if !snapshots.iter().any(|s| s.epoch == local_snapshot.epoch) {
+                snapshots.push(local_snapshot);
+            }
+        }
+    }
 
     Ok((snapshots_dir, snapshots))
 }
@@ -376,6 +419,8 @@ async fn download_snapshots(snapshots: &[&Snapshot], snapshots_dir: &Path) -> Re
         file.sync_all().await?;
         drop(file);
 
+        info!(snapshot = %snapshot_dir.display(), "extracting archive");
+
         if let Err(err) = extract_snapshot_archive(&archive_path, &extract_path, &snapshot_dir) {
             let _ = fs::remove_file(&archive_path).await;
             let _ = fs::remove_dir_all(&extract_path).await;
@@ -414,22 +459,37 @@ async fn create_partial_file(target_path: &Path) -> Result<(PathBuf, File), Boot
 }
 
 async fn download_to_file(file: &mut File, response: reqwest::Response) -> Result<(), BootstrapError> {
+    let progress = new_download_progress_bar(response.content_length());
     let mut stream = response.bytes_stream();
 
     while let Some(chunk) = stream.try_next().await.map_err(io::Error::other)? {
+        progress.tick(chunk.len());
         file.write_all(&chunk).await?;
     }
+
+    progress.clear();
 
     Ok(())
 }
 
 async fn download_gzip_to_file(file: &mut File, response: reqwest::Response) -> Result<(), BootstrapError> {
-    let raw_stream_reader = StreamReader::new(response.bytes_stream().map_err(io::Error::other));
+    let progress = new_download_progress_bar(response.content_length());
+    let raw_stream_reader = StreamReader::new(
+        response.bytes_stream().inspect_ok(|chunk| progress.tick(chunk.len())).map_err(io::Error::other),
+    );
     let buffered_reader = BufReader::new(raw_stream_reader);
     let mut decoded_stream = AsyncGzipDecoder::new(buffered_reader);
     tokio::io::copy(&mut decoded_stream, file).await?;
-
+    progress.clear();
     Ok(())
+}
+
+#[allow(clippy::expect_used)]
+fn new_download_progress_bar(content_length: Option<u64>) -> impl ProgressBar {
+    TerminalProgressBar::new(
+        content_length.unwrap_or(0),
+        "Downloading [{bytes:>10}/{total_bytes:<10}] {bar:40.green} {bytes_per_sec:>12} ({eta} remaining)",
+    )
 }
 
 fn extract_snapshot_archive(
@@ -747,7 +807,7 @@ async fn import_cbor_snapshot_file(
                 &point,
                 &era_history,
                 network,
-                new_terminal_progress_bar,
+                |size, template| TerminalProgressBar::new(size as u64, template).boxed(),
                 decode_node_pool_state,
                 decode_node_accounts,
             )
@@ -789,14 +849,9 @@ async fn import_node_snapshot_dir(
     let builder = std::thread::Builder::new().stack_size(10_000_000);
     let (db, epoch, initial_nonces) = builder
         .spawn(move || {
-            import_snapshot_from_tvar(
-                &db,
-                &mut state_file,
-                &mut utxo_file,
-                network,
-                nonce_tail,
-                new_terminal_progress_bar,
-            )
+            import_snapshot_from_tvar(&db, &mut state_file, &mut utxo_file, network, nonce_tail, |size, template| {
+                TerminalProgressBar::new(size as u64, template).boxed()
+            })
             .map_err(|e| e.to_string())
             .map(|(epoch, _point, initial_nonces)| (db, epoch, initial_nonces))
         })

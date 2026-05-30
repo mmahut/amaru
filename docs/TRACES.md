@@ -586,22 +586,9 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 
 | name | level | public | description | required fields | optional fields |
 | --- | --- | --- | --- | --- | --- |
-| `dreps_delegation_remove` | `TRACE` | public | Remove DRep delegations | drep_hash, drep_type, db_system_name, db_operation_name, db_collection_name |  |
 | `prune` | `TRACE` | public | Prune old snapshots | functional_minimum, db_system_name, db_operation_name |  |
 | `snapshot` | `TRACE` | public | Create ledger snapshot for epoch | epoch, db_system_name, db_operation_name |  |
 | `try_epoch_transition` | `TRACE` | public | Epoch transition tracking | from, to, db_system_name, db_operation_name |  |
-
-<details><summary>span: `dreps_delegation_remove`</summary>
-
-| field | type | required |
-| --- | --- | --- |
-| `drep_hash` | `string` | ✓ |
-| `drep_type` | `string` | ✓ |
-| `db_system_name` | `string` | ✓ |
-| `db_operation_name` | `string` | ✓ |
-| `db_collection_name` | `string` | ✓ |
-
-</details>
 
 <details><summary>span: `prune`</summary>
 
@@ -641,7 +628,6 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 | `accounts_add` | `TRACE` | public | Batch-upsert account entries | db_system_name, db_operation_name, db_collection_name |  |
 | `accounts_get` | `TRACE` | public | Point-read an account entry | db_system_name, db_operation_name, db_collection_name |  |
 | `accounts_remove` | `TRACE` | public | Batch-delete account entries | db_system_name, db_operation_name, db_collection_name |  |
-| `accounts_reset_delegation` | `TRACE` | public | Clear DRep delegation for accounts (protocol v9 bug compat) | db_system_name, db_operation_name, db_collection_name |  |
 | `accounts_reset_many` | `TRACE` | public | Reset rewards counters for many accounts | db_system_name, db_operation_name, db_collection_name |  |
 | `accounts_set` | `TRACE` | public | Update rewards balance for a single account | db_system_name, db_operation_name, db_collection_name |  |
 | `cc_members_upsert` | `TRACE` | public | Upsert a constitutional committee member | db_system_name, db_operation_name, db_collection_name |  |
@@ -685,16 +671,6 @@ For information on how to use and filter these spans, see [monitoring/README.md]
 </details>
 
 <details><summary>span: `accounts_remove`</summary>
-
-| field | type | required |
-| --- | --- | --- |
-| `db_system_name` | `string` | ✓ |
-| `db_operation_name` | `string` | ✓ |
-| `db_collection_name` | `string` | ✓ |
-
-</details>
-
-<details><summary>span: `accounts_reset_delegation`</summary>
 
 | field | type | required |
 | --- | --- | --- |

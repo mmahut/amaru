@@ -266,7 +266,7 @@ impl ToPlutusData<1> for Datums<'_> {
 // This test logic is basically 100% duplicated with v3. Should be able to simplify.
 #[cfg(test)]
 mod tests {
-    use amaru_kernel::{NetworkName, PROTOCOL_VERSION_10, Transaction, cbor, to_cbor};
+    use amaru_kernel::{NetworkName, Transaction, cbor, to_cbor};
     use test_case::test_case;
 
     use super::{
@@ -303,7 +303,6 @@ mod tests {
             &0.into(),
             network,
             network.into(),
-            PROTOCOL_VERSION_10,
         )
         .unwrap();
 

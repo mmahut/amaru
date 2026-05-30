@@ -356,12 +356,8 @@ impl<'distr> RatificationContext<'distr> {
         self.constitutional_committee
             .as_ref()
             .and_then(|committee| {
-                let threshold = committee.voting_threshold(
-                    self.epoch,
-                    self.protocol_parameters.protocol_version,
-                    self.protocol_parameters.min_committee_size,
-                    proposal,
-                )?;
+                let threshold =
+                    committee.voting_threshold(self.epoch, self.protocol_parameters.min_committee_size, proposal)?;
 
                 Span::current().record("committee_approval_threshold", field::display(&threshold));
 
@@ -387,9 +383,7 @@ impl<'distr> RatificationContext<'distr> {
             Some(threshold) => {
                 Span::current().record("pools_approval_threshold", field::display(&threshold));
 
-                let tally = || {
-                    stake_pools::tally(self.protocol_parameters.protocol_version, proposal, votes, stake_distribution)
-                };
+                let tally = || stake_pools::tally(proposal, votes, stake_distribution);
 
                 threshold == SafeRatio::zero() || tally() >= threshold
             }
@@ -403,7 +397,6 @@ impl<'distr> RatificationContext<'distr> {
         stake_distribution: &StakeDistribution,
     ) -> bool {
         match dreps::voting_threshold(
-            self.protocol_parameters.protocol_version,
             self.constitutional_committee.is_none(),
             &self.protocol_parameters.drep_voting_thresholds,
             proposal,

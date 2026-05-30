@@ -387,15 +387,6 @@ define_schemas! {
                 required db_operation_name: String
             }
 
-            /// Remove DRep delegations
-            public DREPS_DELEGATION_REMOVE {
-                required drep_hash: amaru_kernel::Hash<28>
-                required drep_type: amaru_kernel::StakeCredentialKind
-                required db_system_name: String
-                required db_operation_name: String
-                required db_collection_name: String
-            }
-
             columns {
                 /// Point-read a UTxO entry
                 public UTXO_GET {
@@ -469,13 +460,6 @@ define_schemas! {
 
                 /// Reset rewards counters for many accounts
                 public ACCOUNTS_RESET_MANY {
-                    required db_system_name: String
-                    required db_operation_name: String
-                    required db_collection_name: String
-                }
-
-                /// Clear DRep delegation for accounts (protocol v9 bug compat)
-                public ACCOUNTS_RESET_DELEGATION {
                     required db_system_name: String
                     required db_operation_name: String
                     required db_collection_name: String

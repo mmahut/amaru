@@ -117,7 +117,7 @@ fn migrate_to_v3(db: &OptimisticTransactionDB) -> Result<(), StoreError> {
     set_best_chain_hash(db, &anchor_hash)?;
     set_block_valid(db, &anchor_hash, true)?;
 
-    tracing::info!(prev_best_chain = %best_chain_point, new_best_chain = %anchor_point, "wound back best chain to revalidate");
+    tracing::info!(prev_best_chain = %best_chain_point, new_best_chain = %anchor_point, "found back best chain to revalidate");
 
     set_version(db, 3)?;
     Ok(())

@@ -96,8 +96,6 @@ for target_epoch in "${epochs[@]}"; do
   fi
 
   object_key="$(basename "$archive_path")"
-  echo "Uploading '$archive_path' to 's3://${BUCKET_NAME}/${object_key}'"
-  aws s3 cp "$archive_path" "s3://${BUCKET_NAME}/${object_key}" --endpoint-url "$ENDPOINT"
 
   if [ -z "$public_url_base" ]; then
     public_url_base="$(candidate_public_url_bases)"
@@ -105,6 +103,13 @@ for target_epoch in "${epochs[@]}"; do
   fi
 
   public_object_url="${public_url_base%/}/${object_key}"
+  if is_public_object_reachable "$public_object_url"; then
+    echo "Snapshot already exists at '$public_object_url', skipping upload"
+  else
+    echo "Uploading '$archive_path' to 's3://${BUCKET_NAME}/${object_key}'"
+    aws s3 cp "$archive_path" "s3://${BUCKET_NAME}/${object_key}" --endpoint-url "$ENDPOINT"
+  fi
+
   if ! is_public_object_reachable "$public_object_url"; then
     echo "Error: uploaded snapshot is not publicly reachable at '$public_object_url'." >&2
     echo "Hint: update '${manifest_path}' so existing URLs use the correct public base for network '$network'." >&2
@@ -114,15 +119,21 @@ for target_epoch in "${epochs[@]}"; do
   metadata_files+=("$metadata_path")
 done
 
+existing_entries="$(if [ -f "$manifest_path" ]; then cat "$manifest_path"; else echo '[]'; fi)"
 tmp_manifest="${manifest_path}.tmp"
-jq -s --arg base "$public_url_base" '
-  sort_by(.epoch)
-  | to_entries
-  | map({
-      epoch: .value.epoch,
-      point: "\(.value.slot).\(.value.hash)",
-      url: ($base + "/" + (.value.archive_path | split("/") | last))
-    } + if .key == 0 or .value.parent_point == null then {} else { parent_point: .value.parent_point } end)
+jq -s --argjson existing "$existing_entries" --arg base "$public_url_base" '
+  (
+    sort_by(.epoch)
+    | to_entries
+    | map({
+        epoch: .value.epoch,
+        point: "\(.value.slot).\(.value.hash)",
+        url: ($base + "/" + (.value.archive_path | split("/") | last))
+      } + if .value.parent_point == null then {} else { parent_point: .value.parent_point } end)
+  ) as $new
+  | ($new | map(.epoch)) as $new_epochs
+  | ($existing | map(select(.epoch as $e | ($new_epochs | index($e)) == null))) + $new
+  | sort_by(.epoch)
 ' "${metadata_files[@]}" > "$tmp_manifest"
 mv "$tmp_manifest" "$manifest_path"
 
