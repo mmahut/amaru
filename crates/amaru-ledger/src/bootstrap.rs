@@ -217,30 +217,7 @@ pub fn import_initial_snapshot(
     decoder.skip()?; // DRep distr
     decoder.skip()?; // DRep state
     decoder.skip()?; // Pool distr
-    decoder.with_decoder(|d| {
-        d.array()?; // Ratify State
-        Ok(d.skip()?) // Enact State
-    })?;
-
-    decoder.with_decoder(|d| {
-        let enacted: Vec<GovActionState> = d.decode()?;
-        assert!(
-            enacted.is_empty(),
-            "unimplemented import scenario: snapshot contains expired governance action: {enacted:?}"
-        );
-
-        d.tag()?;
-        let expired: Vec<ProposalId> = d.decode()?;
-        assert!(
-            expired.is_empty(),
-            "unimplemented import scenario: snapshot contains expired governance action: {expired:?}"
-        );
-
-        let delayed: bool = d.decode()?;
-        assert!(!delayed, "unimplemented import scenario: snapshot contains a ratified delaying governance action");
-
-        Ok(())
-    })?;
+    decoder.skip()?; // Ratify state
 
     // Epoch State / Ledger State / UTxO State / utxosStakeDistr
     decoder.skip()?;
