@@ -51,7 +51,7 @@ use crate::{
         ParsedStateSnapshot, decode_node_accounts, decode_node_pool_state, parse_state_snapshot_with_nonces,
         tvar::import_snapshot_from_tvar,
     },
-    default_snapshots_dir, get_bootstrap_file,
+    default_data_dir, default_snapshots_dir, get_bootstrap_file,
 };
 
 /// Configuration for a single ledger state's snapshot to be imported.
@@ -144,13 +144,56 @@ fn snapshot_hash(snapshot: &Snapshot) -> Result<HeaderHash, Box<dyn Error>> {
     }
 }
 
+#[derive(Deserialize)]
+struct LocalEpochMetadata {
+    epoch: Epoch,
+    slot: u64,
+    hash: String,
+    #[serde(default, alias = "header_parent")]
+    parent_point: Option<String>,
+}
+
+fn load_local_epoch_snapshots(network: NetworkName) -> Vec<Snapshot> {
+    let metadata_dir = PathBuf::from(default_data_dir(network)).join("epoch-snapshots").join("epochs");
+    if !metadata_dir.is_dir() {
+        return Vec::new();
+    }
+
+    let Ok(entries) = std::fs::read_dir(&metadata_dir) else {
+        return Vec::new();
+    };
+
+    entries
+        .flatten()
+        .filter(|entry| entry.path().extension().and_then(|e| e.to_str()) == Some("json"))
+        .filter_map(|entry| std::fs::read(entry.path()).ok())
+        .filter_map(|bytes| serde_json::from_slice::<LocalEpochMetadata>(&bytes).ok())
+        .map(|meta| Snapshot {
+            epoch: meta.epoch,
+            point: format!("{}.{}", meta.slot, meta.hash),
+            url: String::new(),
+            parent_point: meta.parent_point,
+        })
+        .collect()
+}
+
 fn bootstrap_snapshots(network: NetworkName) -> Result<(PathBuf, Vec<Snapshot>), Box<dyn Error>> {
     let snapshot_file_name = "snapshots.json";
     let snapshots_dir: PathBuf = default_snapshots_dir(network).into();
     let snapshots_file = get_bootstrap_file(network, snapshot_file_name)?
         .ok_or(BootstrapError::MissingConfigFile(snapshot_file_name.into()))?;
-    let snapshots: Vec<Snapshot> = serde_json::from_slice(&snapshots_file)
+    let mut snapshots: Vec<Snapshot> = serde_json::from_slice(&snapshots_file)
         .map_err(|source| BootstrapError::MalformedSnapshotsFile { path: snapshot_file_name.into(), source })?;
+
+    let local_snapshots = load_local_epoch_snapshots(network);
+    if !local_snapshots.is_empty() {
+        info!(count = local_snapshots.len(), "detected locally-created snapshots from create-snapshots");
+        for local_snapshot in local_snapshots {
+            if !snapshots.iter().any(|s| s.epoch == local_snapshot.epoch) {
+                snapshots.push(local_snapshot);
+            }
+        }
+    }
 
     Ok((snapshots_dir, snapshots))
 }
