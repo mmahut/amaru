@@ -19,9 +19,9 @@
       "consecutiveDormantEpochs": 0
     }
   },
-  "ledgerEnv": {
+  "point": {
     "slot": 0,
-    "txIx": 0
+    "transactionIndex": 0
   },
   "transaction": "84a400d9010281825820aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000181a200581d61c3f9920656fdbfe2842e2c5671e0a2b0c1c84c497d42879de5376d7b011a00493e00021a00030d400f00a100d90102818258202152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12584087a5d9f592472bad65e326e6937ed06772a7ad4bcfcbdcb2cfb87c97b83b4357bf38c9c5c3c98f78c8d6f20187da07d9e6d8b74c57d2e0d6cbc03df1527c0308f5f6",
   "expected": {

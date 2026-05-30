@@ -28,6 +28,13 @@ pub async fn resolve(addr: ToSocketAddrs) -> std::io::Result<Vec<SocketAddr>> {
         IpAddrV6(addr, port) => Ok(vec![(addr, port).into()]),
         String(addr) => Ok(lookup_host(&addr).await?.take(100).collect()),
     };
-    tracing::info!(?result, "resolved addresses");
+
+    if let Ok(addrs) = result.as_ref() {
+        tracing::debug!(
+            addresses = addrs.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", "),
+            "resolved addresses"
+        );
+    }
+
     result
 }

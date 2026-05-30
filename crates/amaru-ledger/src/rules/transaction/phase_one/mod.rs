@@ -326,6 +326,7 @@ mod tests {
     #[test_case(fixture!("fail/BabbageOutputTooSmallUTxO/0"); "output below minimum lovelace")]
     #[test_case(fixture!("fail/OutputTooBigUTxO/0"); "output value larger than maxValueSize")]
     #[test_case(fixture!("fail/WrongNetworkInTxOutput/0"); "output address on wrong network")]
+    #[test_case(fixture!("pass/script-integrity-hash/0"); "interesting script integrity hash on preprod")]
     fn conformance(fixture: Fixture) {
         let tx_size = fixture.transaction.len() as u64;
 
@@ -352,7 +353,7 @@ mod tests {
             &protocol_parameters,
             &era_history,
             fixture.initial_state.governance_activity,
-            fixture.ledger_env,
+            fixture.point,
             tx.is_expected_valid,
             tx.body,
             &tx.witnesses,
