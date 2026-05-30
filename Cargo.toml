@@ -118,7 +118,7 @@ amaru-protocols = { path = "crates/amaru-protocols", version = "0.1.2" }
 amaru-sim = { path = "crates/amaru-sim", version = "0.1.2" }
 amaru-stores = { path = "crates/amaru-stores", version = "0.1.2" }
 amaru-tracing-json = { path = "crates/amaru-tracing-json", version = "0.1.2" }
-amaru-uplc = "0.1.0"
+amaru-uplc = "0.2.0"
 pure-stage = { path = "crates/pure-stage", version = "0.1.2" }
 
 # The vrf crate has not been fully tested in production environments and still has several upstream issues that are open PRs but not merged yet.
