@@ -21,7 +21,8 @@ use std::{
 use amaru::{DEFAULT_NETWORK, default_data_dir, default_snapshots_dir};
 use amaru_kernel::{NetworkName, Point};
 use amaru_mithril::{
-    download_from_mithril, extract_block_header_cbor, first_missing_immutable_chunk, parse_header_slot_and_hash,
+    chunk_for_slot, download_from_mithril, extract_block_header_cbor, first_missing_immutable_chunk,
+    parse_header_slot_and_hash,
 };
 use clap::{ArgAction, Parser};
 use serde::{Deserialize, Serialize};
@@ -73,6 +74,16 @@ pub struct Args {
     )]
     dist_dir: Option<PathBuf>,
 
+    /// Directory where snapshot archives and materialized snapshot directories are written.
+    ///
+    /// Defaults to ./snapshots/<NETWORK>/ when unspecified.
+    #[arg(
+        long,
+        value_name = amaru::value_names::DIRECTORY,
+        env = amaru::env_vars::SNAPSHOTS_DIR,
+    )]
+    snapshot_dir: Option<PathBuf>,
+
     /// Forcefully erase requested generated snapshot outputs and regenerate them.
     #[arg(
         short,
@@ -83,6 +94,10 @@ pub struct Args {
     force: bool,
 
     /// Directory containing the cardano-node config.json and genesis files.
+    ///
+    /// Only required for custom testnet networks. For mainnet, preprod and preview,
+    /// the config is downloaded automatically from the official source and cached
+    /// when no local bundled copy is available.
     #[arg(
         long,
         value_name = amaru::value_names::DIRECTORY,
@@ -111,22 +126,14 @@ fn default_snapshot_output_dir(network: NetworkName) -> PathBuf {
 }
 
 pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    let Args { network, epoch, dist_dir, force, cardano_node_config_dir } = args;
+    let Args { network, epoch, dist_dir, snapshot_dir, force, cardano_node_config_dir } = args;
     let client = reqwest::Client::new();
     let requested_epoch = epoch;
-    let epoch = match requested_epoch {
-        Some(e) => e,
-        None => {
-            let current_epoch = fetch_current_epoch(&client, network).await?;
-            current_epoch
-                .checked_sub(3)
-                .ok_or_else(|| format!("cannot infer bootstrap start epoch from current epoch {current_epoch}"))?
-        }
-    };
+    let epoch = resolve_start_epoch(&client, network, requested_epoch).await?;
     let target_epochs = bootstrap_target_epochs(epoch)?;
     let dist_dir = dist_dir.unwrap_or_else(|| default_dist_dir(network));
     let metadata_dir = dist_dir.join("epochs");
-    let snapshot_output_dir = default_snapshot_output_dir(network);
+    let snapshot_output_dir = snapshot_dir.unwrap_or_else(|| default_snapshot_output_dir(network));
     let work_dir = dist_dir.join("work");
     let cardano_db_dir = work_dir.join("cardano-db");
     let ledger_snapshot_dir = cardano_db_dir.join("ledger");
@@ -160,6 +167,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             Some(snapshot_path_for_target(&snapshot_output_dir, &target).to_string_lossy().into_owned());
         targets.push(target);
     }
+    targets.sort_unstable_by_key(|target| target.slot);
 
     if force {
         remove_target_outputs(&snapshot_output_dir, &targets)?;
@@ -177,64 +185,125 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         return Err(format!("refusing to overwrite existing snapshot outputs: {existing_outputs}").into());
     }
 
-    let mut pending_targets = targets;
-    pending_targets.sort_unstable_by_key(|target| target.slot);
-
-    for target in &pending_targets {
+    for target in &targets {
         write_epoch_metadata(&metadata_dir, target)?;
     }
 
     let from_chunk = first_missing_immutable_chunk(&cardano_db_dir.join("immutable"))?;
-    info!(from_chunk, target_dir = %cardano_db_dir.display(), "synchronizing cardano-db from Mithril");
-    download_from_mithril(network, cardano_db_dir.clone(), from_chunk).await?;
-
-    let db_analyser_binary = ensure_db_analyser_binary()?;
-    let mut previous_snapshot_slot = None;
-
-    for mut target in pending_targets {
-        let prepared_snapshot_path = snapshot_path_for_target(&snapshot_output_dir, &target);
-        let prepared_archive_path = archive_path_for_target(&snapshot_output_dir, &target);
-        let immutable_dir = cardano_db_dir.join("immutable");
-        let snapshot_dir = match exact_snapshot_dir(&ledger_snapshot_dir, target.slot) {
-            Some(snapshot_dir) => {
-                info!(epoch = target.epoch, slot = target.slot, snapshot = %snapshot_dir.display(), "reusing existing db-analyser snapshot");
-                snapshot_dir
-            }
-            None => {
-                let analyse_from = select_analyse_from_slot(&ledger_snapshot_dir, target.slot, previous_snapshot_slot)?;
-                info!(
-                    epoch = target.epoch,
-                    slot = target.slot,
-                    analyse_from,
-                    "creating ledger snapshot with db-analyser"
-                );
-                run_db_analyser(&db_analyser_binary, &config_dir, &cardano_db_dir, target.slot, analyse_from)?;
-                exact_snapshot_dir(&ledger_snapshot_dir, target.slot)
-                    .ok_or_else(|| format!("db-analyser did not create snapshot directory for slot {}", target.slot))?
-            }
-        };
-        previous_snapshot_slot = Some(target.slot);
-
-        info!(epoch = target.epoch, slot = target.slot, snapshot = %prepared_snapshot_path.display(), "materializing bootstrap snapshot directory");
-        materialize_snapshot(&snapshot_dir, &prepared_snapshot_path)?;
-        let packaged_headers = packaged_headers_for_target(&immutable_dir, target.parent_point.as_deref())?;
-        if !packaged_headers.is_empty() {
-            fs::write(
-                prepared_snapshot_path.join(PACKAGED_HEADERS_FILE_NAME),
-                serde_json::to_vec_pretty(&packaged_headers)?,
-            )?;
-        }
-        info!(epoch = target.epoch, slot = target.slot, archive = %prepared_archive_path.display(), "packaging snapshot archive");
-        write_snapshot_archive(&prepared_snapshot_path, &prepared_archive_path)?;
-
-        target.archive_path = Some(prepared_archive_path.to_string_lossy().into_owned());
-        target.snapshot_path = Some(prepared_snapshot_path.to_string_lossy().into_owned());
-        write_epoch_metadata(&metadata_dir, &target)?;
-
-        info!(epoch = target.epoch, slot = target.slot, snapshot = %prepared_snapshot_path.display(), archive = %prepared_archive_path.display(), "finished epoch snapshot");
+    let required_chunk = targets.last().map(|t| chunk_for_slot(t.slot)).unwrap_or(0);
+    if from_chunk > required_chunk {
+        info!(from_chunk, required_chunk, target_dir = %cardano_db_dir.display(), "local cardano-db already covers all target slots; skipping Mithril download");
+    } else {
+        info!(from_chunk, target_dir = %cardano_db_dir.display(), "synchronizing cardano-db from Mithril");
+        download_from_mithril(network, cardano_db_dir.clone(), from_chunk).await?;
     }
 
+    let db_analyser_binary = ensure_db_analyser_binary()?;
+    let immutable_dir = cardano_db_dir.join("immutable");
+    let context = SnapshotBuildContext {
+        snapshot_output_dir: &snapshot_output_dir,
+        immutable_dir: &immutable_dir,
+        ledger_snapshot_dir: &ledger_snapshot_dir,
+        metadata_dir: &metadata_dir,
+        config_dir: &config_dir,
+        cardano_db_dir: &cardano_db_dir,
+        db_analyser_binary: &db_analyser_binary,
+    };
+
+    targets.into_iter().try_fold(None, |previous_snapshot_slot, target| {
+        process_target(target, previous_snapshot_slot, &context).map(Some)
+    })?;
+
     Ok(())
+}
+
+struct SnapshotBuildContext<'a> {
+    snapshot_output_dir: &'a Path,
+    immutable_dir: &'a Path,
+    ledger_snapshot_dir: &'a Path,
+    metadata_dir: &'a Path,
+    config_dir: &'a Path,
+    cardano_db_dir: &'a Path,
+    db_analyser_binary: &'a str,
+}
+
+fn process_target(
+    mut target: EpochTarget,
+    previous_snapshot_slot: Option<u64>,
+    context: &SnapshotBuildContext<'_>,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let prepared_snapshot_path = snapshot_path_for_target(context.snapshot_output_dir, &target);
+    let prepared_archive_path = archive_path_for_target(context.snapshot_output_dir, &target);
+    let snapshot_dir =
+        resolve_or_create_snapshot_dir(&target, previous_snapshot_slot, context.ledger_snapshot_dir, context)?;
+
+    info!(epoch = target.epoch, slot = target.slot, snapshot = %prepared_snapshot_path.display(), "materializing bootstrap snapshot directory");
+    materialize_snapshot(&snapshot_dir, &prepared_snapshot_path)?;
+    write_packaged_headers(&target, context.immutable_dir, &prepared_snapshot_path)?;
+
+    info!(epoch = target.epoch, slot = target.slot, archive = %prepared_archive_path.display(), "packaging snapshot archive");
+    write_snapshot_archive(&prepared_snapshot_path, &prepared_archive_path)?;
+
+    target.archive_path = Some(prepared_archive_path.to_string_lossy().into_owned());
+    target.snapshot_path = Some(prepared_snapshot_path.to_string_lossy().into_owned());
+    write_epoch_metadata(context.metadata_dir, &target)?;
+
+    info!(epoch = target.epoch, slot = target.slot, snapshot = %prepared_snapshot_path.display(), archive = %prepared_archive_path.display(), "finished epoch snapshot");
+
+    Ok(target.slot)
+}
+
+fn resolve_or_create_snapshot_dir(
+    target: &EpochTarget,
+    previous_snapshot_slot: Option<u64>,
+    ledger_snapshot_dir: &Path,
+    context: &SnapshotBuildContext<'_>,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if let Some(snapshot_dir) = exact_snapshot_dir(ledger_snapshot_dir, target.slot) {
+        info!(epoch = target.epoch, slot = target.slot, snapshot = %snapshot_dir.display(), "reusing existing db-analyser snapshot");
+        return Ok(snapshot_dir);
+    }
+
+    let analyse_from = select_analyse_from_slot(ledger_snapshot_dir, target.slot, previous_snapshot_slot)?;
+    info!(epoch = target.epoch, slot = target.slot, analyse_from, "creating ledger snapshot with db-analyser");
+    run_db_analyser(context.db_analyser_binary, context.config_dir, context.cardano_db_dir, target.slot, analyse_from)?;
+
+    exact_snapshot_dir(ledger_snapshot_dir, target.slot)
+        .ok_or_else(|| format!("db-analyser did not create snapshot directory for slot {}", target.slot).into())
+}
+
+fn write_packaged_headers(
+    target: &EpochTarget,
+    immutable_dir: &Path,
+    prepared_snapshot_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let packaged_headers = packaged_headers_for_target(immutable_dir, target.parent_point.as_deref())?;
+    if packaged_headers.is_empty() {
+        return Ok(());
+    }
+
+    fs::write(prepared_snapshot_path.join(PACKAGED_HEADERS_FILE_NAME), serde_json::to_vec_pretty(&packaged_headers)?)?;
+
+    Ok(())
+}
+
+async fn resolve_start_epoch(
+    client: &reqwest::Client,
+    network: NetworkName,
+    requested_epoch: Option<u64>,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    if let Some(epoch) = requested_epoch {
+        return Ok(epoch);
+    }
+
+    let current_epoch = fetch_current_epoch(client, network).await?;
+    infer_start_epoch(current_epoch)
+}
+
+fn infer_start_epoch(current_epoch: u64) -> Result<u64, Box<dyn std::error::Error>> {
+    current_epoch
+        .checked_sub(3)
+        .ok_or_else(|| format!("cannot infer bootstrap start epoch from current epoch {current_epoch}").into())
 }
 
 fn remove_target_outputs(

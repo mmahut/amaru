@@ -445,8 +445,6 @@ fn import_dreps(
 
     info!(size = dreps.len(), "dreps");
 
-    let mut delegations: Vec<(StakeCredential, DRep, CertificatePointer)> = Vec::new();
-
     transaction.save(
         era_history,
         protocol_parameters,
@@ -466,17 +464,6 @@ fn import_dreps(
                 let registration =
                     DRepRegistration { deposit: state.deposit, valid_until: state.expiry, registered_at };
 
-                delegations.extend(state.delegators.to_vec().into_iter().map(|delegator| {
-                    (
-                        delegator,
-                        match credential {
-                            StakeCredential::AddrKeyhash(hash) => DRep::Key(hash),
-                            StakeCredential::ScriptHash(hash) => DRep::Script(hash),
-                        },
-                        registered_at,
-                    )
-                }));
-
                 (credential, (Resettable::from(Option::from(state.anchor)), Some(registration)))
             }),
             cc_members: iter::empty(),
@@ -486,10 +473,6 @@ fn import_dreps(
         Default::default(),
         iter::empty(),
     )?;
-
-    info!(size = delegations.len(), "dreps delegations");
-
-    transaction.add_drep_delegations(delegations)?;
 
     Ok(transaction.commit()?)
 }

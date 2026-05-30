@@ -22,6 +22,8 @@ use tracing::{info, warn};
 #[derive(Debug, Parser)]
 pub struct Args {
     /// Path of the chain on-disk storage.
+    ///
+    /// Defaults to ./chain.<NETWORK>.db when unspecified.
     #[arg(
         long,
         value_name = amaru::value_names::DIRECTORY,
@@ -39,6 +41,8 @@ pub struct Args {
     force: bool,
 
     /// Path of the ledger on-disk storage.
+    ///
+    /// Defaults to ./ledger.<NETWORK>.db when unspecified.
     #[arg(
         long,
         value_name = amaru::value_names::DIRECTORY,
@@ -49,6 +53,7 @@ pub struct Args {
     /// Bootstrap start epoch from snapshots.json.
     ///
     /// Bootstrap requires this epoch and the next two consecutive epochs.
+    /// Defaults to the latest available epoch in snapshots.json when unspecified.
     #[arg(
         long = "epoch",
         value_name = amaru::value_names::UINT,
