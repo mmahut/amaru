@@ -352,7 +352,7 @@ mod tests {
             &protocol_parameters,
             &era_history,
             fixture.initial_state.governance_activity,
-            fixture.ledger_env,
+            fixture.point,
             tx.is_expected_valid,
             tx.body,
             &tx.witnesses,

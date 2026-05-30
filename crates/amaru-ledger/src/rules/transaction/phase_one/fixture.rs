@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use amaru_kernel::{
     EraHistoryProxy, MemoizedTransactionOutput, NetworkName, ProtocolParameters, TransactionInput, TransactionPointer,
     json,
-    utils::serde::{RefOrInline, deserialize_proxy, deserialize_utxo, hex_to_bytes},
+    utils::serde::{RefOrInline, deserialize_utxo, hex_to_bytes},
 };
 use serde::Deserialize;
 
@@ -40,8 +40,7 @@ pub(super) struct Fixture {
     pub(super) era_history: RefOrInline<EraHistoryProxy>,
     pub(super) protocol_parameters: RefOrInline<ProtocolParameters>,
     pub(super) initial_state: InitialState,
-    #[serde(deserialize_with = "deserialize_proxy")]
-    pub(super) ledger_env: TransactionPointer,
+    pub(super) point: TransactionPointer,
     #[serde(deserialize_with = "hex_to_bytes")]
     pub(super) transaction: Vec<u8>,
     pub(super) expected: Expected,
