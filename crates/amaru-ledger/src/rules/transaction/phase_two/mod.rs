@@ -58,8 +58,11 @@ pub enum PhaseTwoError {
 pub struct UplcMachineError {
     pub plutus_version: PlutusVersion,
     pub info: MachineInfo,
+    // TODO: Proper type with lifetime
     // This should be a `MachineError`, but I'm avoiding lifetime hell for now
     pub err: String,
+    // TODO: Proper type with lifetime
+    pub program: String,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -190,6 +193,7 @@ where
                     Constant::Data(data)
                 })
                 .collect::<Vec<_>>();
+
             let arguments = constants.iter().map(Term::Constant).collect::<Vec<_>>();
 
             for term in arguments.iter() {
@@ -209,6 +213,7 @@ where
                             plutus_version,
                             info: result.info,
                             err: "Error term evaluated".into(),
+                            program: hex::encode(amaru_uplc::flat::encode(program).unwrap()),
                         })),
                         Term::Var(_)
                         | Term::Lambda { .. }
@@ -224,6 +229,7 @@ where
                         plutus_version,
                         info: result.info,
                         err: e.to_string(),
+                        program: hex::encode(amaru_uplc::flat::encode(program).unwrap()),
                     })),
                 },
 
@@ -234,11 +240,13 @@ where
                         plutus_version,
                         info: result.info,
                         err: "evaluated to a non-unit term".to_string(),
+                        program: hex::encode(amaru_uplc::flat::encode(program).unwrap()),
                     })),
                     Err(e) => Err(PhaseTwoError::UplcMachineError(UplcMachineError {
                         plutus_version,
                         info: result.info,
                         err: e.to_string(),
+                        program: hex::encode(amaru_uplc::flat::encode(program).unwrap()),
                     })),
                 },
             }
