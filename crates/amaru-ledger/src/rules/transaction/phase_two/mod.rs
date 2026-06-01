@@ -24,10 +24,12 @@ use amaru_plutus::{
     to_plutus_data::{PLUTUS_V1, PLUTUS_V2, PLUTUS_V3, PlutusDataError},
 };
 use amaru_uplc::{
+    binder::Binder,
     constant::Constant,
     data::PlutusData,
     flat::FlatDecodeError,
     machine::{ExBudget, MachineInfo, PlutusVersion},
+    program::Program,
     term::Term,
 };
 use thiserror::Error;
@@ -63,6 +65,13 @@ pub struct UplcMachineError {
     pub err: String,
     // TODO: Proper type with lifetime
     pub program: String,
+}
+
+fn encode_program<'a, V>(program: &'a Program<'a, V>) -> String
+where
+    V: Binder<'a>,
+{
+    amaru_uplc::flat::encode(program).map(hex::encode).unwrap_or_default()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -213,7 +222,7 @@ where
                             plutus_version,
                             info: result.info,
                             err: "Error term evaluated".into(),
-                            program: hex::encode(amaru_uplc::flat::encode(program).unwrap()),
+                            program: encode_program(program),
                         })),
                         Term::Var(_)
                         | Term::Lambda { .. }
@@ -229,7 +238,7 @@ where
                         plutus_version,
                         info: result.info,
                         err: e.to_string(),
-                        program: hex::encode(amaru_uplc::flat::encode(program).unwrap()),
+                        program: encode_program(program),
                     })),
                 },
 
@@ -240,13 +249,13 @@ where
                         plutus_version,
                         info: result.info,
                         err: "evaluated to a non-unit term".to_string(),
-                        program: hex::encode(amaru_uplc::flat::encode(program).unwrap()),
+                        program: encode_program(program),
                     })),
                     Err(e) => Err(PhaseTwoError::UplcMachineError(UplcMachineError {
                         plutus_version,
                         info: result.info,
                         err: e.to_string(),
-                        program: hex::encode(amaru_uplc::flat::encode(program).unwrap()),
+                        program: encode_program(program),
                     })),
                 },
             }
