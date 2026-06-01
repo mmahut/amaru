@@ -53,13 +53,13 @@ pub enum InvalidBlockDetails {
     HeaderSizeTooBig { supplied: u64, max: u64 },
     InvalidBodyHash { header: Hash<BLOCK_BODY>, actual: Hash<BLOCK_BODY> },
     HeaderProtVerTooHigh { header_major: u64, max_major: u64 },
-    Transaction { transaction_id: TransactionId, transaction_index: u32, violation: TransactionInvalid },
+    Transaction { transaction_id: TransactionId, transaction_index: u32, violation: Box<TransactionInvalid> },
 }
 
 #[derive(Debug, Error)]
 pub enum TransactionValidationFailed {
     #[error("transaction {transaction_id} is invalid: {violation}")]
-    Transaction { transaction_id: TransactionId, violation: TransactionInvalid },
+    Transaction { transaction_id: TransactionId, violation: Box<TransactionInvalid> },
     #[error("failed to prepare transaction {transaction_id} for validation: {error}")]
     Preparation { transaction_id: TransactionId, error: ValidationContextError },
 }
@@ -290,7 +290,7 @@ where
         transaction.auxiliary_data.as_ref(),
         tx_size,
     )
-    .map_err(|err| TransactionValidationFailed::Transaction { transaction_id, violation: err.into() })?;
+    .map_err(|err| TransactionValidationFailed::Transaction { transaction_id, violation: Box::new(err.into()) })?;
 
     transaction::phase_two::execute(
         context,
@@ -303,7 +303,7 @@ where
         &transaction.body,
         &transaction.witnesses,
     )
-    .map_err(|err| TransactionValidationFailed::Transaction { transaction_id, violation: err.into() })?;
+    .map_err(|err| TransactionValidationFailed::Transaction { transaction_id, violation: Box::new(err.into()) })?;
 
     consumed_inputs.into_iter().for_each(|input| context.consume(input));
     Ok(())
