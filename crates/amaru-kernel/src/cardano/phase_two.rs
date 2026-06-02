@@ -23,7 +23,6 @@
 //! crate.
 
 pub mod certificate;
-pub mod datum_option;
 pub mod datums;
 pub mod mint;
 pub mod output_reference;

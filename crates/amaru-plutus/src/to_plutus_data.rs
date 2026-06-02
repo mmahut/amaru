@@ -22,7 +22,7 @@ use thiserror::Error;
 
 use crate::{
     constr,
-    script_context::{CurrencySymbol, DatumOption, RequiredSigners, Script, TimeRange},
+    script_context::{CurrencySymbol, RequiredSigners, Script, TimeRange},
 };
 
 /// Represents an error that occured during serialization to `PlutusData`.
@@ -84,19 +84,6 @@ where
             MemoizedDatum::None => constr!(0),
             MemoizedDatum::Hash(hash) => constr!(1, [hash]),
             MemoizedDatum::Inline(data) => constr!(2, [data.as_ref()]),
-        }
-    }
-}
-
-impl<const V: u8> ToPlutusData<V> for DatumOption<'_>
-where
-    PlutusVersion<V>: IsKnownPlutusVersion,
-{
-    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        match self {
-            DatumOption::None => constr!(0),
-            DatumOption::Hash(hash) => constr!(1, [hash]),
-            DatumOption::Inline(data) => constr!(2, [data]),
         }
     }
 }

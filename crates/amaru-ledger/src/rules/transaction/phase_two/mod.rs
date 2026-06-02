@@ -135,6 +135,7 @@ where
         &pointer.slot,
         network,
         era_history,
+        protocol_parameters.protocol_version,
     )?;
 
     let scripts_to_execute = tx_info.to_script_contexts();

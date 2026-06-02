@@ -15,7 +15,6 @@
 use amaru_kernel::PlutusData;
 pub use amaru_kernel::phase_two::{
     certificate::Certificate,
-    datum_option::DatumOption,
     datums::Datums,
     mint::Mint,
     output_reference::OutputReference,

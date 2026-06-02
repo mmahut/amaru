@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{datum_option::DatumOption, script_info::ScriptPurpose, tx_info::TxInfo};
-use crate::{ExUnits, PlutusData, RedeemerKey, ScriptPurpose as RedeemerTag};
+use super::{script_info::ScriptPurpose, tx_info::TxInfo};
+use crate::{ExUnits, MemoizedDatum, PlutusData, RedeemerKey, ScriptPurpose as RedeemerTag};
 
 /// One of the arguments passed to a Plutus validator.
 ///
@@ -41,9 +41,9 @@ impl<'a> ScriptContext<'a> {
 
         let datum = if redeemer_key.tag == RedeemerTag::Spend {
             tx_info.inputs.get(redeemer_key.index as usize).and_then(|output_ref| match output_ref.output.datum {
-                DatumOption::None => None,
-                DatumOption::Hash(hash) => tx_info.data.0.get(hash).copied(),
-                DatumOption::Inline(plutus_data) => Some(plutus_data),
+                MemoizedDatum::None => None,
+                MemoizedDatum::Hash(hash) => tx_info.data.0.get(hash).copied(),
+                MemoizedDatum::Inline(data) => Some(data.as_ref()),
             })
         } else {
             None

@@ -15,14 +15,15 @@
 use std::{borrow::Cow, collections::BTreeMap, ops::Deref};
 
 use amaru_kernel::{
-    Address, AssetName, Certificate as PallasCertificate, Hash, PlutusData, StakePayload, TransactionInput, size::DATUM,
+    Address, AssetName, Certificate as PallasCertificate, Hash, MemoizedDatum, PlutusData, StakePayload,
+    TransactionInput, size::DATUM,
 };
 
 use crate::{
     IsKnownPlutusVersion, PlutusDataError, PlutusVersion, ToPlutusData, constr, constr_v1,
     script_context::{
-        Certificate, CurrencySymbol, DatumOption, Datums, IsPrePlutusVersion3, Mint, OutputReference, ScriptContext,
-        ScriptPurpose, StakeAddress, TransactionOutput, TxInfo, Value, Withdrawals,
+        Certificate, CurrencySymbol, Datums, IsPrePlutusVersion3, Mint, OutputReference, ScriptContext, ScriptPurpose,
+        StakeAddress, TransactionOutput, TxInfo, Value, Withdrawals,
     },
 };
 
@@ -224,7 +225,7 @@ impl ToPlutusData<1> for TransactionOutput<'_> {
                 self.address,
                 self.value,
                 match self.datum {
-                    DatumOption::Hash(hash) => Some(*hash),
+                    MemoizedDatum::Hash(hash) => Some(*hash),
                     _ => None::<Hash<DATUM>>,
                 },
             ]
@@ -266,7 +267,7 @@ impl ToPlutusData<1> for Datums<'_> {
 // This test logic is basically 100% duplicated with v3. Should be able to simplify.
 #[cfg(test)]
 mod tests {
-    use amaru_kernel::{NetworkName, Transaction, cbor, to_cbor};
+    use amaru_kernel::{NetworkName, PROTOCOL_VERSION_10, Transaction, cbor, to_cbor};
     use test_case::test_case;
 
     use super::{
@@ -303,6 +304,7 @@ mod tests {
             &0.into(),
             network,
             network.into(),
+            PROTOCOL_VERSION_10,
         )
         .unwrap();
 

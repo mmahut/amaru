@@ -19,7 +19,7 @@ use crate::{Hash, MemoizedPlutusData, NonEmptyVec, PlutusData, PlutusDataSet, si
 /// The datums supplied as witnesses in a transaction, keyed by hash.
 ///
 /// A lookup table from a datum [`struct@Hash`] to the [`PlutusData`] it commits to. This is what
-/// resolves a hash-only [`DatumOption`](super::datum_option::DatumOption) on a spent output back to the actual datum value;
+/// resolves a hash-only datum ([`MemoizedDatum::Hash`](crate::MemoizedDatum)) on a spent output back to the actual datum value;
 /// inline datums carry their value already and need no entry here.
 #[derive(Debug, Default)]
 pub struct Datums<'a>(pub BTreeMap<Hash<DATUM>, &'a PlutusData>);
