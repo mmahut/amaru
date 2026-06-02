@@ -19,7 +19,7 @@ use crate::{AssetName, Hash, NonEmptyKeyValuePairs, NonZeroInt, size::CREDENTIAL
 /// The assets minted and burned by a transaction.
 ///
 /// A map from minting-policy [`struct@Hash`] to that policy's assets, each carrying a signed
-/// quantity: positive mints, negative burns. Unlike [`Value`](super::value::Value), amounts are signed and
+/// quantity: positive mints, negative burns. Unlike [`Value`](crate::Value), amounts are signed and
 /// there is no ada entry; only native assets can be minted or burned.
 #[derive(Debug, Default)]
 pub struct Mint<'a>(pub BTreeMap<Hash<CREDENTIAL>, BTreeMap<Cow<'a, AssetName>, i64>>);
