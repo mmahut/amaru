@@ -27,7 +27,6 @@ pub use amaru_kernel::phase_two::{
     transaction_output::TransactionOutput,
     tx_info::{TxInfo, TxInfoTranslationError},
     utxos::Utxos,
-    value::{CurrencySymbol, Value},
     votes::Votes,
     withdrawals::{WithdrawalError, Withdrawals},
 };
@@ -310,9 +309,8 @@ pub mod test_vectors {
 
 #[cfg(test)]
 mod tests {
-    use std::{borrow::Cow, collections::BTreeMap};
-
-    use amaru_kernel::Bytes;
+    use amaru_kernel::{Bytes, Hash, PositiveCoin};
+    use pallas_codec::utils::NonEmptyKeyValuePairs;
     use proptest::{
         prelude::{any, prop},
         prop_assert, proptest,
@@ -321,24 +319,33 @@ mod tests {
     use super::*;
     use crate::ToPlutusData;
 
+    /// Build a multiasset [`Value`](amaru_kernel::Value) carrying the given lovelace `coin` and one
+    /// asset (quantity 100) under each of `policies`.
+    fn multiasset_value(coin: u64, policies: &[[u8; 28]]) -> amaru_kernel::Value {
+        let multiasset = NonEmptyKeyValuePairs::try_from(
+            policies
+                .iter()
+                .map(|policy| {
+                    let assets = NonEmptyKeyValuePairs::try_from(vec![(
+                        Bytes::from(vec![1u8]),
+                        PositiveCoin::try_from(100u64).unwrap(),
+                    )])
+                    .unwrap();
+                    (Hash::from(*policy), assets)
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+
+        amaru_kernel::Value::Multiasset(coin, multiasset)
+    }
+
     #[test]
     fn proptest_value_zero_ada_excluded_in_v3() {
+        // We should be excluding ADA values with a quantity of zero in Plutus V3
         proptest!(|(policies in prop::collection::vec(any::<[u8; 28]>(), 1..5))| {
-            let mut value_map = BTreeMap::new();
-
-            // We should be excluding ADA values with a quantity of zero in Plutus V3
-            let mut ada_map = BTreeMap::new();
-            ada_map.insert(Cow::Owned(Bytes::from(vec![])), 0u64);
-            value_map.insert(CurrencySymbol::Lovelace, ada_map);
-
-            for policy_bytes in policies {
-                let mut asset_map = BTreeMap::new();
-                asset_map.insert(Cow::Owned(Bytes::from(vec![1])), 100);
-                value_map.insert(CurrencySymbol::Native(policy_bytes.into()), asset_map);
-            }
-
-            let value = Value(value_map);
-            let plutus_data = <Value<'_> as ToPlutusData<3>>::to_plutus_data(&value)?;
+            let value = multiasset_value(0, &policies);
+            let plutus_data = <amaru_kernel::Value as ToPlutusData<3>>::to_plutus_data(&value)?;
 
             #[allow(clippy::wildcard_enum_match_arm)]
             match plutus_data {
@@ -367,20 +374,8 @@ mod tests {
             ada_amount in 1u64..,
             policies in prop::collection::vec(any::<[u8; 28]>(), 1..5)
         )| {
-            let mut value_map = BTreeMap::new();
-
-            let mut ada_map = BTreeMap::new();
-            ada_map.insert(Cow::Owned(Bytes::from(vec![])), ada_amount);
-            value_map.insert(CurrencySymbol::Lovelace, ada_map);
-
-            for policy_bytes in policies {
-                let mut asset_map = BTreeMap::new();
-                asset_map.insert(Cow::Owned(Bytes::from(vec![1])), 100);
-                value_map.insert(CurrencySymbol::Native(policy_bytes.into()), asset_map);
-            }
-
-            let value = Value(value_map);
-            let plutus_data = <Value<'_> as ToPlutusData<3>>::to_plutus_data(&value)?;
+            let value = multiasset_value(ada_amount, &policies);
+            let plutus_data = <amaru_kernel::Value as ToPlutusData<3>>::to_plutus_data(&value)?;
 
             #[allow(clippy::wildcard_enum_match_arm)]
             match plutus_data {

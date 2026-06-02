@@ -13,3 +13,16 @@
 // limitations under the License.
 
 pub use pallas_primitives::conway::Value;
+
+pub use crate::{Hash, size::CREDENTIAL};
+
+/// An identifier for a currency in a [`Value`].
+///
+///
+/// This identifier is specifically used to enforce canonical ordering in a PlutusData representation of [`Value`].
+/// Lovelace is encoded as the empty bytestring and, always sorts ahead of native assets.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CurrencySymbol {
+    Lovelace,
+    Native(Hash<CREDENTIAL>),
+}

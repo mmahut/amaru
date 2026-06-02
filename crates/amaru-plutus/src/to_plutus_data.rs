@@ -15,14 +15,15 @@
 use std::{borrow::Cow, collections::BTreeMap, time::SystemTime};
 
 use amaru_kernel::{
-    Address, BigInt, Bytes, ComputeHash, Hash, Int, MaybeIndefArray, MemoizedDatum, NonEmptyKeyValuePairs, NonZeroInt,
-    Nullable, PlutusData, ShelleyDelegationPart, ShelleyPaymentPart, StakeCredential, TransactionId, size,
+    Address, BigInt, Bytes, ComputeHash, CurrencySymbol, Hash, Int, MaybeIndefArray, MemoizedDatum,
+    NonEmptyKeyValuePairs, NonZeroInt, Nullable, PlutusData, ShelleyDelegationPart, ShelleyPaymentPart,
+    StakeCredential, TransactionId, Value, size,
 };
 use thiserror::Error;
 
 use crate::{
     constr,
-    script_context::{CurrencySymbol, RequiredSigners, Script, TimeRange},
+    script_context::{IsPrePlutusVersion3, RequiredSigners, Script, TimeRange},
 };
 
 /// Represents an error that occured during serialization to `PlutusData`.
@@ -72,6 +73,57 @@ where
             Self::Lovelace => <Vec<u8> as ToPlutusData<V>>::to_plutus_data(&vec![]),
             Self::Native(policy_id) => policy_id.to_plutus_data(),
         }
+    }
+}
+
+/// Reshape a ledger [`Value`] into the canonical Plutus value map: a [`BTreeMap`] keyed by
+/// [`CurrencySymbol`] (lovelace first, then policies ascending) whose inner maps are keyed by asset
+/// name ascending. Collecting through `BTreeMap`s re-imposes this canonical order regardless of the
+/// order assets happen to appear on the wire.
+///
+/// `include_zero_lovelace` selects the version-specific lovelace rule: PlutusV1 and PlutusV2 always
+/// carry a lovelace entry (`true`), whereas PlutusV3 omits it when zero (`false`).
+fn canonical_value_map(
+    value: &Value,
+    include_zero_lovelace: bool,
+) -> BTreeMap<CurrencySymbol, BTreeMap<Cow<'_, Bytes>, u64>> {
+    let (coin, multiasset) = match value {
+        Value::Coin(coin) => (*coin, None),
+        Value::Multiasset(coin, multiasset) => (*coin, Some(multiasset)),
+    };
+
+    let mut map = BTreeMap::new();
+
+    if include_zero_lovelace || coin > 0 {
+        map.insert(CurrencySymbol::Lovelace, BTreeMap::from([(Cow::Owned(Bytes::from(vec![])), coin)]));
+    }
+
+    if let Some(multiasset) = multiasset {
+        for (policy_id, assets) in multiasset.iter() {
+            map.insert(
+                CurrencySymbol::Native(*policy_id),
+                assets.iter().map(|(name, amount)| (Cow::Borrowed(name), amount.into())).collect(),
+            );
+        }
+    }
+
+    map
+}
+
+impl<const V: u8> ToPlutusData<V> for Value
+where
+    PlutusVersion<V>: IsKnownPlutusVersion + IsPrePlutusVersion3,
+{
+    /// In PlutusV1 and PlutusV2 the lovelace entry is always present, even when its quantity is zero.
+    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
+        <BTreeMap<_, _> as ToPlutusData<V>>::to_plutus_data(&canonical_value_map(self, true))
+    }
+}
+
+impl ToPlutusData<3> for Value {
+    /// In PlutusV3 the lovelace entry is omitted when its quantity is zero.
+    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
+        <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&canonical_value_map(self, false))
     }
 }
 

@@ -15,18 +15,17 @@
 use std::{collections::BTreeMap, ops::Deref};
 
 use amaru_kernel::{
-    Address, AssetName, Bytes, Certificate as PallasCertificate, ComparableProposalId, Constitution, CostModels, DRep,
-    DRepVotingThresholds, ExUnitPrices, ExUnits, GovernanceAction, Hash, PlutusData, PoolVotingThresholds, Proposal,
+    Address, Certificate as PallasCertificate, ComparableProposalId, Constitution, CostModels, DRep,
+    DRepVotingThresholds, ExUnitPrices, ExUnits, GovernanceAction, PlutusData, PoolVotingThresholds, Proposal,
     ProposalId, ProtocolParamUpdate, RationalNumber, StakeCredential, StakePayload, TransactionInput, Vote, Voter,
-    size::CREDENTIAL,
 };
 use num::Integer;
 
 use crate::{
     PlutusDataError, ToPlutusData, constr, constr_v3,
     script_context::{
-        CurrencySymbol, Datums, Mint, OutputReference, ScriptContext, ScriptInfo, ScriptPurpose, StakeAddress,
-        TransactionOutput, TxInfo, Value, Votes, Withdrawals,
+        Datums, Mint, OutputReference, ScriptContext, ScriptInfo, ScriptPurpose, StakeAddress, TransactionOutput,
+        TxInfo, Votes, Withdrawals,
     },
 };
 
@@ -111,65 +110,6 @@ impl ToPlutusData<3> for TransactionInput {
 impl ToPlutusData<3> for TransactionOutput<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         constr_v3!(0, [self.address, self.value, self.datum, self.script])
-    }
-}
-
-impl ToPlutusData<3> for Value<'_> {
-    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        if self.ada().is_none() {
-            <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(
-                &self
-                    .0
-                    .iter()
-                    .filter(|(currency, _)| !matches!(currency, CurrencySymbol::Lovelace))
-                    .collect::<BTreeMap<_, _>>(),
-            )
-        } else {
-            <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&self.0)
-        }
-    }
-}
-impl ToPlutusData<3> for amaru_kernel::Value {
-    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        fn ada_entry(coin: &u64) -> Result<(PlutusData, PlutusData), PlutusDataError> {
-            Ok((
-                <Bytes as ToPlutusData<3>>::to_plutus_data(&Bytes::from(vec![]))?,
-                PlutusData::Map(pallas_codec::utils::KeyValuePairs::Def(vec![(
-                    <AssetName as ToPlutusData<3>>::to_plutus_data(&AssetName::from(vec![]))?,
-                    <u64 as ToPlutusData<3>>::to_plutus_data(coin)?,
-                )])),
-            ))
-        }
-
-        let entries = match self {
-            amaru_kernel::Value::Coin(coin) if *coin > 0 => Ok(vec![ada_entry(coin)?]),
-            amaru_kernel::Value::Coin(_) => Ok(vec![]),
-            amaru_kernel::Value::Multiasset(coin, multiasset) => {
-                let ada = (*coin > 0).then(|| ada_entry(coin)).transpose()?;
-                let multiasset_entries = multiasset
-                    .iter()
-                    .map(|(policy_id, assets)| {
-                        Ok((
-                            <Hash<CREDENTIAL> as ToPlutusData<3>>::to_plutus_data(policy_id)?,
-                            PlutusData::Map(pallas_codec::utils::KeyValuePairs::Def(
-                                assets
-                                    .iter()
-                                    .map(|(asset, amount)| {
-                                        Ok((
-                                            <Bytes as ToPlutusData<3>>::to_plutus_data(asset)?,
-                                            <u64 as ToPlutusData<3>>::to_plutus_data(&amount.into())?,
-                                        ))
-                                    })
-                                    .collect::<Result<Vec<_>, _>>()?,
-                            )),
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(ada.into_iter().chain(multiasset_entries).collect())
-            }
-        }?;
-
-        Ok(PlutusData::Map(pallas_codec::utils::KeyValuePairs::Def(entries)))
     }
 }
 

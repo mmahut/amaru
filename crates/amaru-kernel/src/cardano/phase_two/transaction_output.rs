@@ -14,19 +14,19 @@
 
 use std::borrow::Cow;
 
-use super::{script::Script, value::Value};
-use crate::{Address, MemoizedDatum, MemoizedTransactionOutput};
+use super::script::Script;
+use crate::{Address, MemoizedDatum, MemoizedTransactionOutput, Value};
 
 /// The Plutus-facing view of a transaction output.
 ///
 /// A borrowed representation of [`MemoizedTransactionOutput`] with each part already in its
-/// phase-two form: the [`Value`], the borrowed [`MemoizedDatum`] (none/hash/inline), and an
-/// optional reference [`Script`]. The address is held as a [`Cow`] so it can borrow from
-/// the source output rather than clone.
+/// phase-two form: the borrowed [`Value`], the borrowed [`MemoizedDatum`]
+/// (none/hash/inline), and an optional reference [`Script`]. The address is held as a [`Cow`] so
+/// it can borrow from the source output rather than clone.
 #[derive(Debug, Clone)]
 pub struct TransactionOutput<'a> {
     pub address: Cow<'a, Address>,
-    pub value: Value<'a>,
+    pub value: &'a Value,
     pub datum: &'a MemoizedDatum,
     pub script: Option<Script<'a>>,
 }
@@ -35,7 +35,7 @@ impl<'a> From<&'a MemoizedTransactionOutput> for TransactionOutput<'a> {
     fn from(output: &'a MemoizedTransactionOutput) -> Self {
         Self {
             address: Cow::Borrowed(&output.address),
-            value: output.value.as_ref().into(),
+            value: output.value.as_ref(),
             datum: &output.datum,
             script: output.script.as_ref().map(Script::from),
         }

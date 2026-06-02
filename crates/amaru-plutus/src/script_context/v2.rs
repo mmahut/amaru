@@ -18,9 +18,7 @@ use amaru_kernel::{Address, PlutusData, StakePayload};
 
 use crate::{
     PlutusDataError, ToPlutusData, constr_v2,
-    script_context::{
-        Datums, OutputReference, ScriptContext, StakeAddress, TransactionOutput, TxInfo, Value, Withdrawals,
-    },
+    script_context::{Datums, OutputReference, ScriptContext, StakeAddress, TransactionOutput, TxInfo, Withdrawals},
 };
 
 impl ToPlutusData<2> for ScriptContext<'_> {
@@ -31,7 +29,7 @@ impl ToPlutusData<2> for ScriptContext<'_> {
 
 impl ToPlutusData<2> for TxInfo<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        let fee: Value<'_> = self.fee.into();
+        let fee = amaru_kernel::Value::Coin(self.fee);
         constr_v2!(
             0,
             [

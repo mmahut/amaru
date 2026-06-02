@@ -15,15 +15,15 @@
 use std::{borrow::Cow, collections::BTreeMap};
 
 use amaru_kernel::{
-    Address, AssetName, Certificate as PallasCertificate, Hash, MemoizedDatum, PlutusData, StakePayload,
-    TransactionInput, size::DATUM,
+    Address, Certificate as PallasCertificate, Hash, MemoizedDatum, PlutusData, StakePayload, TransactionInput,
+    size::DATUM,
 };
 
 use crate::{
     IsKnownPlutusVersion, PlutusDataError, PlutusVersion, ToPlutusData, constr, constr_v1,
     script_context::{
-        CurrencySymbol, Datums, IsPrePlutusVersion3, Mint, OutputReference, ScriptContext, ScriptPurpose, StakeAddress,
-        TransactionOutput, TxInfo, Value, Withdrawals,
+        Datums, IsPrePlutusVersion3, Mint, OutputReference, ScriptContext, ScriptPurpose, StakeAddress,
+        TransactionOutput, TxInfo, Withdrawals,
     },
 };
 
@@ -52,7 +52,7 @@ impl ToPlutusData<1> for TxInfo<'_> {
             .filter(|output_ref| !matches!(*output_ref.output.address, Address::Byron(..)))
             .collect::<Vec<_>>();
 
-        let fee: Value<'_> = self.fee.into();
+        let fee = amaru_kernel::Value::Coin(self.fee);
 
         constr_v1!(
             0,
@@ -97,27 +97,6 @@ where
             ScriptPurpose::Proposing(_, _) => {
                 Err(PlutusDataError::unsupported_version("proposing purpose unsupported", V))
             }
-        }
-    }
-}
-
-impl<const V: u8> ToPlutusData<V> for Value<'_>
-where
-    PlutusVersion<V>: IsKnownPlutusVersion + IsPrePlutusVersion3,
-{
-    /// Serialize a `Value` as PlutusData for PlutusV1 and PlutusV2.
-    ///
-    /// Notably, in PlutusV1 and PlutusV2, `Value` must include a
-    /// zero value lovelace asset, if there is no lovelace.
-    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        if self.0.contains_key(&CurrencySymbol::Lovelace) {
-            self.0.to_plutus_data()
-        } else {
-            let mut map = self.0.clone();
-
-            map.insert(CurrencySymbol::Lovelace, BTreeMap::from([(Cow::Owned(AssetName::from(vec![])), 0u64)]));
-
-            map.to_plutus_data()
         }
     }
 }

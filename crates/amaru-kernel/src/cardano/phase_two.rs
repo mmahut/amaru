@@ -35,6 +35,5 @@ pub mod time_range;
 pub mod transaction_output;
 pub mod tx_info;
 pub mod utxos;
-pub mod value;
 pub mod votes;
 pub mod withdrawals;
