@@ -25,8 +25,8 @@ use num::Integer;
 use crate::{
     PlutusDataError, ToPlutusData, constr, constr_v3,
     script_context::{
-        Certificate, CurrencySymbol, Datums, Mint, OutputReference, ScriptContext, ScriptInfo, ScriptPurpose,
-        StakeAddress, TransactionOutput, TxInfo, Value, Votes, Withdrawals,
+        CurrencySymbol, Datums, Mint, OutputReference, ScriptContext, ScriptInfo, ScriptPurpose, StakeAddress,
+        TransactionOutput, TxInfo, Value, Votes, Withdrawals,
     },
 };
 
@@ -184,9 +184,9 @@ impl ToPlutusData<3> for DRep {
     }
 }
 
-impl ToPlutusData<3> for Certificate<'_> {
+impl ToPlutusData<3> for PallasCertificate {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        match self.certificate {
+        match self {
             PallasCertificate::StakeRegistration(stake_credential) => {
                 constr_v3!(0, [stake_credential, None::<PlutusData>])
             }
@@ -590,7 +590,7 @@ impl ToPlutusData<3> for StakeAddress {
 
 #[cfg(test)]
 mod tests {
-    use amaru_kernel::{NetworkName, PROTOCOL_VERSION_10, Transaction, cbor, to_cbor};
+    use amaru_kernel::{NetworkName, Transaction, cbor, to_cbor};
     use test_case::test_case;
 
     use super::{
@@ -628,7 +628,6 @@ mod tests {
             &0.into(),
             network,
             network.into(),
-            PROTOCOL_VERSION_10,
         )
         .unwrap();
 

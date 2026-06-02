@@ -14,12 +14,9 @@
 
 use std::collections::BTreeMap;
 
-use super::{
-    certificate::Certificate, mint::Mint, output_reference::OutputReference, script::Script, votes::Votes,
-    withdrawals::Withdrawals,
-};
+use super::{mint::Mint, output_reference::OutputReference, script::Script, votes::Votes, withdrawals::Withdrawals};
 use crate::{
-    AsShelley, GovernanceAction, HasOwnership, Hash, Nullable, PlutusData, Proposal, RedeemerKey,
+    AsShelley, Certificate, GovernanceAction, HasOwnership, Hash, Nullable, PlutusData, Proposal, RedeemerKey,
     ScriptPurpose as RedeemerTag, StakeCredential, StakePayload, TransactionInput, Voter,
     size::{CREDENTIAL, SCRIPT},
 };
@@ -49,7 +46,7 @@ pub enum ScriptInfo<'a, T: Clone> {
     Minting(Hash<CREDENTIAL>),
     Spending(&'a TransactionInput, T),
     Rewarding(StakeCredential),
-    Certifying(usize, Certificate<'a>),
+    Certifying(usize, &'a Certificate),
     Voting(&'a Voter),
     Proposing(usize, &'a Proposal),
 }
@@ -61,7 +58,7 @@ impl<'a> ScriptPurpose<'a> {
         inputs: &[OutputReference<'a>],
         mint: &Mint<'a>,
         withdrawals: &Withdrawals,
-        certs: &[Certificate<'a>],
+        certs: &[&'a Certificate],
         proposal_procedures: &[&'a Proposal],
         votes: &Votes<'a>,
         scripts: &BTreeMap<Hash<SCRIPT>, Script<'a>>,
@@ -89,9 +86,7 @@ impl<'a> ScriptPurpose<'a> {
             }),
             RedeemerTag::Cert => certs.get(index).and_then(|certificate| {
                 if let StakeCredential::ScriptHash(hash) = certificate.owner() {
-                    scripts
-                        .get(&hash)
-                        .map(|script| (ScriptPurpose::Certifying(index, certificate.clone()), script.clone()))
+                    scripts.get(&hash).map(|script| (ScriptPurpose::Certifying(index, certificate), script.clone()))
                 } else {
                     None
                 }
@@ -130,7 +125,7 @@ impl<'a> ScriptPurpose<'a> {
             ScriptInfo::Spending(input, _) => ScriptInfo::Spending(input, data),
             ScriptInfo::Minting(p) => ScriptInfo::Minting(*p),
             ScriptInfo::Rewarding(s) => ScriptInfo::Rewarding(s.clone()),
-            ScriptInfo::Certifying(i, c) => ScriptInfo::Certifying(*i, c.clone()),
+            ScriptInfo::Certifying(i, c) => ScriptInfo::Certifying(*i, c),
             ScriptInfo::Voting(v) => ScriptInfo::Voting(v),
             ScriptInfo::Proposing(i, p) => ScriptInfo::Proposing(*i, p),
         }

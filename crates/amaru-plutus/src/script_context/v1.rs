@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::Deref};
+use std::{borrow::Cow, collections::BTreeMap};
 
 use amaru_kernel::{
     Address, AssetName, Certificate as PallasCertificate, Hash, MemoizedDatum, PlutusData, StakePayload,
@@ -22,8 +22,8 @@ use amaru_kernel::{
 use crate::{
     IsKnownPlutusVersion, PlutusDataError, PlutusVersion, ToPlutusData, constr, constr_v1,
     script_context::{
-        Certificate, CurrencySymbol, Datums, IsPrePlutusVersion3, Mint, OutputReference, ScriptContext, ScriptPurpose,
-        StakeAddress, TransactionOutput, TxInfo, Value, Withdrawals,
+        CurrencySymbol, Datums, IsPrePlutusVersion3, Mint, OutputReference, ScriptContext, ScriptPurpose, StakeAddress,
+        TransactionOutput, TxInfo, Value, Withdrawals,
     },
 };
 
@@ -151,7 +151,7 @@ where
 }
 
 #[allow(clippy::wildcard_enum_match_arm)]
-impl<const V: u8> ToPlutusData<V> for Certificate<'_>
+impl<const V: u8> ToPlutusData<V> for PallasCertificate
 where
     PlutusVersion<V>: IsKnownPlutusVersion + IsPrePlutusVersion3,
 {
@@ -181,7 +181,7 @@ where
     ///
     /// It is actually not possible (by the ledger serialization) logic to construct a Certificate with a `Pointer`, so this can be hardcoded to `Constr(0, [cred])`
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        match self.deref() {
+        match self {
             PallasCertificate::StakeRegistration(stake_credential) => {
                 constr!(0, [constr!(0, [stake_credential])?])
             }
@@ -267,7 +267,7 @@ impl ToPlutusData<1> for Datums<'_> {
 // This test logic is basically 100% duplicated with v3. Should be able to simplify.
 #[cfg(test)]
 mod tests {
-    use amaru_kernel::{NetworkName, PROTOCOL_VERSION_10, Transaction, cbor, to_cbor};
+    use amaru_kernel::{NetworkName, Transaction, cbor, to_cbor};
     use test_case::test_case;
 
     use super::{
@@ -304,7 +304,6 @@ mod tests {
             &0.into(),
             network,
             network.into(),
-            PROTOCOL_VERSION_10,
         )
         .unwrap();
 

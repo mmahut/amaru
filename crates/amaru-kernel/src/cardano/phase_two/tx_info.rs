@@ -18,7 +18,6 @@ use itertools::Itertools;
 use thiserror::Error;
 
 use super::{
-    certificate::Certificate,
     datums::Datums,
     mint::Mint,
     output_reference::OutputReference,
@@ -33,7 +32,7 @@ use super::{
     withdrawals::{WithdrawalError, Withdrawals},
 };
 use crate::{
-    EraHistory, EraHistoryError, HasScriptHash, Hash, Lovelace, NetworkName, Proposal, ProtocolVersion, RedeemerKey,
+    Certificate, EraHistory, EraHistoryError, HasScriptHash, Hash, Lovelace, NetworkName, Proposal, RedeemerKey,
     TransactionBody, TransactionId, TransactionInput, WitnessSet, size::SCRIPT, transaction_input_to_string,
 };
 
@@ -50,7 +49,7 @@ pub struct TxInfo<'a> {
     pub outputs: Vec<super::transaction_output::TransactionOutput<'a>>,
     pub fee: Lovelace,
     pub mint: Mint<'a>,
-    pub certificates: Vec<Certificate<'a>>,
+    pub certificates: Vec<&'a Certificate>,
     pub withdrawals: Withdrawals,
     pub valid_range: TimeRange,
     pub signatories: RequiredSigners,
@@ -104,7 +103,6 @@ impl<'a> TxInfo<'a> {
         slot: &crate::Slot,
         network: NetworkName,
         era_history: &EraHistory,
-        protocol_version: ProtocolVersion,
     ) -> Result<Self, TxInfoTranslationError> {
         let mut scripts: BTreeMap<Hash<SCRIPT>, Script<'_>> = BTreeMap::new();
         let inputs = Self::translate_inputs(&tx.inputs, utxos, &mut scripts)?;
@@ -119,11 +117,8 @@ impl<'a> TxInfo<'a> {
 
         let mint = tx.mint.as_ref().map(Mint::from).unwrap_or_default();
 
-        let certificates: Vec<Certificate<'a>> = tx
-            .certificates
-            .as_ref()
-            .map(|set| set.iter().map(|certificate| Certificate { protocol_version, certificate }).collect())
-            .unwrap_or_default();
+        let certificates: Vec<&'a Certificate> =
+            tx.certificates.as_ref().map(|set| set.iter().collect()).unwrap_or_default();
 
         let withdrawals = tx.withdrawals.as_ref().map(Withdrawals::try_from).transpose()?.unwrap_or_default();
 
