@@ -24,7 +24,6 @@ pub use amaru_kernel::phase_two::{
     script_info::{ScriptInfo, ScriptPurpose},
     stake_address::StakeAddress,
     time_range::TimeRange,
-    transaction_output::TransactionOutput,
     tx_info::{TxInfo, TxInfoTranslationError},
     utxos::Utxos,
     votes::Votes,

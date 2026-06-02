@@ -32,7 +32,6 @@ pub mod script_context;
 pub mod script_info;
 pub mod stake_address;
 pub mod time_range;
-pub mod transaction_output;
 pub mod tx_info;
 pub mod utxos;
 pub mod votes;

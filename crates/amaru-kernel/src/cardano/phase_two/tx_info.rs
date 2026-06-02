@@ -32,8 +32,9 @@ use super::{
     withdrawals::{WithdrawalError, Withdrawals},
 };
 use crate::{
-    Certificate, EraHistory, EraHistoryError, HasScriptHash, Hash, Lovelace, NetworkName, Proposal, RedeemerKey,
-    TransactionBody, TransactionId, TransactionInput, WitnessSet, size::SCRIPT, transaction_input_to_string,
+    Certificate, EraHistory, EraHistoryError, HasScriptHash, Hash, Lovelace, MemoizedTransactionOutput, NetworkName,
+    Proposal, RedeemerKey, TransactionBody, TransactionId, TransactionInput, WitnessSet, size::SCRIPT,
+    transaction_input_to_string,
 };
 
 /// An opaque type that represents the `TxInfo` field used in a [`ScriptContext`].
@@ -46,7 +47,7 @@ use crate::{
 pub struct TxInfo<'a> {
     pub inputs: Vec<OutputReference<'a>>,
     pub reference_inputs: Vec<OutputReference<'a>>,
-    pub outputs: Vec<super::transaction_output::TransactionOutput<'a>>,
+    pub outputs: Vec<&'a MemoizedTransactionOutput>,
     pub fee: Lovelace,
     pub mint: Mint<'a>,
     pub certificates: Vec<&'a Certificate>,
@@ -113,7 +114,7 @@ impl<'a> TxInfo<'a> {
             .transpose()?
             .unwrap_or_default();
 
-        let outputs = tx.outputs.iter().map(super::transaction_output::TransactionOutput::from).collect::<Vec<_>>();
+        let outputs = tx.outputs.iter().collect::<Vec<_>>();
 
         let mint = tx.mint.as_ref().map(Mint::from).unwrap_or_default();
 
@@ -220,8 +221,8 @@ impl<'a> TxInfo<'a> {
                 let output_ref =
                     utxos.resolve_input(input).ok_or(TxInfoTranslationError::MissingInput(input.clone()))?;
 
-                if let Some(script) = &output_ref.output.script {
-                    scripts.insert(script.script_hash(), script.clone());
+                if let Some(script) = output_ref.output.script.as_ref() {
+                    scripts.insert(script.script_hash(), Script::from(script));
                 };
 
                 Ok(output_ref)

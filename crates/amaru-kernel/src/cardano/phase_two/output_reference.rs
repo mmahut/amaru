@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::transaction_output::TransactionOutput;
-use crate::TransactionInput;
+use crate::{MemoizedTransactionOutput, TransactionInput};
 
 /// A resolved input which includes the output it references.
 #[derive(Debug)]
 pub struct OutputReference<'a> {
     pub input: &'a TransactionInput,
-    pub output: TransactionOutput<'a>,
+    pub output: &'a MemoizedTransactionOutput,
 }

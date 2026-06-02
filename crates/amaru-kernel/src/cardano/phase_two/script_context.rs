@@ -40,7 +40,7 @@ impl<'a> ScriptContext<'a> {
         let entry = tx_info.redeemers.get(redeemer_key)?;
 
         let datum = if redeemer_key.tag == RedeemerTag::Spend {
-            tx_info.inputs.get(redeemer_key.index as usize).and_then(|output_ref| match output_ref.output.datum {
+            tx_info.inputs.get(redeemer_key.index as usize).and_then(|output_ref| match &output_ref.output.datum {
                 MemoizedDatum::None => None,
                 MemoizedDatum::Hash(hash) => tx_info.data.0.get(hash).copied(),
                 MemoizedDatum::Inline(data) => Some(data.as_ref()),

@@ -16,16 +16,17 @@ use std::{collections::BTreeMap, ops::Deref};
 
 use amaru_kernel::{
     Address, Certificate as PallasCertificate, ComparableProposalId, Constitution, CostModels, DRep,
-    DRepVotingThresholds, ExUnitPrices, ExUnits, GovernanceAction, PlutusData, PoolVotingThresholds, Proposal,
-    ProposalId, ProtocolParamUpdate, RationalNumber, StakeCredential, StakePayload, TransactionInput, Vote, Voter,
+    DRepVotingThresholds, ExUnitPrices, ExUnits, GovernanceAction, MemoizedTransactionOutput, PlutusData,
+    PoolVotingThresholds, Proposal, ProposalId, ProtocolParamUpdate, RationalNumber, StakeCredential, StakePayload,
+    TransactionInput, Vote, Voter,
 };
 use num::Integer;
 
 use crate::{
     PlutusDataError, ToPlutusData, constr, constr_v3,
     script_context::{
-        Datums, Mint, OutputReference, ScriptContext, ScriptInfo, ScriptPurpose, StakeAddress, TransactionOutput,
-        TxInfo, Votes, Withdrawals,
+        Datums, Mint, OutputReference, ScriptContext, ScriptInfo, ScriptPurpose, StakeAddress, TxInfo, Votes,
+        Withdrawals,
     },
 };
 
@@ -35,7 +36,7 @@ impl ToPlutusData<3> for OutputReference<'_> {
     /// # Errors
     /// If the UTxO is locked at a bootstrap address, this will return a `PlutusDataError`.
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        if let Address::Byron(_) = *self.output.address {
+        if let Address::Byron(_) = self.output.address {
             return Err(PlutusDataError::unsupported_version("byron address included in OutputReference", 3));
         }
 
@@ -107,9 +108,9 @@ impl ToPlutusData<3> for TransactionInput {
     }
 }
 
-impl ToPlutusData<3> for TransactionOutput<'_> {
+impl ToPlutusData<3> for MemoizedTransactionOutput {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        constr_v3!(0, [self.address, self.value, self.datum, self.script])
+        constr_v3!(0, [self.address, self.value.as_ref(), self.datum, self.script])
     }
 }
 

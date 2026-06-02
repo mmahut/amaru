@@ -15,7 +15,7 @@
 use std::{borrow::Cow, collections::BTreeMap, time::SystemTime};
 
 use amaru_kernel::{
-    Address, BigInt, Bytes, ComputeHash, CurrencySymbol, Hash, Int, MaybeIndefArray, MemoizedDatum,
+    Address, BigInt, Bytes, ComputeHash, CurrencySymbol, Hash, Int, MaybeIndefArray, MemoizedDatum, MemoizedScript,
     NonEmptyKeyValuePairs, NonZeroInt, Nullable, PlutusData, ShelleyDelegationPart, ShelleyPaymentPart,
     StakeCredential, TransactionId, Value, size,
 };
@@ -278,6 +278,17 @@ where
             Script::PlutusV2(plutus) => plutus.compute_hash().to_plutus_data(),
             Script::PlutusV3(plutus) => plutus.compute_hash().to_plutus_data(),
         }
+    }
+}
+
+impl<const V: u8> ToPlutusData<V> for MemoizedScript
+where
+    PlutusVersion<V>: IsKnownPlutusVersion,
+{
+    /// A script appears in a transaction output only as its hash; the encoding is delegated to
+    /// the borrowed [`Script`] view to keep that hashing logic in a single place.
+    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
+        <Script<'_> as ToPlutusData<V>>::to_plutus_data(&Script::from(self))
     }
 }
 

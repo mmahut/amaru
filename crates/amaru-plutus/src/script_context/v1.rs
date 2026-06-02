@@ -15,15 +15,15 @@
 use std::{borrow::Cow, collections::BTreeMap};
 
 use amaru_kernel::{
-    Address, Certificate as PallasCertificate, Hash, MemoizedDatum, PlutusData, StakePayload, TransactionInput,
-    size::DATUM,
+    Address, Certificate as PallasCertificate, Hash, MemoizedDatum, MemoizedTransactionOutput, PlutusData,
+    StakePayload, TransactionInput, size::DATUM,
 };
 
 use crate::{
     IsKnownPlutusVersion, PlutusDataError, PlutusVersion, ToPlutusData, constr, constr_v1,
     script_context::{
-        Datums, IsPrePlutusVersion3, Mint, OutputReference, ScriptContext, ScriptPurpose, StakeAddress,
-        TransactionOutput, TxInfo, Withdrawals,
+        Datums, IsPrePlutusVersion3, Mint, OutputReference, ScriptContext, ScriptPurpose, StakeAddress, TxInfo,
+        Withdrawals,
     },
 };
 
@@ -49,7 +49,7 @@ impl ToPlutusData<1> for TxInfo<'_> {
         let inputs = self
             .inputs
             .iter()
-            .filter(|output_ref| !matches!(*output_ref.output.address, Address::Byron(..)))
+            .filter(|output_ref| !matches!(output_ref.output.address, Address::Byron(..)))
             .collect::<Vec<_>>();
 
         let fee = amaru_kernel::Value::Coin(self.fee);
@@ -195,15 +195,15 @@ where
     }
 }
 
-impl ToPlutusData<1> for TransactionOutput<'_> {
+impl ToPlutusData<1> for MemoizedTransactionOutput {
     #[allow(clippy::wildcard_enum_match_arm)]
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         constr_v1!(
             0,
             [
                 self.address,
-                self.value,
-                match self.datum {
+                self.value.as_ref(),
+                match &self.datum {
                     MemoizedDatum::Hash(hash) => Some(*hash),
                     _ => None::<Hash<DATUM>>,
                 },

@@ -28,7 +28,7 @@ impl<'a> Utxos {
     ///
     /// Returns `None` when the input cannot be found in the UTxO slice.
     pub fn resolve_input(&'a self, input: &'a TransactionInput) -> Option<OutputReference<'a>> {
-        self.0.get(input).map(|utxo| OutputReference { input, output: utxo.into() })
+        self.0.get(input).map(|utxo| OutputReference { input, output: utxo })
     }
 }
 

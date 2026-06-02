@@ -14,11 +14,11 @@
 
 use std::collections::BTreeMap;
 
-use amaru_kernel::{Address, PlutusData, StakePayload};
+use amaru_kernel::{Address, MemoizedTransactionOutput, PlutusData, StakePayload};
 
 use crate::{
     PlutusDataError, ToPlutusData, constr_v2,
-    script_context::{Datums, OutputReference, ScriptContext, StakeAddress, TransactionOutput, TxInfo, Withdrawals},
+    script_context::{Datums, OutputReference, ScriptContext, StakeAddress, TxInfo, Withdrawals},
 };
 
 impl ToPlutusData<2> for ScriptContext<'_> {
@@ -56,7 +56,7 @@ impl ToPlutusData<2> for OutputReference<'_> {
     /// # Errors
     /// If the UTxO is locked at a bootstrap address, this will return a `PlutusDataError`.
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        if let Address::Byron(_) = *self.output.address {
+        if let Address::Byron(_) = self.output.address {
             return Err(PlutusDataError::unsupported_version("byron address included in OutputReference", 2));
         }
 
@@ -64,9 +64,9 @@ impl ToPlutusData<2> for OutputReference<'_> {
     }
 }
 
-impl ToPlutusData<2> for TransactionOutput<'_> {
+impl ToPlutusData<2> for MemoizedTransactionOutput {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        constr_v2!(0, [self.address, self.value, self.datum, self.script])
+        constr_v2!(0, [self.address, self.value.as_ref(), self.datum, self.script])
     }
 }
 
