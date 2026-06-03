@@ -22,7 +22,10 @@ use amaru_kernel::{
     BlockHeader, Epoch, EraHistory, IsHeader, NetworkName, Peer, Point, ProtocolParameters, Transaction, TransactionId,
     cardano::network_block::make_encoded_block,
 };
-use amaru_ledger::store::{Columns, GovernanceActivity, Store, TransactionalContext};
+use amaru_ledger::{
+    epoch_transition::GovernanceActivity,
+    store::{Columns, Store, TransactionalContext},
+};
 use amaru_mempool::InMemoryMempool;
 use amaru_ouroboros::{ChainStore, ConnectionsResource, in_memory_consensus_store::InMemConsensusStore};
 use amaru_stores::rocksdb::{RocksDB, RocksDbConfig};
@@ -272,13 +275,13 @@ impl NodeTestConfig {
         let ledger_store_config = RocksDbConfig::new(ledger_dir);
         {
             let store = RocksDB::empty(&ledger_store_config)?;
-            let mut governance_activity = GovernanceActivity { consecutive_dormant_epochs: 0 };
+            let governance_activity = GovernanceActivity::default();
             let pp = self.protocol_parameters()?;
             let tx = store.create_transaction();
             tx.save(
                 self.era_history(),
                 pp,
-                &mut governance_activity,
+                governance_activity,
                 &chain_anchor,
                 None,
                 Columns::empty(),
@@ -286,7 +289,7 @@ impl NodeTestConfig {
                 std::iter::empty(),
             )?;
             tx.set_protocol_parameters(pp)?;
-            tx.set_governance_activity(&governance_activity)?;
+            tx.set_governance_activity(governance_activity)?;
             tx.commit()?;
             // initial_stake_distributions needs snapshots at most_recent, most_recent - 1, and
             // most_recent - 2; take three so that for_epoch(0) and for_epoch(1) both succeed.

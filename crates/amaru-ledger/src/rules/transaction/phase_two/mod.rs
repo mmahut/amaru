@@ -24,10 +24,12 @@ use amaru_plutus::{
     to_plutus_data::{PLUTUS_V1, PLUTUS_V2, PLUTUS_V3, PlutusDataError},
 };
 use amaru_uplc::{
+    binder::Binder,
     constant::Constant,
     data::PlutusData,
     flat::FlatDecodeError,
     machine::{ExBudget, MachineInfo, PlutusVersion},
+    program::Program,
     term::Term,
 };
 use thiserror::Error;
@@ -58,15 +60,25 @@ pub enum PhaseTwoError {
 pub struct UplcMachineError {
     pub plutus_version: PlutusVersion,
     pub info: MachineInfo,
+    // TODO: Proper type with lifetime
     // This should be a `MachineError`, but I'm avoiding lifetime hell for now
     pub err: String,
+    // TODO: Proper type with lifetime
+    pub program: String,
+}
+
+fn encode_program<'a, V>(program: &'a Program<'a, V>) -> String
+where
+    V: Binder<'a>,
+{
+    amaru_uplc::flat::encode(program).map(hex::encode).unwrap_or_default()
 }
 
 #[allow(clippy::too_many_arguments)]
 pub fn execute<C>(
     context: &mut C,
     arena_pool: &ArenaPool,
-    network: &NetworkName,
+    network: NetworkName,
     protocol_parameters: &ProtocolParameters,
     era_history: &EraHistory,
     pointer: TransactionPointer,
@@ -115,9 +127,8 @@ where
         transaction_body.tx_id(),
         &utxos,
         &pointer.slot,
-        *network,
+        network,
         era_history,
-        protocol_parameters.protocol_version,
     )?;
 
     let scripts_to_execute = tx_info.to_script_contexts();
@@ -191,6 +202,7 @@ where
                     Constant::Data(data)
                 })
                 .collect::<Vec<_>>();
+
             let arguments = constants.iter().map(Term::Constant).collect::<Vec<_>>();
 
             for term in arguments.iter() {
@@ -210,6 +222,7 @@ where
                             plutus_version,
                             info: result.info,
                             err: "Error term evaluated".into(),
+                            program: encode_program(program),
                         })),
                         Term::Var(_)
                         | Term::Lambda { .. }
@@ -225,6 +238,7 @@ where
                         plutus_version,
                         info: result.info,
                         err: e.to_string(),
+                        program: encode_program(program),
                     })),
                 },
 
@@ -235,11 +249,13 @@ where
                         plutus_version,
                         info: result.info,
                         err: "evaluated to a non-unit term".to_string(),
+                        program: encode_program(program),
                     })),
                     Err(e) => Err(PhaseTwoError::UplcMachineError(UplcMachineError {
                         plutus_version,
                         info: result.info,
                         err: e.to_string(),
+                        program: encode_program(program),
                     })),
                 },
             }
@@ -304,7 +320,7 @@ mod tests {
         super::execute(
             &mut context,
             &ARENA_POOL,
-            &network,
+            network,
             protocol_parameters,
             <&EraHistory>::from(network),
             default_pointer(&transaction),

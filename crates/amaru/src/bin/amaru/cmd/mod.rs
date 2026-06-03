@@ -12,51 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
+use std::{ops::Deref, str::FromStr};
 
-use amaru_kernel::NetworkName;
-use pallas_network::facades::PeerClient;
+use amaru_kernel::{HeaderHash, Point};
 
 pub(crate) mod bootstrap;
-pub(crate) mod convert_ledger_state;
+pub(crate) mod create_snapshots;
 pub(crate) mod dump_chain_db;
 pub(crate) mod dump_schemas;
 pub(crate) mod fetch_chain_headers;
-pub(crate) mod import_headers;
-pub(crate) mod import_ledger_state;
-pub(crate) mod import_nonces;
 pub(crate) mod migrate_chain_db;
+pub(crate) mod remove_chain;
 pub(crate) mod remove_validation_status;
 pub(crate) mod reset_to_epoch;
 pub(crate) mod run;
 
-/// Establish a connection to another peer. The connection are discriminated by network types.
-pub(crate) async fn connect_to_peer(
-    peer_address: &str,
-    network: &NetworkName,
-) -> Result<PeerClient, pallas_network::facades::Error> {
-    PeerClient::connect(peer_address, network.to_network_magic().as_u64())
-        .await
-        .inspect_err(|reason| tracing::error!(peer = %peer_address, reason = %reason, "failed to connect to peer"))
-}
+#[derive(Debug, Clone)]
+struct PointOrHash(HeaderHash);
+impl FromStr for PointOrHash {
+    type Err = String;
 
-#[derive(Debug)]
-pub enum WorkerError {
-    Recv,
-    Panic,
-    Restart,
-    Retry,
-}
-
-impl fmt::Display for WorkerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            WorkerError::Recv => write!(f, "error receiving work unit through input port"),
-            WorkerError::Panic => write!(f, "operation panic, stage should stop"),
-            WorkerError::Restart => write!(f, "operation requires a restart of the stage"),
-            WorkerError::Retry => write!(f, "operation should be retried"),
-        }
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<Point>().map(|p| p.hash()).or_else(|_| s.parse::<HeaderHash>().map_err(|e| e.to_string())).map(Self)
     }
 }
+impl Deref for PointOrHash {
+    type Target = HeaderHash;
 
-impl std::error::Error for WorkerError {}
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}

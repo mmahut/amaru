@@ -12,14 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{error::Error, path::PathBuf};
+use std::{
+    error::Error,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use amaru_kernel::NetworkName;
 use include_dir::{Dir, include_dir};
 
-use crate::bootstrap::{BootstrapError, InitialNonces};
-
 pub mod bootstrap;
+pub mod cardano_node;
 pub mod exit;
 pub mod metrics;
 pub mod observability;
@@ -45,9 +48,34 @@ pub const DEFAULT_LISTEN_ADDRESS: &str = "0.0.0.0:3000";
 
 pub const DEFAULT_CONFIG_DIR: &str = "data";
 
+pub const DEFAULT_PEER_REMOVAL_COOLDOWN_SECS: u64 = 600; // 10 minutes
+pub const DEFAULT_UPSTREAM_PEERS: usize = 3;
+pub const DEFAULT_DOWNSTREAM_PEERS: usize = 10;
+
 const SNAPSHOTS_PATH: &str = "snapshots";
 const BOOTSTRAP_PATH: &str = "crates/amaru/config/bootstrap";
 static BOOTSTRAP_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/config/bootstrap");
+
+fn source_bootstrap_dir() -> PathBuf {
+    if let Some(path) = std::env::var_os(env_vars::BOOTSTRAP_CONFIG_DIR) {
+        return PathBuf::from(path);
+    }
+
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config/bootstrap")
+}
+
+fn read_runtime_bootstrap_file(
+    root: &Path,
+    network: NetworkName,
+    name: &str,
+) -> Result<Option<Vec<u8>>, Box<dyn Error>> {
+    let path = root.join(network.to_string().to_lowercase()).join(name);
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    Ok(Some(fs::read(path)?))
+}
 
 pub fn default_ledger_dir(network: NetworkName) -> String {
     format!("./ledger.{}.db", network.to_string().to_lowercase())
@@ -69,23 +97,13 @@ pub fn default_data_dir(network: NetworkName) -> String {
     format!("{}/{}", DEFAULT_CONFIG_DIR, network.to_string().to_lowercase())
 }
 
-pub fn default_initial_nonces(network: NetworkName) -> Result<InitialNonces, Box<dyn Error>> {
-    let default_nonces_file_name = "nonces.json";
-
-    let nonces_file = get_bootstrap_file(network, default_nonces_file_name)?
-        .ok_or(BootstrapError::MissingConfigFile(default_nonces_file_name.into()))?;
-
-    Ok(serde_json::from_slice(nonces_file.as_slice())?)
-}
-
 pub fn get_bootstrap_file(network: NetworkName, name: &str) -> Result<Option<Vec<u8>>, Box<dyn Error>> {
+    if let Some(file) = read_runtime_bootstrap_file(&source_bootstrap_dir(), network, name)? {
+        return Ok(Some(file));
+    }
+
     let path = format!("{}/{}", network.to_string().to_lowercase(), name);
     Ok(BOOTSTRAP_DIR.get_file(path).map(|f| f.contents().into()))
-}
-
-pub fn get_bootstrap_headers(network: NetworkName) -> Result<impl Iterator<Item = Vec<u8>>, Box<dyn Error>> {
-    let path = format!("{}/headers/*", network.to_string().to_lowercase());
-    Ok(BOOTSTRAP_DIR.find(&path)?.filter_map(|f| f.as_file()).map(|f| f.contents().into()))
 }
 
 /// Value names (a.k.a. metavar) used across command-line options.
@@ -111,6 +129,9 @@ pub mod value_names {
     /// A blockchain point, formatted as slot.hash
     pub const POINT: &str = "SLOT.HEADER_HASH";
 
+    /// A blockchain point, formatted as slot.hash
+    pub const POINT_OR_HASH: &str = "SLOT.HEADER_HASH or HEADER_HASH";
+
     /// A non-negative integer value.
     pub const UINT: &str = "UINT";
 
@@ -120,8 +141,17 @@ pub mod value_names {
 
 /// Environment variables used across command-line options.
 pub mod env_vars {
+    /// Runtime bootstrap config directory override.
+    pub const BOOTSTRAP_CONFIG_DIR: &str = "AMARU_BOOTSTRAP_CONFIG_DIR";
+
+    /// --cardano-node-config-dir
+    pub const CARDANO_NODE_CONFIG_DIR: &str = "AMARU_CARDANO_NODE_CONFIG_DIR";
+
     /// --chain-dir
     pub const CHAIN_DIR: &str = "AMARU_CHAIN_DIR";
+
+    /// --dist-dir
+    pub const DIST_DIR: &str = "AMARU_DIST_DIR";
 
     /// --epoch
     pub const EPOCH: &str = "AMARU_EPOCH";
@@ -138,8 +168,11 @@ pub mod env_vars {
     /// --listen-address
     pub const LISTEN_ADDRESS: &str = "AMARU_LISTEN_ADDRESS";
 
-    /// --max-downstream-peers
-    pub const MAX_DOWNSTREAM_PEERS: &str = "AMARU_MAX_DOWNSTREAM_PEERS";
+    /// --downstream-peers
+    pub const DOWNSTREAM_PEERS: &str = "AMARU_DOWNSTREAM_PEERS";
+
+    /// --upstream-peers
+    pub const UPSTREAM_PEERS: &str = "AMARU_UPSTREAM_PEERS";
 
     /// --max-extra-ledger-snapshots
     pub const MAX_EXTRA_LEDGER_SNAPSHOTS: &str = "AMARU_MAX_EXTRA_LEDGER_SNAPSHOTS";
@@ -158,6 +191,9 @@ pub mod env_vars {
 
     /// --peer-address
     pub const PEER_ADDRESS: &str = "AMARU_PEER_ADDRESS";
+
+    /// --peer-removal-cooldown-secs
+    pub const PEER_REMOVAL_COOLDOWN_SECS: &str = "AMARU_PEER_REMOVAL_COOLDOWN_SECS";
 
     /// --pid-file
     pub const PID_FILE: &str = "AMARU_PID_FILE";

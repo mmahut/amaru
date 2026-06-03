@@ -77,7 +77,7 @@ fn record_build_info(provider: &SdkMeterProvider) {
         1,
         &[
             KeyValue::new("version", built_info::PKG_VERSION),
-            KeyValue::new("git_rev", built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown")),
+            KeyValue::new("revision", built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown")),
             KeyValue::new("dirty", built_info::GIT_DIRTY.unwrap_or(false).to_string()),
             KeyValue::new("os", built_info::CFG_OS),
             KeyValue::new("arch", built_info::CFG_TARGET_ARCH),

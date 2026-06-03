@@ -9,7 +9,7 @@
     "eraHistory",
     "protocolParameters",
     "initialState",
-    "ledgerEnv",
+    "point",
     "transaction",
     "expected"
   ],
@@ -35,7 +35,7 @@
       "description": "Either inline ProtocolParameters or a $ref to a shared file under common/protocolParameters/, with an optional $override object that is shallow-merged over the referenced document."
     },
     "initialState": { "$ref": "#/$defs/InitialState" },
-    "ledgerEnv": { "$ref": "#/$defs/LedgerEnv" },
+    "point": { "$ref": "#/$defs/TransactionPointer" },
     "transaction": {
       "$ref": "#/$defs/HexCbor",
       "description": "Hex-encoded CBOR of the transaction."
@@ -142,12 +142,12 @@
         }
       }
     },
-    "LedgerEnv": {
+    "TransactionPointer": {
       "type": "object",
-      "required": ["slot", "txIx"],
+      "required": ["slot", "transactionIndex"],
       "properties": {
         "slot": { "type": "integer", "minimum": 0 },
-        "txIx": { "type": "integer", "minimum": 0 }
+        "transactionIndex": { "type": "integer", "minimum": 0 }
       }
     },
     "UtxoEntry": {
@@ -166,20 +166,20 @@
     },
     "VotingState": {
       "type": "object",
-      "required": ["numDormantEpochs"],
+      "required": ["consecutiveDormantEpochs"],
       "properties": {
-        "numDormantEpochs": { "type": "integer", "minimum": 0 }
+        "consecutiveDormantEpochs": { "type": "integer", "minimum": 0 }
       }
     },
     "InitialState": {
       "type": "object",
-      "required": ["utxo", "votingState"],
+      "required": ["utxo", "governanceActivity"],
       "properties": {
         "utxo": {
           "type": "array",
           "items": { "$ref": "#/$defs/UtxoEntry" }
         },
-        "votingState": { "$ref": "#/$defs/VotingState" }
+        "governanceActivity": { "$ref": "#/$defs/VotingState" }
       }
     },
     "MinFeeReferenceScripts": {

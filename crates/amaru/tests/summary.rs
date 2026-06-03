@@ -75,13 +75,11 @@ fn compare_snapshot(epoch: Epoch) {
 
     let global_parameters: &GlobalParameters = network.into();
 
-    let protocol_parameters = snapshot.as_ref().protocol_parameters().unwrap();
-
     let era_history = <&EraHistory>::from(network);
 
     let dreps = GovernanceSummary::new(snapshot.as_ref(), era_history).unwrap();
 
-    let stake_distr = StakeDistribution::new(snapshot.as_ref(), &protocol_parameters, dreps).unwrap();
+    let stake_distr = StakeDistribution::new(snapshot.as_ref(), dreps).unwrap();
 
     insta::with_settings!({
         snapshot_path => format!("snapshots/{}", network)
@@ -94,10 +92,12 @@ fn compare_snapshot(epoch: Epoch) {
 
     let snapshot_from_the_future = db(network, epoch + 2);
 
+    let protocol_parameters = snapshot_from_the_future.as_ref().protocol_parameters().unwrap();
+
     let rewards_summary =
         RewardsSummary::new(snapshot_from_the_future.as_ref(), stake_distr, global_parameters, &protocol_parameters)
             .unwrap()
-            .with_unclaimed_refunds(snapshot_from_the_future.as_ref(), &protocol_parameters)
+            .with_unclaimed_refunds(snapshot_from_the_future.as_ref())
             .unwrap();
 
     insta::with_settings!({

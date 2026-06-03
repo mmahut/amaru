@@ -62,7 +62,7 @@ impl ValidityInterval {
     // NOTE: about validity interval bounds
     //
     // - The lower bound is inclusive
-    // - The upper bound is exclusive (starting from protocol v9, inclusive before that)
+    // - The upper bound is exclusive
     pub fn includes(&self, slot: Slot) -> bool {
         match (self.lower_bound, self.upper_bound) {
             (None, None) => true,

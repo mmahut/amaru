@@ -23,20 +23,20 @@ use std::{
 use ::rocksdb::{self, OptimisticTransactionDB, Options, SliceTransform, checkpoint};
 use amaru_iter_borrow::{self, IterBorrow, borrowable_proxy::BorrowableProxy};
 use amaru_kernel::{
-    CertificatePointer, ComparableProposalId, Constitution, ConstitutionalCommitteeStatus, DRep, Epoch, EraHistory,
-    Lovelace, MemoizedTransactionOutput, PROTOCOL_VERSION_9, Point, PoolId, ProtocolParameters, StakeCredential,
-    TransactionInput, cbor,
+    CertificatePointer, Constitution, ConstitutionalCommitteeStatus, Epoch, EraHistory, Lovelace,
+    MemoizedTransactionOutput, Point, PoolId, ProposalId, ProtocolParameters, StakeCredential, TransactionInput, cbor,
 };
 use amaru_ledger::{
-    governance::ratification::{ProposalsRoots, ProposalsRootsRc},
+    epoch_transition::GovernanceActivity,
+    governance::ratification::ProposalsRoots,
     state::diff_bind::Resettable,
     store::{
-        Columns, EpochTransitionProgress, GovernanceActivity, HistoricalStores, OpenErrorKind, ReadStore, Snapshot,
-        Store, StoreError, TransactionalContext, columns as scolumns,
+        Columns, EpochTransitionProgress, HistoricalStores, OpenErrorKind, ReadStore, Snapshot, Store, StoreError,
+        TransactionalContext, columns as scolumns,
     },
     summary::Pots,
 };
-use amaru_observability::{trace_record, trace_span};
+use amaru_observability::{info_span, trace_record, trace_span};
 use rocksdb::{
     DB, DBAccess, DBIteratorWithThreadMode, DBPinnableSlice, Direction, Env, IteratorMode, ReadOptions, Transaction,
 };
@@ -313,20 +313,22 @@ impl RocksDBHistoricalStores {
 
 impl HistoricalStores for RocksDBHistoricalStores {
     fn prune(&self, functional_minimum: Epoch) -> Result<(), StoreError> {
-        let _span = trace_span!(
+        info_span!(
             amaru::stores::ledger::PRUNE,
             functional_minimum = u64::from(functional_minimum),
             db_system_name = "rocksdb".to_string(),
             db_operation_name = "delete".to_string()
-        );
-        let _guard = _span.enter();
+        )
+        .in_scope(|| {
+            let desired_minimum = functional_minimum.saturating_sub(self.max_extra_ledger_snapshots);
+            with_snapshots(&self.config.dir, |path, epoch| {
+                if epoch < desired_minimum {
+                    fs::remove_dir_all(&path)
+                        .map_err(|err| StoreError::Open(OpenErrorKind::io_with_file(path, err)))?;
+                }
 
-        let desired_minimum = functional_minimum.saturating_sub(self.max_extra_ledger_snapshots);
-        with_snapshots(&self.config.dir, |path, epoch| {
-            if epoch < desired_minimum {
-                fs::remove_dir_all(&path).map_err(|err| StoreError::Open(OpenErrorKind::io_with_file(path, err)))?;
-            }
-            Ok(())
+                Ok(())
+            })
         })
     }
 
@@ -386,6 +388,15 @@ macro_rules! impl_ReadStore_body {
         $($header)* {
             fn tip(&self) -> Result<Point, StoreError> {
                 get_or_bail(|key| self.db.get_pinned(key), KEY_TIP)
+            }
+
+            fn epoch_transition_progress(&self) -> Result<Option<EpochTransitionProgress>, StoreError> {
+                self.db
+                    .get_pinned(KEY_PROGRESS)
+                    .map_err(|err| StoreError::Internal(err.into()))?
+                    .map(|bytes| cbor::decode(&bytes))
+                    .transpose()
+                    .map_err(StoreError::Undecodable)
             }
 
             fn protocol_parameters(
@@ -534,8 +545,19 @@ pub struct RocksDBTransactionalContext<'a> {
     db: Transaction<'a, OptimisticTransactionDB>,
 }
 
+impl Drop for RocksDBTransactionalContext<'_> {
+    fn drop(&mut self) {
+        // If the context is dropped without an explicit commit/rollback then we clear the host flag
+        // so a subsequent create_transaction() call does not panic.
+        if self.host.ongoing_transaction.get() {
+            warn!("RocksDB transactional context dropped without commit/rollback; auto-rolled-back");
+            self.host.transaction_ended();
+        }
+    }
+}
+
 impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
-    fn commit(self) -> Result<(), StoreError> {
+    fn commit(mut self) -> Result<(), StoreError> {
         let _span = trace_span!(
             amaru::stores::rocksdb::COMMIT,
             db_system_name = "rocksdb".to_string(),
@@ -543,7 +565,8 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
         );
         let _guard = _span.enter();
 
-        let res = self.db.commit().map_err(|err| StoreError::Internal(err.into()));
+        let transaction = std::mem::replace(&mut self.db, self.host.db.transaction());
+        let res = transaction.commit().map_err(|err| StoreError::Internal(err.into()));
         self.host.transaction_ended();
         res
     }
@@ -562,6 +585,10 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
         res
     }
 
+    fn reset_epoch_transition_progress(&self) -> Result<(), StoreError> {
+        self.db.delete(KEY_PROGRESS).map_err(|err| StoreError::Internal(err.into()))
+    }
+
     fn try_epoch_transition(
         &self,
         from: Option<EpochTransitionProgress>,
@@ -569,22 +596,14 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
     ) -> Result<bool, StoreError> {
         let _span = trace_span!(
             amaru::stores::ledger::TRY_EPOCH_TRANSITION,
-            has_from = from.is_some(),
-            has_to = to.is_some(),
+            from = from.map(|s| s.to_string()).unwrap_or_else(|| "None".to_string()),
+            to = to.map(|s| s.to_string()).unwrap_or_else(|| "None".to_string()),
             db_system_name = "rocksdb".to_string(),
             db_operation_name = "put".to_string()
         );
         let _guard = _span.enter();
 
-        let previous_progress = self
-            .db
-            .get_pinned(KEY_PROGRESS)
-            .map_err(|err| StoreError::Internal(err.into()))?
-            .map(|bytes| cbor::decode(&bytes))
-            .transpose()
-            .map_err(StoreError::Undecodable)?;
-
-        if previous_progress != from {
+        if self.epoch_transition_progress()? != from {
             return Ok(false);
         }
 
@@ -633,7 +652,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
         Ok(())
     }
 
-    fn set_proposals_roots(&self, roots: &ProposalsRootsRc) -> Result<(), StoreError> {
+    fn set_proposals_roots(&self, roots: &ProposalsRoots) -> Result<(), StoreError> {
         self.db.put(KEY_PROPOSALS_ROOTS, as_value(roots)).map_err(|err| StoreError::Internal(err.into()))?;
         Ok(())
     }
@@ -643,7 +662,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
         Ok(())
     }
 
-    fn set_governance_activity(&self, governance_activity: &GovernanceActivity) -> Result<(), StoreError> {
+    fn set_governance_activity(&self, governance_activity: GovernanceActivity) -> Result<(), StoreError> {
         self.db
             .put(KEY_GOVERNANCE_ACTIVITY, as_value(governance_activity))
             .map_err(|err| StoreError::Internal(err.into()))?;
@@ -654,23 +673,16 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
     /// cause other proposals to become obsolete.
     fn remove_proposals<'iter, Id>(&self, proposals: impl IntoIterator<Item = Id>) -> Result<(), StoreError>
     where
-        Id: Deref<Target = ComparableProposalId> + 'iter,
+        Id: Deref<Target = ProposalId> + 'iter,
     {
         proposals::remove(&self.db, proposals.into_iter())
-    }
-
-    fn add_drep_delegations(
-        &self,
-        delegations: impl IntoIterator<Item = (StakeCredential, DRep, CertificatePointer)>,
-    ) -> Result<(), StoreError> {
-        dreps_delegations::add(&self.db, delegations.into_iter())
     }
 
     fn save(
         &self,
         era_history: &EraHistory,
         protocol_parameters: &ProtocolParameters,
-        governance_activity: &mut GovernanceActivity,
+        mut governance_activity: GovernanceActivity,
         point: &Point,
         issuer: Option<&scolumns::pools::Key>,
         add: Columns<
@@ -692,7 +704,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
             impl Iterator<Item = ()>,
         >,
         withdrawals: impl Iterator<Item = scolumns::accounts::Key>,
-    ) -> Result<(), StoreError> {
+    ) -> Result<GovernanceActivity, StoreError> {
         match (point, self.tip().ok()) {
             (Point::Specific(new, _), Some(Point::Specific(current, _)))
                 if *new <= current && !self.host.incremental_save =>
@@ -719,23 +731,11 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
                 let drep_validity = current_epoch + protocol_parameters.drep_expiry
                     - governance_activity.consecutive_dormant_epochs as u64;
 
-                let protocol_version = protocol_parameters.protocol_version;
-
                 utxo::add(&self.db, add.utxo)?;
                 pools::add(&self.db, add.pools)?;
                 dreps::add(&self.db, drep_validity, add.dreps)?;
                 cc_members::upsert(&self.db, add.cc_members)?;
-
-                // NOTE:
-                // In order to reproduce a bug from Protocol Version 9, we must keep track of
-                // accounts past delegations, and store them separately for "later".
-                //
-                // "Later" being: when a drep is unregistered; all its delegators (past and current)
-                // must then be reset.
-                let previous_delegations = accounts::add(&self.db, add.accounts, protocol_version)?;
-                if protocol_version <= PROTOCOL_VERSION_9 {
-                    dreps_delegations::add(&self.db, previous_delegations.into_iter())?;
-                }
+                accounts::add(&self.db, add.accounts)?;
 
                 let proposals_count = proposals::add(&self.db, add.proposals)?;
                 let voting_dreps = votes::add(&self.db, add.votes)?;
@@ -750,7 +750,7 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
                 utxo::remove(&self.db, remove.utxo)?;
                 pools::remove(&self.db, remove.pools)?;
                 accounts::remove(&self.db, remove.accounts)?;
-                dreps::remove(&self.db, remove.dreps, protocol_version)?;
+                dreps::remove(&self.db, remove.dreps)?;
 
                 // When a proposal is seen during a dormant period, we flush the current dormant
                 // epochs counter on each drep.
@@ -773,7 +773,8 @@ impl TransactionalContext<'_> for RocksDBTransactionalContext<'_> {
                 }
             }
         }
-        Ok(())
+
+        Ok(governance_activity)
     }
 
     fn with_pots<'db>(
@@ -995,7 +996,7 @@ fn with_prefix_iterator<
 #[cfg(test)]
 mod tests {
     use amaru_kernel::{EraHistory, NetworkName};
-    use amaru_ledger::store::StoreError;
+    use amaru_ledger::store::{Store, StoreError};
     use proptest::test_runner::TestRunner;
     use tempfile::TempDir;
 
@@ -1132,6 +1133,32 @@ mod tests {
     #[ignore]
     fn test_rocksdb_remove_cc_members() {
         unimplemented!()
+    }
+
+    #[test]
+    fn dropping_transaction_does_not_leak_ongoing_flag() {
+        let tmp_dir = TempDir::new().unwrap();
+        let store = RocksDB::empty(&RocksDbConfig::new(tmp_dir.path().into())).unwrap();
+
+        // Open a transaction and drop it without committing or rolling back.
+        drop(store.create_transaction());
+
+        // Since the previous transaction is dropped and has been properly cleared, we should be able
+        // to create a new one.
+        let _ = store.create_transaction();
+    }
+
+    /// `with_transaction` rolls back the transaction on `Err`.
+    #[test]
+    fn with_transaction_rolls_back_on_err() {
+        let tmp_dir = TempDir::new().unwrap();
+        let store = RocksDB::empty(&RocksDbConfig::new(tmp_dir.path().into())).unwrap();
+
+        let outcome: Result<(), StoreError> = store.with_transaction(|_tx| Err(StoreError::Send));
+        assert!(matches!(outcome, Err(StoreError::Send)));
+
+        // The previous transaction is properly closed so we should be able to create a new one.
+        let _ = store.create_transaction();
     }
 
     #[test]

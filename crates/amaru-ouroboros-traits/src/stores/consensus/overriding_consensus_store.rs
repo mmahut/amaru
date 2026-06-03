@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use amaru_kernel::{HeaderHash, IsHeader, NonEmptyVec, Point, RawBlock};
+use amaru_kernel::{HeaderHash, IsHeader, Point, RawBlock};
 use parking_lot::Mutex;
 
 use crate::{ChainStore, Nonces, ReadOnlyChainStore, StoreError};
@@ -42,8 +42,7 @@ struct Overrides<H> {
     store_block: Option<Box<dyn FnMut(&dyn ChainStore<H>, &HeaderHash, &RawBlock) -> Result<(), StoreError> + Send>>,
     set_block_valid: Option<Box<dyn FnMut(&dyn ChainStore<H>, &HeaderHash, bool) -> Result<(), StoreError> + Send>>,
     put_nonces: Option<Box<dyn FnMut(&dyn ChainStore<H>, &HeaderHash, &Nonces) -> Result<(), StoreError> + Send>>,
-    switch_to_fork:
-        Option<Box<dyn FnMut(&dyn ChainStore<H>, &Point, &NonEmptyVec<Point>) -> Result<(), StoreError> + Send>>,
+    switch_to_fork: Option<Box<dyn FnMut(&dyn ChainStore<H>, &Point, &[Point]) -> Result<(), StoreError> + Send>>,
     roll_forward_chain: Option<Box<dyn FnMut(&dyn ChainStore<H>, &Point) -> Result<(), StoreError> + Send>>,
 }
 
@@ -241,7 +240,7 @@ impl<H: IsHeader + Send + Sync + 'static> OverridingChainStoreBuilder<H> {
 
     pub fn with_switch_to_fork<F>(mut self, f: F) -> Self
     where
-        F: FnMut(&dyn ChainStore<H>, &Point, &NonEmptyVec<Point>) -> Result<(), StoreError> + Send + 'static,
+        F: FnMut(&dyn ChainStore<H>, &Point, &[Point]) -> Result<(), StoreError> + Send + 'static,
     {
         self.overrides.switch_to_fork = Some(Box::new(f));
         self
@@ -493,7 +492,7 @@ impl<H: IsHeader + Send + Sync + 'static> ChainStore<H> for OverridingChainStore
         }
     }
 
-    fn switch_to_fork(&self, fork_point: &Point, forward_points: &NonEmptyVec<Point>) -> Result<(), StoreError> {
+    fn switch_to_fork(&self, fork_point: &Point, forward_points: &[Point]) -> Result<(), StoreError> {
         let mut overrides = self.overrides.lock();
         match &mut overrides.switch_to_fork {
             Some(f) => f(self.inner.as_ref(), fork_point, forward_points),

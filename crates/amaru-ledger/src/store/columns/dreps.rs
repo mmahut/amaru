@@ -32,13 +32,6 @@ pub struct Row {
     pub anchor: Option<Anchor>,
     pub registered_at: CertificatePointer,
     pub valid_until: Epoch,
-
-    /// This field is *temporary* and only necessary to re-implement a bug present in the Cardano
-    /// ledger in the protocol version 9.
-    ///
-    /// It is temporary in the sense that, it is no longer required if bootstrapping from snapshots
-    /// that starts in protocol version 10 or later; and thus shall be dropped entirely when relevant.
-    pub previous_deregistration: Option<CertificatePointer>,
 }
 
 impl<C> cbor::encode::Encode<C> for Row {
@@ -47,12 +40,11 @@ impl<C> cbor::encode::Encode<C> for Row {
         e: &mut cbor::Encoder<W>,
         ctx: &mut C,
     ) -> Result<(), cbor::encode::Error<W::Error>> {
-        e.array(5)?;
+        e.array(4)?;
         e.encode_with(self.deposit, ctx)?;
         e.encode_with(self.anchor.clone(), ctx)?;
         e.encode_with(self.registered_at, ctx)?;
         e.encode_with(self.valid_until, ctx)?;
-        e.encode_with(self.previous_deregistration, ctx)?;
         Ok(())
     }
 }
@@ -65,7 +57,6 @@ impl<'a, C> cbor::decode::Decode<'a, C> for Row {
             anchor: d.decode_with(ctx)?,
             registered_at: d.decode_with(ctx)?,
             valid_until: d.decode_with(ctx)?,
-            previous_deregistration: d.decode_with(ctx)?,
         })
     }
 }
@@ -85,14 +76,12 @@ pub mod tests {
             anchor in option::of(any_anchor()),
             registered_at in any_certificate_pointer(max_slot),
             valid_until in any::<Epoch>(),
-            previous_deregistration in option::of(any_certificate_pointer(max_slot)),
         ) -> Row {
             Row {
                 deposit,
                 anchor,
                 registered_at,
                 valid_until,
-                previous_deregistration,
             }
         }
     }

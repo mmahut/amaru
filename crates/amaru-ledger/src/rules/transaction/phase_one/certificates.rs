@@ -14,8 +14,8 @@
 
 use amaru_kernel::{
     Certificate, CertificatePointer, DRep, DRepRegistration, Epoch, EraHistory, EraHistoryError, Hash, Lovelace,
-    MemoizedDatum, Network, NonEmptySet, PROTOCOL_VERSION_9, PoolId, PoolParams, ProtocolParameters, RequiredScript,
-    ScriptPurpose, StakeCredential, TransactionPointer, parse_reward_account, size::SCRIPT,
+    MemoizedDatum, Network, NonEmptySet, PoolId, PoolParams, ProtocolParameters, RequiredScript, ScriptPurpose,
+    StakeCredential, TransactionPointer, parse_reward_account, size::SCRIPT,
 };
 use thiserror::Error;
 
@@ -24,7 +24,7 @@ use crate::{
         AccountState, AccountsSlice, CCMember, CommitteeSlice, DRepsSlice, DelegateError, PoolsSlice, RegisterError,
         UnregisterError, UpdateError, WitnessSlice,
     },
-    store::GovernanceActivity,
+    epoch_transition::GovernanceActivity,
 };
 
 #[derive(Debug, Error)]
@@ -77,7 +77,7 @@ pub(crate) fn execute<C>(
     network: Network,
     protocol_parameters: &ProtocolParameters,
     era_history: &EraHistory,
-    governance_activity: &GovernanceActivity,
+    governance_activity: GovernanceActivity,
     transaction: TransactionPointer,
     certificates: Option<NonEmptySet<Certificate>>,
 ) -> Result<(), InvalidCertificates>
@@ -105,7 +105,7 @@ fn execute_one<C>(
     network: Network,
     protocol_parameters: &ProtocolParameters,
     era_history: &EraHistory,
-    governance_activity: &GovernanceActivity,
+    governance_activity: GovernanceActivity,
     pointer: CertificatePointer,
     certificate: Certificate,
 ) -> Result<(), InvalidCertificates>
@@ -246,12 +246,9 @@ where
                 return Err(InvalidCertificates::IncorrectDRepDeposit { provided: deposit, expected });
             }
 
-            let valid_until = if protocol_parameters.protocol_version <= PROTOCOL_VERSION_9 {
-                era_history.slot_to_epoch_unchecked_horizon(pointer.slot())? + protocol_parameters.drep_expiry
-            } else {
-                era_history.slot_to_epoch_unchecked_horizon(pointer.slot())? + protocol_parameters.drep_expiry
-                    - governance_activity.consecutive_dormant_epochs as u64
-            };
+            let valid_until = era_history.slot_to_epoch_unchecked_horizon(pointer.slot())?
+                + protocol_parameters.drep_expiry
+                - governance_activity.consecutive_dormant_epochs as u64;
 
             DRepsSlice::register(
                 context,

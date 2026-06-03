@@ -17,16 +17,20 @@ use std::collections::BTreeMap;
 use amaru_kernel::{
     EraHistoryProxy, MemoizedTransactionOutput, NetworkName, ProtocolParameters, TransactionInput, TransactionPointer,
     json,
-    utils::serde::{RefOrInline, deserialize_proxy, deserialize_utxo, hex_to_bytes},
+    utils::serde::{RefOrInline, deserialize_utxo, hex_to_bytes},
 };
 use serde::Deserialize;
 
 use crate::{
-    rules::transaction::phase_one::{
-        InvalidInputs, InvalidTransactionMetadata, InvalidVKeyWitness, InvalidValidityInterval, InvalidWithdrawals,
-        PhaseOneError,
+    epoch_transition::GovernanceActivity,
+    rules::{
+        WithPosition,
+        transaction::phase_one::{
+            InvalidInputs, InvalidTransactionMetadata, InvalidVKeyWitness, InvalidValidityInterval, InvalidWithdrawals,
+            PhaseOneError,
+            outputs::{InvalidOutput, InvalidOutputs},
+        },
     },
-    store::GovernanceActivity,
 };
 
 #[derive(Deserialize)]
@@ -36,8 +40,7 @@ pub(super) struct Fixture {
     pub(super) era_history: RefOrInline<EraHistoryProxy>,
     pub(super) protocol_parameters: RefOrInline<ProtocolParameters>,
     pub(super) initial_state: InitialState,
-    #[serde(deserialize_with = "deserialize_proxy")]
-    pub(super) ledger_env: TransactionPointer,
+    pub(super) point: TransactionPointer,
     #[serde(deserialize_with = "hex_to_bytes")]
     pub(super) transaction: Vec<u8>,
     pub(super) expected: Expected,
@@ -48,8 +51,7 @@ pub(super) struct Fixture {
 pub(super) struct InitialState {
     #[serde(deserialize_with = "deserialize_utxo")]
     pub(super) utxo: BTreeMap<TransactionInput, MemoizedTransactionOutput>,
-    #[serde(deserialize_with = "deserialize_proxy")]
-    pub(super) voting_state: GovernanceActivity,
+    pub(super) governance_activity: GovernanceActivity,
 }
 
 pub(super) enum Expected {
@@ -75,6 +77,7 @@ impl<'de> Deserialize<'de> for Expected {
 #[serde(tag = "predicate")]
 pub(super) enum Predicate {
     BabbageNonDisjointRefInputs,
+    BabbageOutputTooSmallUTxO,
     BadInputsUTxO,
     ConflictingMetadataHash,
     InputSetEmptyUTxO,
@@ -83,9 +86,11 @@ pub(super) enum Predicate {
     MissingTxBodyMetadataHash,
     MissingTxMetadata,
     MissingVKeyWitnessesUTXOW,
+    OutputTooBigUTxO,
     OutsideForecast,
     OutsideValidityIntervalUTxO,
     WrongNetworkInTxBody,
+    WrongNetworkInTxOutput,
     WrongNetworkWithdrawal,
 }
 
@@ -117,10 +122,15 @@ impl From<PhaseOneError> for Predicate {
                 Predicate::OutsideValidityIntervalUTxO
             }
             PhaseOneError::ValidityInterval(InvalidValidityInterval::OutsideForecast(_)) => Predicate::OutsideForecast,
+            PhaseOneError::Outputs(InvalidOutputs { ref invalid_outputs }) => match invalid_outputs.as_slice() {
+                [WithPosition { element: InvalidOutput::TooSmall { .. }, .. }] => Predicate::BabbageOutputTooSmallUTxO,
+                [WithPosition { element: InvalidOutput::ValueTooLarge { .. }, .. }] => Predicate::OutputTooBigUTxO,
+                [WithPosition { element: InvalidOutput::WrongNetwork { .. }, .. }] => Predicate::WrongNetworkInTxOutput,
+                _ => unreachable!("no predicate mapping yet for {err}"),
+            },
             PhaseOneError::Inputs(_)
             | PhaseOneError::Metadata(_)
             | PhaseOneError::VKeyWitness(_)
-            | PhaseOneError::Outputs(_)
             | PhaseOneError::Certificates(_)
             | PhaseOneError::Fees(_)
             | PhaseOneError::Withdrawals(_)

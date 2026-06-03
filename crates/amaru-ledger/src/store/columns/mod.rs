@@ -17,7 +17,6 @@ use amaru_kernel::cbor;
 pub mod accounts;
 pub mod cc_members;
 pub mod dreps;
-pub mod dreps_delegations;
 pub mod pools;
 pub mod pots;
 pub mod proposals;

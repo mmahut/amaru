@@ -16,6 +16,34 @@ pub use pallas_primitives::conway::PoolVotingThresholds;
 #[cfg(any(test, feature = "test-utils"))]
 pub use proxy::*;
 
+use crate::rational_number;
+
+pub fn fmt(thresholds: &PoolVotingThresholds) -> String {
+    // NOTE: destructuring for completeness static checks
+    let PoolVotingThresholds {
+        motion_no_confidence,
+        committee_normal,
+        committee_no_confidence,
+        hard_fork_initiation,
+        security_voting_threshold,
+    } = thresholds;
+
+    format!(
+        "{{\
+            committee_normal={}, \
+            committee_no_confidence={}, \
+            motion_no_confidence={}, \
+            hard_fork_initiation={}, \
+            security_voting_threshold={}\
+        }}",
+        rational_number::fmt(committee_normal),
+        rational_number::fmt(committee_no_confidence),
+        rational_number::fmt(motion_no_confidence),
+        rational_number::fmt(hard_fork_initiation),
+        rational_number::fmt(security_voting_threshold),
+    )
+}
+
 #[cfg(any(test, feature = "test-utils"))]
 mod proxy {
     use serde::Deserialize;

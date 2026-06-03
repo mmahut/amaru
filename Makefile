@@ -1,5 +1,9 @@
 export AMARU_NETWORK ?= preprod
 export AMARU_PEER_ADDRESS ?= 127.0.0.1:3001
+AWS_DEFAULT_REGION ?= auto
+BOOTSTRAP_SNAPSHOT_EPOCH ?=
+BUCKET_NAME ?=
+ENDPOINT ?=
 HASKELL_NODE_CONFIG_DIR ?= cardano-node-config
 RUN_UNTIL_TARGET_EPOCH ?= 182
 HASKELL_NODE_CONFIG_REPOSITORY := https://raw.githubusercontent.com/input-output-hk/cardano-playground
@@ -21,7 +25,7 @@ else
 TRACE_SUMMARY_OUTPUT_ENABLED := 0
 endif
 
-.PHONY: help bootstrap start import-headers import-nonces download-haskell-config coverage-html coverage-lconv check-llvm-cov check-rust-toolchain-version dev generate-traces-doc run-until compare-trace-contract update-trace-contract generate-traces-doc serve-traces-doc validate-trace-schemas
+.PHONY: help bootstrap create-snapshots publish-bootstrap-snapshots start download-haskell-config coverage-html coverage-lconv check-llvm-cov check-rust-toolchain-version dev generate-traces-doc run-until compare-trace-contract update-trace-contract generate-traces-doc serve-traces-doc validate-trace-schemas
 
 help:
 	@echo "\033[1;4mGetting Started:\033[00m"
@@ -39,11 +43,23 @@ help:
 bootstrap: ## &start Bootstrap Amaru from scratch (snapshots + headers + ledger-state + nonces)
 	cargo run --profile $(BUILD_PROFILE) -- $(COMMON_ARGS) bootstrap $(ARGS)
 
-import-headers: ## &start Import initial headers
-	cargo run --profile $(BUILD_PROFILE) -- $(COMMON_ARGS) import-headers $(ARGS)
+create-snapshots: ## &start Create a three-epoch bootstrap snapshot set (set BOOTSTRAP_SNAPSHOT_EPOCH to override auto epoch)
+	cargo run --profile $(BUILD_PROFILE) -- $(COMMON_ARGS) create-snapshots $(if $(BOOTSTRAP_SNAPSHOT_EPOCH),--epoch $(BOOTSTRAP_SNAPSHOT_EPOCH),) $(ARGS)
 
-import-nonces: ## &start Import initial nonces
-	cargo run --profile $(BUILD_PROFILE) -- $(COMMON_ARGS) import-nonces $(ARGS)
+publish-bootstrap-snapshots: ## &start Upload and publish the three existing bootstrap snapshots starting at $BOOTSTRAP_SNAPSHOT_EPOCH
+	@set -euo pipefail; \
+	if [ -z "$(BOOTSTRAP_SNAPSHOT_EPOCH)" ]; then \
+		echo "BOOTSTRAP_SNAPSHOT_EPOCH must be set" >&2; \
+		exit 1; \
+	fi; \
+	AMARU_NETWORK="$(AMARU_NETWORK)" \
+	AMARU_DIST_DIR="$(AMARU_DIST_DIR)" \
+	AWS_ACCESS_KEY_ID="$(AWS_ACCESS_KEY_ID)" \
+	AWS_SECRET_ACCESS_KEY="$(AWS_SECRET_ACCESS_KEY)" \
+	AWS_DEFAULT_REGION="$(AWS_DEFAULT_REGION)" \
+	BUCKET_NAME="$(BUCKET_NAME)" \
+	ENDPOINT="$(ENDPOINT)" \
+	bash ./scripts/publish-bootstrap-snapshots "$(BOOTSTRAP_SNAPSHOT_EPOCH)"
 
 download-haskell-config: ## &start Download Haskell node configuration files for $AMARU_NETWORK
 	mkdir -p $(HASKELL_NODE_CONFIG_DIR)

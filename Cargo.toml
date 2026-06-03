@@ -39,6 +39,7 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 hex = "0.4.3"
 indicatif = "0.18.0"
 include_dir = "0.7.4"
+indexmap = { version = "2.6", features = ["serde"] }
 indoc = "2.0"
 inventory = "0.3"
 itertools = "0.14.0"
@@ -103,6 +104,7 @@ amaru-iter-borrow = { path = "crates/amaru-iter-borrow", version = "0.1.2" }
 amaru-kernel = { path = "crates/amaru-kernel", version = "0.1.2" }
 amaru-ledger = { path = "crates/amaru-ledger", version = "0.1.2" }
 amaru-mempool = { path = "crates/amaru-mempool", version = "0.1.2" }
+amaru-mithril = { path = "crates/amaru-mithril", version = "0.1.2" }
 amaru-metrics = { path = "crates/amaru-metrics", version = "0.1.2" }
 amaru-minicbor-extra = { path = "crates/amaru-minicbor-extra", version = "0.1.2" }
 amaru-network = { path = "crates/amaru-network", version = "0.1.2" }
@@ -116,7 +118,7 @@ amaru-protocols = { path = "crates/amaru-protocols", version = "0.1.2" }
 amaru-sim = { path = "crates/amaru-sim", version = "0.1.2" }
 amaru-stores = { path = "crates/amaru-stores", version = "0.1.2" }
 amaru-tracing-json = { path = "crates/amaru-tracing-json", version = "0.1.2" }
-amaru-uplc = "0.1.0"
+amaru-uplc = "0.4.0"
 pure-stage = { path = "crates/pure-stage", version = "0.1.2" }
 
 # The vrf crate has not been fully tested in production environments and still has several upstream issues that are open PRs but not merged yet.

@@ -17,9 +17,11 @@ use std::sync::LazyLock;
 use pallas_primitives::conway::CostModels;
 
 use crate::{
-    DRepVotingThresholds, ExUnitPrices, ExUnits, GlobalParameters, PROTOCOL_VERSION_9, PROTOCOL_VERSION_10,
-    PoolVotingThresholds, ProtocolParameters, RationalNumber, Slot,
+    DRepVotingThresholds, ExUnitPrices, ExUnits, GlobalParameters, PROTOCOL_VERSION_10, PoolVotingThresholds,
+    ProtocolParameters, ProtocolVersion, RationalNumber, Slot,
 };
+
+const PROTOCOL_VERSION_9: ProtocolVersion = (9, 0);
 
 pub static MAINNET_GLOBAL_PARAMETERS: LazyLock<GlobalParameters> = LazyLock::new(|| {
     let consensus_security_param = 2160;

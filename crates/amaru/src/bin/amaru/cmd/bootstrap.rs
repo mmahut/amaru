@@ -15,13 +15,15 @@
 use std::{error::Error, fs::remove_dir_all, path::PathBuf};
 
 use amaru::{DEFAULT_NETWORK, bootstrap::bootstrap, default_chain_dir, default_ledger_dir};
-use amaru_kernel::NetworkName;
+use amaru_kernel::{Epoch, NetworkName};
 use clap::{ArgAction, Parser};
 use tracing::{info, warn};
 
 #[derive(Debug, Parser)]
 pub struct Args {
     /// Path of the chain on-disk storage.
+    ///
+    /// Defaults to ./chain.<NETWORK>.db when unspecified.
     #[arg(
         long,
         value_name = amaru::value_names::DIRECTORY,
@@ -39,12 +41,25 @@ pub struct Args {
     force: bool,
 
     /// Path of the ledger on-disk storage.
+    ///
+    /// Defaults to ./ledger.<NETWORK>.db when unspecified.
     #[arg(
         long,
         value_name = amaru::value_names::DIRECTORY,
         env = amaru::env_vars::LEDGER_DIR,
     )]
     ledger_dir: Option<PathBuf>,
+
+    /// Bootstrap start epoch from snapshots.json.
+    ///
+    /// Bootstrap requires this epoch and the next two consecutive epochs.
+    /// Defaults to the latest available epoch in snapshots.json when unspecified.
+    #[arg(
+        long = "epoch",
+        value_name = amaru::value_names::UINT,
+        env = amaru::env_vars::EPOCH,
+    )]
+    epoch: Option<u64>,
 
     /// Network to bootstrap the node for.
     #[arg(
@@ -69,6 +84,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
         force = %args.force,
         ledger_dir = %ledger_dir.to_string_lossy(),
         network = %network,
+        requested_epoch = ?args.epoch,
         "running",
     );
 
@@ -98,5 +114,5 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    bootstrap(network, ledger_dir, chain_dir).await
+    bootstrap(network, ledger_dir, chain_dir, args.epoch.map(Epoch::from)).await
 }

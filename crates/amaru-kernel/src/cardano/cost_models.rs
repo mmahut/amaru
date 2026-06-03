@@ -16,6 +16,27 @@ pub use pallas_primitives::conway::CostModels;
 #[cfg(any(test, feature = "test-utils"))]
 pub use proxy::*;
 
+pub fn fmt(cost_models: &CostModels) -> String {
+    // NOTE: destructuring for completeness static checks
+    let CostModels { plutus_v1, plutus_v2, plutus_v3 } = cost_models;
+
+    let mut s = String::new();
+
+    if let Some(cost_model) = plutus_v1 {
+        s += &format!("plutus_v1 = {:?}", cost_model);
+    }
+
+    if let Some(cost_model) = plutus_v2 {
+        s += &format!("{}plutus_v2 = {:?}", if s.is_empty() { "" } else { ",  " }, cost_model);
+    }
+
+    if let Some(cost_model) = plutus_v3 {
+        s += &format!("{}plutus_v3 = {:?}", if s.is_empty() { "" } else { ",  " }, cost_model);
+    }
+
+    format!("{{{s}}}")
+}
+
 #[cfg(any(test, feature = "test-utils"))]
 mod proxy {
     use serde::Deserialize;

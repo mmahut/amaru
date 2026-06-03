@@ -33,6 +33,18 @@ pub struct Bind<L, R, V> {
     pub value: Option<V>,
 }
 
+impl<L, R, V> Bind<L, R, V> {
+    pub fn into_borrowed(&self) -> Bind<&L, &R, &V> {
+        Bind { left: self.left.into_borrowed(), right: self.right.into_borrowed(), value: self.value.as_ref() }
+    }
+}
+
+impl<L: ToOwned<Owned = L>, R: ToOwned<Owned = R>, V: ToOwned<Owned = V>> Bind<&L, &R, &V> {
+    pub fn to_owned(&self) -> Bind<L, R, V> {
+        Bind { left: self.left.to_owned(), right: self.right.to_owned(), value: self.value.map(|v| v.to_owned()) }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resettable<A> {
     Set(A),
@@ -51,6 +63,24 @@ impl<A> Resettable<A> {
             Resettable::Unchanged => None,
             Resettable::Set(new) => Option::replace(value, new),
             Resettable::Reset => mem::take(value),
+        }
+    }
+
+    pub fn into_borrowed(&self) -> Resettable<&A> {
+        match self {
+            Self::Set(a) => Resettable::Set(a),
+            Self::Reset => Resettable::Reset,
+            Self::Unchanged => Resettable::Unchanged,
+        }
+    }
+}
+
+impl<A: ToOwned<Owned = A>> Resettable<&A> {
+    pub fn to_owned(&self) -> Resettable<A> {
+        match self {
+            Self::Set(a) => Resettable::Set((*a).to_owned()),
+            Self::Reset => Resettable::Reset,
+            Self::Unchanged => Resettable::Unchanged,
         }
     }
 }
@@ -80,12 +110,65 @@ pub enum RegisterError<K> {
 }
 
 #[derive(thiserror::Error, Debug)]
+pub enum MergeError<K> {
+    #[error("key is already registered")]
+    AlreadyRegistered(K),
+}
+
+impl<K: ToOwned<Owned = K>> MergeError<&K> {
+    pub fn to_owned(self) -> MergeError<K> {
+        let Self::AlreadyRegistered(k) = self;
+        MergeError::AlreadyRegistered(k.to_owned())
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
 pub enum BindError<K> {
     #[error("key is already unregistered")]
     AlreadyUnregistered(K),
 }
 
 impl<K: Ord, L, R, V> DiffBind<K, L, R, V> {
+    pub fn into_borrowed(&self) -> DiffBind<&K, &L, &R, &V> {
+        DiffBind {
+            unregistered: self.unregistered.iter().collect(),
+            registered: self.registered.iter().map(|(k, bind)| (k, bind.into_borrowed())).collect(),
+        }
+    }
+
+    /// Merge two states together, assuming that the other is a more recent update.
+    pub fn append(&mut self, most_recent: Self) -> Result<&mut Self, MergeError<K>> {
+        for key in most_recent.unregistered {
+            self.unregister(key);
+        }
+
+        for (key, bind) in most_recent.registered {
+            if self.registered.contains_key(&key) && bind.value.is_some() {
+                return Err(MergeError::AlreadyRegistered(key));
+            }
+
+            self.unregistered.remove(&key);
+
+            match self.registered.entry(key) {
+                Entry::Vacant(e) => {
+                    e.insert(bind);
+                }
+
+                Entry::Occupied(mut e) => {
+                    if !matches!(&bind.left, &Resettable::Unchanged) {
+                        e.get_mut().left = bind.left;
+                    }
+
+                    if !matches!(&bind.right, &Resettable::Unchanged) {
+                        e.get_mut().right = bind.right;
+                    }
+                }
+            };
+        }
+
+        Ok(self)
+    }
+
     pub fn register(&mut self, key: K, value: V, left: Option<L>, right: Option<R>) -> Result<(), RegisterError<K>> {
         if self.registered.contains_key(&key) {
             return Err(RegisterError::AlreadyRegistered(key));
@@ -135,6 +218,21 @@ impl<K: Ord, L, R, V> DiffBind<K, L, R, V> {
     pub fn unregister(&mut self, key: K) {
         self.registered.remove(&key);
         self.unregistered.insert(key);
+    }
+}
+
+impl<K, L, R, V> DiffBind<&K, &L, &R, &V>
+where
+    K: Ord + ToOwned<Owned = K>,
+    L: ToOwned<Owned = L>,
+    R: ToOwned<Owned = R>,
+    V: ToOwned<Owned = V>,
+{
+    pub fn to_owned(&self) -> DiffBind<K, L, R, V> {
+        DiffBind {
+            unregistered: self.unregistered.iter().map(|k| (*k).to_owned()).collect(),
+            registered: self.registered.iter().map(|(k, bind)| ((*k).to_owned(), bind.to_owned())).collect(),
+        }
     }
 }
 

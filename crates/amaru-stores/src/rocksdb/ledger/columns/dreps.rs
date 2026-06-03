@@ -14,7 +14,7 @@
 
 use std::collections::BTreeSet;
 
-use amaru_kernel::{CertificatePointer, DRepRegistration, Epoch, PROTOCOL_VERSION_9, ProtocolVersion, StakeCredential};
+use amaru_kernel::{CertificatePointer, DRepRegistration, Epoch, StakeCredential};
 use amaru_ledger::store::{
     StoreError,
     columns::{
@@ -26,11 +26,7 @@ use amaru_observability::trace_span;
 use rocksdb::Transaction;
 use tracing::{error, warn};
 
-use crate::rocksdb::{
-    accounts,
-    common::{PREFIX_LEN, as_key, as_value},
-    dreps_delegations,
-};
+use crate::rocksdb::common::{PREFIX_LEN, as_key, as_value};
 
 /// Name prefixed used for storing DReps entries. UTF-8 encoding for "drep"
 pub const PREFIX: [u8; PREFIX_LEN] = [0x64, 0x72, 0x65, 0x70];
@@ -66,14 +62,10 @@ pub fn add<DB>(
     for (credential, (anchor, registration)) in rows {
         let key = as_key(&PREFIX, &credential);
 
-        // Registration already exists. Which can represents one of two cases:
+        // Registration already exists. Which represents one of two cases:
         //
         // 1. The DRep is simply updating (register is None).
-        // 2. The DRep has unregistered and is now re-registering.
-        //
-        // The latter is possible since we do not delete DRep from storage when they unregister;
-        // but instead, we record the de-registration event; necessary to reconstruct a "valid"
-        // ledger state down the line.
+        // 2. The DRep is re-registering after a previous deregistration.
         let row = if let Some(mut row) =
             db.get_pinned(&key).map_err(|err| StoreError::Internal(err.into()))?.map(|d| unsafe_decode::<Row>(&d))
         {
@@ -89,7 +81,7 @@ pub fn add<DB>(
             Some(row)
         } else if let Some(DRepRegistration { deposit, registered_at, valid_until, .. }) = registration {
             // Brand new registration.
-            Some(Row { deposit, registered_at, valid_until, anchor: None, previous_deregistration: None })
+            Some(Row { deposit, registered_at, valid_until, anchor: None })
         } else {
             // Technically impossible, sign of a logic error.
             None
@@ -153,7 +145,6 @@ pub fn set_valid_until<DB>(
 pub fn remove<DB>(
     db: &Transaction<'_, DB>,
     rows: impl Iterator<Item = (Key, CertificatePointer)>,
-    protocol_version: ProtocolVersion,
 ) -> Result<(), StoreError> {
     let _span = trace_span!(
         amaru_observability::amaru::stores::ledger::columns::DREPS_REMOVE,
@@ -163,26 +154,11 @@ pub fn remove<DB>(
     );
     let _guard = _span.enter();
 
-    for (drep, pointer) in rows {
+    for (drep, _) in rows {
         let key = as_key(&PREFIX, &drep);
 
-        // NOTE: Due to a bug in protocol version 9, we need to clear any delegation relation that
-        // *ever* existed between this DRep and its delegators. That is the case even if the
-        // delegators are no longer delegated to the drep, but were at some point in the past.
-        //
-        // The `dreps_delegators` column remembers exactly this information. When we clean it from
-        // the DRep being removed, it yields back all the accounts that have been delegated to the
-        // DRep during its lifetime. And we unbind all of them.
-        if protocol_version <= PROTOCOL_VERSION_9 {
-            let resets = dreps_delegations::drop(db, &drep)?.into_iter().map(|delegator| (delegator, pointer));
-            accounts::reset_delegation(db, resets)?;
-        }
-
-        if let Some(mut row) =
-            db.get_pinned(&key).map_err(|err| StoreError::Internal(err.into()))?.map(|d| unsafe_decode::<Row>(&d))
-        {
-            row.previous_deregistration = Some(pointer);
-            db.put(key, as_value(row)).map_err(|err| StoreError::Internal(err.into()))?;
+        if db.get_pinned(&key).map_err(|err| StoreError::Internal(err.into()))?.is_some() {
+            db.delete(key).map_err(|err| StoreError::Internal(err.into()))?;
         } else {
             error!(
                 target: EVENT_TARGET,

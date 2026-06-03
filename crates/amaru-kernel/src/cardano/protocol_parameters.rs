@@ -641,8 +641,6 @@ mod tests {
     use proptest::{collection, option, prelude::*};
 
     use super::PREPROD_DEFAULT_PROTOCOL_PARAMETERS;
-    #[cfg(not(target_os = "windows"))]
-    use crate::prop_cbor_roundtrip;
     use crate::{
         CostModel, CostModels, DRepVotingThresholds, ExUnitPrices, ExUnits, GovernanceAction, Hash, KeyValuePairs,
         Lovelace, Nullable, PoolVotingThresholds, ProposalId, ProtocolParamUpdate, ProtocolParameters, ProtocolVersion,
@@ -651,7 +649,7 @@ mod tests {
     };
 
     #[cfg(not(target_os = "windows"))]
-    prop_cbor_roundtrip!(ProtocolParameters, any_protocol_parameter());
+    crate::prop_cbor_roundtrip!(ProtocolParameters, any_protocol_parameter());
 
     prop_compose! {
         pub fn any_ex_units()(

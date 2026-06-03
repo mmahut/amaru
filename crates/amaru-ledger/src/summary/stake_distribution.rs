@@ -14,15 +14,13 @@
 
 use std::collections::BTreeMap;
 
-use amaru_iter_borrow::borrowable_proxy::BorrowableProxy;
-use amaru_kernel::{
-    DRep, Epoch, HasLovelace, Lovelace, Network, PoolId, ProtocolParameters, StakeCredential, expect_stake_credential,
-};
+use amaru_kernel::{DRep, Epoch, HasLovelace, Lovelace, Network, PoolId, StakeCredential, expect_stake_credential};
 use serde::ser::SerializeStruct;
 use tracing::info;
 
 use crate::{
-    store::{Snapshot, StoreError, columns::*},
+    epoch_transition::PoolsEpochTransitionUpdates,
+    store::{Snapshot, StoreError},
     summary::{
         AccountState, PoolState,
         governance::{DRepState, GovernanceSummary},
@@ -30,8 +28,6 @@ use crate::{
         serde::{encode_drep, encode_pool_id, encode_stake_credential, serialize_map},
     },
 };
-
-const EVENT_TARGET: &str = "amaru::ledger::state::stake_distribution";
 
 /// A stake distribution snapshot useful for:
 ///
@@ -75,37 +71,31 @@ impl StakeDistribution {
     /// Invariant: The given store is expected to be a snapshot taken at the end of an epoch.
     pub fn new(
         db: &impl Snapshot,
-        protocol_parameters: &ProtocolParameters,
         GovernanceSummary { mut dreps, deposits }: GovernanceSummary,
     ) -> Result<Self, StoreError> {
         let epoch = db.epoch();
+        let stake_pool_deposit = db.protocol_parameters()?.stake_pool_deposit;
 
-        let mut refunds = BTreeMap::new();
+        let mut refunds: BTreeMap<StakeCredential, Lovelace> = BTreeMap::new();
+
         let mut pools = db
             .iter_pools()?
             .map(|(pool, row)| {
-                let reward_account = expect_stake_credential(&row.current_params.reward_account);
-
-                // NOTE(POOL_VOTING_STAKE_DISTRIBUTION):
+                // NOTE: Pool voting stake distribution & pool retirements
                 //
                 // We need to tick pool as part of the stake distribution calculation, in order to
                 // know whether a pool will retire in the next epoch. This is because, votes
                 // ratification happens *after* pools reaping, and thus, nullify voting power of
                 // pools that are retiring.
-                pools::Row::tick(
-                    Box::new(BorrowableProxy::new(Some(row.clone()), |dropped| {
-                        if dropped.is_none() {
-                            // FIXME: Store the deposit with the pool, and ensures the same deposit
-                            // it returned back.
-                            //
-                            // FIXME: Handle the case where there would be more than one refund (in
-                            // case where many pools with a same reward account retire all at
-                            // once).
-                            refunds.insert(reward_account, protocol_parameters.stake_pool_deposit);
-                        }
-                    })),
-                    epoch + 1,
-                );
+                if PoolsEpochTransitionUpdates::is_retiring(epoch + 1, &row) {
+                    // FIXME: Store the deposit with the pool, and ensures the same deposit
+                    // it returned back.
+                    let reward_account = expect_stake_credential(&row.current_params.reward_account);
+                    refunds
+                        .entry(reward_account)
+                        .and_modify(|refund| *refund += stake_pool_deposit)
+                        .or_insert(stake_pool_deposit);
+                }
 
                 (
                     pool,
@@ -134,31 +124,9 @@ impl StakeDistribution {
                             let PoolState { registered_at, .. } = pools.get(&pool)?;
                             if &since >= registered_at { Some(pool) } else { None }
                         }),
-                        drep: account.drep.and_then(|(drep, since)| match drep {
+                        drep: account.drep.and_then(|(drep, _)| match drep {
                             DRep::Abstain | DRep::NoConfidence => Some(drep),
-                            DRep::Key { .. } | DRep::Script { .. } => {
-                                let DRepState { previous_deregistration, .. } = dreps.get(&drep)?;
-
-                                // NOTE(PROTOCOL_VERSION_9):
-                                //
-                                // This is subtle. Delegation to a non-existing DRep was authorized
-                                // in PROTOCOL_VERSION_9.
-                                //
-                                // It became correctly validated by ledger rules after.
-                                //
-                                // This means that there are cases where a delegation starts
-                                // *before* a drep even existed. So we cannot simply check:
-                                //
-                                // 'if since > registered_at'
-                                //
-                                // It's also not correct to gate this condition by protocol version
-                                // because invalid such delegation may pre-exist in the database,
-                                // even when under PROTOCOL_VERSION_10.
-                                //
-                                // So we fallback to checking that no de-registration happened
-                                // post-delegation.
-                                if &Some(since) > previous_deregistration { Some(drep) } else { None }
-                            }
+                            DRep::Key { .. } | DRep::Script { .. } => dreps.contains_key(&drep).then_some(drep),
                         }),
                     },
                 )
@@ -264,15 +232,13 @@ impl StakeDistribution {
         });
 
         info!(
-            target: EVENT_TARGET,
-            epoch = %epoch,
+            name: "stake_distribution.snapshot",
             accounts = %accounts.len(),
             pools = %pools.len(),
             active_stake = %active_stake,
             dreps = %dreps.len(),
             dreps_voting_stake = %dreps_voting_stake,
             pools_voting_stake = %pools_voting_stake,
-            "stake_distribution.snapshot",
         );
 
         Ok(StakeDistribution { epoch, active_stake, dreps_voting_stake, pools_voting_stake, accounts, pools, dreps })
@@ -436,26 +402,12 @@ pub mod tests {
             metadata in option::of(any_anchor()),
             stake in 0_u64..1_000_000_000_000,
             registered_at in any_certificate_pointer(u64::MAX),
-            previous_deregistration in option::of(any_certificate_pointer(u64::MAX)),
         ) -> DRepState {
-            // Ensure registered at is always strictly after previous de-registrations.
-            let (registered_at, previous_deregistration) = if previous_deregistration > Some(registered_at) {
-                #[expect(clippy::unwrap_used)]
-                // NOTE: .unwrap can't fail because of the 'if' guard.
-                (previous_deregistration.unwrap(), Some(registered_at))
-            } else if previous_deregistration == Some(registered_at) {
-                (registered_at, None)
-            } else {
-                (registered_at, previous_deregistration)
-            };
-
-
             DRepState {
                 valid_until: Some(Epoch::from(valid_until)),
                 metadata,
                 stake,
                 registered_at,
-                previous_deregistration
             }
         }
     }

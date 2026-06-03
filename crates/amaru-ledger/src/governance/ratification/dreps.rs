@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use amaru_kernel::{DRep, DRepVotingThresholds, Epoch, PROTOCOL_VERSION_9, ProtocolParamUpdate, ProtocolVersion, Vote};
+use amaru_kernel::{DRep, DRepVotingThresholds, Epoch, ProtocolParamUpdate, Vote};
 use num::Zero;
 
 use super::{OrphanProposal, ProposalEnum};
@@ -32,18 +32,13 @@ use crate::{
 /// - the kind of proposal;
 /// - whether the system is in a state of no-confidence (i.e. is there any lack of constitutional
 ///   committee?);
-/// - whether the system is still in the governance bootstrap phase (protocol version <= 9)
 pub fn voting_threshold(
-    protocol_version: ProtocolVersion,
     is_state_of_no_confidence: bool,
     voting_thresholds: &DRepVotingThresholds,
     proposal: &ProposalEnum,
 ) -> Option<SafeRatio> {
     match proposal {
         ProposalEnum::Orphan(OrphanProposal::NicePoll) => None,
-
-        _ if protocol_version <= PROTOCOL_VERSION_9 => Some(SafeRatio::zero()),
-
         ProposalEnum::ProtocolParameters(update, _) => {
             let network = any_update_in_network_group(voting_thresholds, update);
             let economic = any_update_in_economic_group(voting_thresholds, update);
@@ -186,10 +181,8 @@ pub fn tally(
 mod tests {
     use std::{collections::BTreeMap, rc::Rc};
 
-    use amaru_kernel::{
-        DRep, Epoch, PROTOCOL_VERSION_9, PROTOCOL_VERSION_10, Vote, any_drep_voting_thresholds, any_vote_ref,
-    };
-    use num::{One, Zero};
+    use amaru_kernel::{DRep, Epoch, Vote, any_drep_voting_thresholds, any_vote_ref};
+    use num::One;
     use proptest::{collection, prelude::*, sample, test_runner::RngSeed};
 
     use super::{tally, voting_threshold};
@@ -203,28 +196,6 @@ mod tests {
             stake_distribution::{StakeDistribution, tests::any_stake_distribution_no_pools},
         },
     };
-
-    proptest! {
-        #[test]
-        fn prop_vote_disabled_in_v9(
-            is_state_of_no_confidence in any::<bool>(),
-            drep_voting_thresholds in any_drep_voting_thresholds(),
-            proposal in any_proposal_enum(),
-        ) {
-            let threshold = voting_threshold(
-                PROTOCOL_VERSION_9,
-                is_state_of_no_confidence,
-                &drep_voting_thresholds,
-                &proposal,
-            );
-
-            prop_assert!(
-                threshold.is_none() && proposal.is_nice_poll()
-                || threshold == Some(SafeRatio::zero())
-            )
-        }
-    }
-
     proptest! {
         #[test]
         fn prop_state_of_no_confidence_only_influence_cc(
@@ -232,14 +203,12 @@ mod tests {
             proposal in any_proposal_enum(),
         ) {
             let threshold_normal = voting_threshold(
-                PROTOCOL_VERSION_10,
                 false,
                 &drep_voting_thresholds,
                 &proposal,
             );
 
             let threshold_no_confidence = voting_threshold(
-                PROTOCOL_VERSION_10,
                 true,
                 &drep_voting_thresholds,
                 &proposal,

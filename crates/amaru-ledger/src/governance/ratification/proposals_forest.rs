@@ -32,7 +32,7 @@ use super::{
     proposals_roots::ProposalsRootsRc,
     proposals_tree::{ProposalsTree, Sibling},
 };
-use crate::{store::columns::proposals, summary::into_safe_ratio};
+use crate::summary::into_safe_ratio;
 
 #[derive(Debug, Clone)]
 pub struct ProposalsForest {
@@ -103,19 +103,21 @@ impl ProposalsForest {
     pub fn drain(
         mut self,
         era_history: &'_ EraHistory,
-        mut proposals: Vec<(ComparableProposalId, proposals::Row)>,
+        mut proposals: Vec<(Rc<ComparableProposalId>, CandidateProposal)>,
     ) -> Result<Self, ProposalsInsertError<ComparableProposalId>> {
         let current_epoch = self.current_epoch;
 
+        proposals.sort_by_key(|(_, row)| row.proposed_in);
+
         proposals.drain(..).try_fold::<_, _, Result<_, ProposalsInsertError<_>>>(&mut self, |forest, (id, row)| {
-            // There shouldn't be any invalid proposals left at this point.
+            // There shouldn't be any expired proposals left at this point.
             assert!(
                 row.valid_until + 1 >= current_epoch,
                 "proposal {id:?} is expired (ratification epoch = {current_epoch}) but was \
                         drained into the forest: {row:?}",
             );
 
-            forest.insert(era_history, id, row.proposed_in, row.proposal.gov_action)?;
+            forest.insert(era_history, id, row.proposed_in, row.governance_action)?;
 
             Ok(forest)
         })?;
@@ -137,13 +139,11 @@ impl ProposalsForest {
     pub fn insert(
         &mut self,
         era_history: &'_ EraHistory,
-        id: ComparableProposalId,
+        id: Rc<ComparableProposalId>,
         proposed_in: ProposalPointer,
         proposal: GovernanceAction,
     ) -> Result<(), ProposalsInsertError<ComparableProposalId>> {
         use amaru_kernel::GovernanceAction::*;
-
-        let id = Rc::new(id);
 
         let mut insert = |proposal| -> Result<(), ProposalsInsertError<ComparableProposalId>> {
             priority_insert(&mut self.sequence, id.clone(), (&proposed_in, &proposal), &self.proposals);
@@ -418,8 +418,15 @@ impl ProposalsForestCompass {
         // - `forest.current_epoch` contains the minimum epoch for which we might consider
         // for ratification. If a proposal was submitted in the epoch that just ended, we
         // skip it.
-        if proposed_in >= &forest.current_epoch {
-            debug!(id = %id, reason = "too fresh; ratification will begin next epoch", "skipping proposal");
+        if proposed_in > &forest.current_epoch {
+            debug!(
+                name: "proposals_forest::step::skip",
+                id = %id,
+                %proposed_in,
+                ratifying_epoch = %forest.current_epoch,
+                reason = "too fresh; ratification will begin next epoch",
+                "proposals_forest::step::skip"
+            );
             return None;
         }
 
@@ -667,6 +674,13 @@ impl fmt::Display for ProposalsForest {
     }
 }
 
+#[derive(Debug)]
+pub struct CandidateProposal {
+    pub valid_until: Epoch,
+    pub proposed_in: ProposalPointer,
+    pub governance_action: GovernanceAction,
+}
+
 // Helpers
 // ----------------------------------------------------------------------------
 
@@ -738,16 +752,18 @@ mod tests {
     };
 
     use amaru_kernel::{
-        ComparableProposalId, Epoch, GovernanceAction, KeyValuePairs, Lovelace, Nullable,
-        PREPROD_DEFAULT_PROTOCOL_PARAMETERS, ProposalId, ProposalPointer, ProtocolParameters, RationalNumber, Set,
-        any_comparable_proposal_id, any_constitution, any_gov_action, any_proposal_pointer, any_protocol_params_update,
-        any_protocol_version, any_reward_account,
+        Anchor, ComparableProposalId, Epoch, GovernanceAction, Hash, KeyValuePairs, Lovelace, Nullable,
+        PREPROD_DEFAULT_PROTOCOL_PARAMETERS, PROTOCOL_VERSION_10, Proposal, ProposalId, ProposalPointer,
+        ProtocolParameters, RationalNumber, Set, Slot, TransactionPointer, any_comparable_proposal_id,
+        any_constitution, any_gov_action, any_proposal_pointer, any_protocol_params_update, any_protocol_version,
+        any_reward_account, empty_bytes,
     };
     use proptest::{collection, prelude::*, test_runner::RngSeed};
 
     use super::ProposalsForest;
     use crate::governance::ratification::{
-        CommitteeUpdate, OrphanProposal, ProposalEnum, ProposalsRootsRc, any_committee_update, any_proposal_enum,
+        CandidateProposal, CommitteeUpdate, OrphanProposal, ProposalEnum, ProposalsRootsRc, any_committee_update,
+        any_proposal_enum,
         tests::{ERA_HISTORY, MAX_ARBITRARY_EPOCH, MIN_ARBITRARY_EPOCH},
     };
 
@@ -776,6 +792,36 @@ mod tests {
         size
     }
 
+    #[test]
+    fn drain_sorts_proposals_in_parent_child_order() {
+        // proposal_id_1 is lexicographically *greater* than proposal_id_2, so iterating a BTreeMap
+        // keyed by id would yield proposal_id_2 before proposal_id_1.
+        // Yet this test sets up proposal_id_1 as the parent of proposal_id_2,
+        // so the drain should yield proposal_id_1 before proposal_id_2.
+        let proposal_id_1 = make_id(0xff);
+        let proposal_id_2 = make_id(0x01);
+        assert!(proposal_id_1 > proposal_id_2);
+
+        // first hard fork
+        let proposal_1 = make_proposal(Nullable::Null);
+
+        // second hard-fork with `proposal_a` as parent.
+        let proposal_2 = make_proposal(Nullable::Some(proposal_id_1.clone()));
+
+        let proposal_id_1 = Rc::new(proposal_id_1);
+        let proposal_id_2 = Rc::new(proposal_id_2);
+
+        let proposals = vec![
+            into_candidate(proposal_id_2.clone(), proposal_2, 20),
+            into_candidate(proposal_id_1.clone(), proposal_1, 10),
+        ];
+
+        let forest = make_forest().drain(&ERA_HISTORY, proposals).unwrap();
+        let sequenced_proposals: Vec<_> = forest.sequence.iter().map(|rc| rc.as_ref()).collect();
+
+        assert_eq!(sequenced_proposals, vec![proposal_id_1.as_ref(), proposal_id_2.as_ref()]);
+    }
+
     proptest! {
         #[test]
         fn prop_insert_increase_sizes_by_one(
@@ -792,7 +838,7 @@ mod tests {
                 action = set_parent(action, select(&parents, parent));
             }
 
-            forest.insert(&ERA_HISTORY, id, pointer, action).unwrap();
+            forest.insert(&ERA_HISTORY, Rc::new(id), pointer, action).unwrap();
 
             let size_after = check_invariants(&forest);
 
@@ -934,7 +980,7 @@ mod tests {
                 }
 
                 prop_assert!(
-                    ERA_HISTORY.slot_to_epoch(pointer.slot(), pointer.slot()).unwrap() < forest.current_epoch,
+                    ERA_HISTORY.slot_to_epoch(pointer.slot(), pointer.slot()).unwrap() <= forest.current_epoch,
                     "yielded proposal too early for ratification",
                 );
 
@@ -982,7 +1028,7 @@ mod tests {
             action in any_gov_action(),
             proposed_in in any_proposal_pointer(u64::MAX),
         ) {
-            let _ = forest.insert(&ERA_HISTORY, root, proposed_in, action);
+            let _ = forest.insert(&ERA_HISTORY, Rc::new(root), proposed_in, action);
         }
     }
 
@@ -1161,7 +1207,7 @@ mod tests {
                             std::iter::empty().chain(protocol_parameters.1).chain(orphan).for_each(
                                 |(id, pointer, action)| {
                                     #[expect(clippy::unwrap_used)]
-                                    forest.insert(&ERA_HISTORY, id.clone(), pointer, action.clone()).unwrap();
+                                    forest.insert(&ERA_HISTORY, Rc::new(id.clone()), pointer, action.clone()).unwrap();
                                 },
                             );
                         } else {
@@ -1173,7 +1219,7 @@ mod tests {
                                 .chain(orphan)
                                 .for_each(|(id, pointer, action)| {
                                     #[expect(clippy::unwrap_used)]
-                                    forest.insert(&ERA_HISTORY, id.clone(), pointer, action.clone()).unwrap();
+                                    forest.insert(&ERA_HISTORY, Rc::new(id.clone()), pointer, action.clone()).unwrap();
                                 });
                         }
 
@@ -1318,5 +1364,57 @@ mod tests {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             f.write_str(&self.0.to_string())
         }
+    }
+
+    /// Use a fixed epoch for proposals and proposals forest
+    fn current_epoch() -> Epoch {
+        Epoch::from(MIN_ARBITRARY_EPOCH + 1)
+    }
+
+    /// Make a proposals forest for the "current epoch" above
+    fn make_forest() -> ProposalsForest {
+        ProposalsForest::new(
+            current_epoch(),
+            &ProposalsRootsRc {
+                protocol_parameters: None,
+                hard_fork: None,
+                constitutional_committee: None,
+                constitution: None,
+            },
+            Lovelace::MAX,
+        )
+    }
+
+    /// Make a simple proposal id based on a hash created from just one byte
+    fn make_id(byte: u8) -> ComparableProposalId {
+        let proposal_id = ProposalId { transaction_id: Hash::new([byte; 32]), action_index: 0 };
+        ComparableProposalId::from(proposal_id)
+    }
+
+    /// Make a proposal with an optional parent
+    fn make_proposal(parent: Nullable<ComparableProposalId>) -> Proposal {
+        Proposal {
+            deposit: 0,
+            reward_account: empty_bytes(),
+            gov_action: GovernanceAction::HardForkInitiation(parent.map(ProposalId::from), PROTOCOL_VERSION_10),
+            anchor: Anchor { url: "https://example.com".to_string(), content_hash: Hash::new([0u8; 32]) },
+        }
+    }
+
+    /// Make a proposal candidate from a raw proposal and id
+    fn into_candidate(
+        proposal_id: Rc<ComparableProposalId>,
+        proposal: Proposal,
+        slot: u64,
+    ) -> (Rc<ComparableProposalId>, CandidateProposal) {
+        let proposed_in = ProposalPointer {
+            transaction: TransactionPointer { slot: Slot::from(slot), transaction_index: 0 },
+            proposal_index: 0,
+        };
+
+        (
+            proposal_id,
+            CandidateProposal { proposed_in, valid_until: current_epoch(), governance_action: proposal.gov_action },
+        )
     }
 }

@@ -49,26 +49,9 @@ enum Command {
     ///   - preprod
     ///   - preview
     ///
-    /// It is a combination of the following fine-grained steps:
-    ///
-    ///   - import-ledger-state
-    ///   - import-headers
-    ///   - import-nonces
+    /// It imports snapshots, bootstrap headers and bootstrap nonces in one step.
     #[clap(verbatim_doc_comment)]
     Bootstrap(cmd::bootstrap::Args),
-
-    /// Convert ledger state as produced by Haskell node into data suitable
-    /// for amaru.
-    ///
-    /// This command allows one to take a snapshot as produced by the
-    /// `LedgerDB` in the Haskell node and extract the informations
-    /// relevant to bootstrap an Amaru node, namely:
-    ///
-    /// * The `NewEpochState` part of the snapshot that contains the
-    ///   core state of the ledger, which is written to a file whose
-    ///   name is the point at which the snapshot was produced,
-    /// * The`Nonces` from the `HeaderState` which are written to a `nonces.json` file.
-    ConvertLedgerState(cmd::convert_ledger_state::Args),
 
     /// Dump the content of the chain database for troubleshooting purposes.
     ///
@@ -84,6 +67,9 @@ enum Command {
     /// Remove the validation status of the given blocks from the chain database.
     RemoveValidationStatus(cmd::remove_validation_status::Args),
 
+    /// Remove the given chain fragment from the chain database.
+    RemoveChain(cmd::remove_chain::Args),
+
     /// Dump all registered trace schemas as JSON Schema.
     ///
     /// This command outputs all registered trace schemas in JSON Schema format.
@@ -94,16 +80,8 @@ enum Command {
     /// Fetch specified headers
     FetchChainHeaders(cmd::fetch_chain_headers::Args),
 
-    /// Import block headers
-    #[clap(alias = "import-chain-db")]
-    ImportHeaders(cmd::import_headers::Args),
-
-    /// Import the ledger state from a CBOR export produced by a Haskell node.
-    #[clap(alias = "import")]
-    ImportLedgerState(cmd::import_ledger_state::Args),
-
-    /// Import VRF nonces intermediate states
-    ImportNonces(cmd::import_nonces::Args),
+    /// Create the three consecutive epoch snapshots needed for bootstrap.
+    CreateSnapshots(cmd::create_snapshots::Args),
 
     /// Migrate the chain database to the current version.
     ///
@@ -145,6 +123,10 @@ struct Cli {
 
     #[clap(long, action, env("AMARU_COLOR"))]
     color: Option<Color>,
+
+    /// Do not initialize tracing library
+    #[arg(short, long)]
+    quiet: bool,
 }
 
 // TODO(rkuhn): properly measure and design the Tokio runtime setup we need.
@@ -159,7 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = <Cli as FromArgMatches>::from_arg_matches(&matches)?;
 
     // Skip observability setup for dump-traces-schema to avoid polluting stderr
-    let skip_logging = matches!(args.command, Command::DumpTracesSchema(_));
+    let skip_logging = args.quiet || matches!(args.command, Command::DumpTracesSchema(_));
 
     let (metrics, teardown) = if skip_logging {
         (None, Box::new(|| Ok(())) as Box<dyn FnOnce() -> Result<(), Box<dyn std::error::Error>>>)
@@ -173,24 +155,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (Some(m), t)
     };
 
-    if !skip_logging {
-        info!(
-            with_open_telemetry = args.with_open_telemetry,
-            with_json_traces = args.with_json_traces,
-            "Started with global arguments"
-        );
-    }
+    info!(
+        with_open_telemetry = args.with_open_telemetry,
+        with_json_traces = args.with_json_traces,
+        "Started with global arguments"
+    );
 
     let result = match args.command {
         Command::Run(args) => cmd::run::run(args, metrics.unwrap()).await,
-        Command::ImportLedgerState(args) => cmd::import_ledger_state::run(args).await,
-        Command::ImportHeaders(args) => cmd::import_headers::run(args).await,
-        Command::ImportNonces(args) => cmd::import_nonces::run(args).await,
         Command::Bootstrap(args) => cmd::bootstrap::run(args).await,
         Command::FetchChainHeaders(args) => cmd::fetch_chain_headers::run(args).await,
-        Command::ConvertLedgerState(args) => cmd::convert_ledger_state::run(args).await,
+        Command::CreateSnapshots(args) => cmd::create_snapshots::run(args).await,
         Command::DumpChainDB(args) => cmd::dump_chain_db::run(args).await,
         Command::RemoveValidationStatus(args) => cmd::remove_validation_status::run(args).await,
+        Command::RemoveChain(args) => cmd::remove_chain::run(args).await,
         Command::DumpTracesSchema(args) => cmd::dump_schemas::run(args).await,
         Command::MigrateChainDB(args) => cmd::migrate_chain_db::run(args).await,
         Command::ResetToEpoch(args) => cmd::reset_to_epoch::run(args).await,

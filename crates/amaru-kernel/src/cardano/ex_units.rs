@@ -19,6 +19,10 @@ pub fn sum_ex_units(left: ExUnits, right: &ExUnits) -> ExUnits {
     ExUnits { mem: left.mem + right.mem, steps: left.steps + right.steps }
 }
 
+pub fn fmt(units: &ExUnits) -> String {
+    format!("{{mem={}, cpu={}}}", units.mem, units.steps)
+}
+
 #[cfg(any(test, feature = "test-utils"))]
 pub use proxy::*;
 

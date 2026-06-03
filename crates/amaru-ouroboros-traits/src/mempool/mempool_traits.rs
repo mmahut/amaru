@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use amaru_kernel::TransactionId;
 
-use crate::mempool::{MempoolError, MempoolSeqNo, TxInsertResult, TxOrigin};
+use crate::mempool::{MempoolError, MempoolSeqNo, MempoolState, TxInsertResult, TxOrigin};
 
 /// An simple mempool interface to:
 ///
@@ -62,6 +62,21 @@ pub trait TxSubmissionMempool<Tx: Send + Sync + 'static>: Send + Sync {
     /// Retrieve a list of transactions for the given ids.
     fn get_txs_for_ids(&self, ids: &[TransactionId]) -> Vec<Tx>;
 
+    /// Retrieve all transactions currently active for relay.
+    fn mempool_txs(&self) -> Vec<Tx>;
+
+    /// Remove transactions from the active relay set.
+    fn remove_txs(&self, _ids: &[TransactionId]) -> Result<(), MempoolError>;
+
     /// Get the last assigned sequence number in the mempool.
     fn last_seq_no(&self) -> MempoolSeqNo;
+
+    /// Returns `true` if accepting `additional_bytes` would push the
+    /// mempool past its configured maximum byte size.
+    fn is_near_capacity(&self, additional_bytes: u64) -> bool;
+
+    /// Snapshot of the mempool's tx count and cumulative CBOR size, used
+    /// to refresh observability gauges. Returned together so observers can
+    /// avoid taking the underlying lock twice.
+    fn state(&self) -> MempoolState;
 }

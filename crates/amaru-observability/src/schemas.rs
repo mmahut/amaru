@@ -98,12 +98,6 @@ define_schemas! {
                 required point_slot: u64
             }
 
-            /// Epoch transition processing
-            public EPOCH_TRANSITION {
-                required from: u64
-                required into: u64
-            }
-
             /// Resolve transaction inputs from various sources
             public RESOLVE_INPUTS {
                 optional resolved_from_context: u64
@@ -124,39 +118,62 @@ define_schemas! {
                 required epoch: u64
             }
 
-            /// Tick proposals for ratification
-            public TICK_PROPOSALS {
-                required proposals_count: u64
-            }
-
             /// Prepare block for validation
             public PREPARE_BLOCK {}
 
             /// Validate block against rules
             public VALIDATE_BLOCK {}
 
-            /// Tick pool operations
-            public TICK_POOL {}
-
             /// Compute rewards for epoch
-            public COMPUTE_REWARDS {}
-
-            /// Forward ledger state with new volatile state
-            public FORWARD {}
-
-            /// Persist the oldest volatile block to stable storage once the security parameter is reached
-            public VOLATILE_TO_STABLE {
-                required persisted_point: String
-                required volatile_len_before: u64
-                required volatile_len_after: u64
-                required k: u64
+            public COMPUTE_REWARDS {
+                required current_epoch: u64
+                optional stake_distribution_epoch: u64
             }
 
-            /// End epoch operations
+            /// Forward ledger state with new volatile state
+            public PUSH_STATE {}
+
+            /// Roll backward to a specific point
+            public ROLL_BACKWARD {
+                required rollback_point: String
+            }
+        }
+
+        epoch_transition {
+            /// Epoch transition processing
+            public EPOCH_TRANSITION {
+                required from: u64
+                required into: u64
+            }
+
+            /// Perform end-of-epoch epoch boundary computations
             public END_EPOCH {}
 
-            /// Begin epoch operations
+            /// Perform start-of-epoch epoch boundary computations
             public BEGIN_EPOCH {}
+
+            /// Flushing the epoch transition overlay to disk
+            public APPLYING_OVERLAY {
+                /// Epoch for which this overlay is being flush; This is the *currently active*
+                /// epoch.
+                required epoch: u64
+                /// Whether to end the epoch; in case Amaru is restarting mid-update.
+                optional should_end_epoch: bool,
+                /// Whether to take an on-disk snapshot; in case Amaru is restarting mid-update.
+                optional should_snapshot: bool,
+                /// Whether to begin the epoch; in case Amaru is restarting mid-update.
+                optional should_begin_epoch: bool,
+            }
+
+            /// Create pools updates
+            public NEW_POOLS_UPDATES {}
+
+            /// Create governance updates (i.e. ratify proposals) at an epoch boundary.
+            public NEW_GOVERNANCE_UPDATES {
+                /// Total number of proposals in scope. This also includes proposals that have
+                /// *just* been submitted.
+                required proposals_count: u64
+            }
 
             /// Reset fees to zero
             public RESET_FEES {}
@@ -164,14 +181,42 @@ define_schemas! {
             /// Reset blocks count to zero
             public RESET_BLOCKS_COUNT {}
 
-            /// Roll backward to a specific point
-            public ROLL_BACKWARD {
-                required rollback_point: String
+            /// Pay rewards to all accounts before the epoch end
+            public PAY_REWARDS {
+                /// Total number of accounts that received non-zero rewards
+                optional accounts_paid: u64
+                /// Total rewards effectively paid to ALL accounts; does not include unassignable rewards
+                optional rewards_paid: u64
+                /// Treasury increase; corresponding to both the treasury tax and the unpaid rewards
+                optional treasury_delta: u64
+                /// Reserves depletion from incentives; always negative.
+                optional reserves_delta: i64
             }
 
-            /// Create ratification context
-            public RATIFICATION_CONTEXT_NEW {}
+            /// Pay withdrawals to accounts, or refund deposits
+            public PAY_OR_REFUND_ACCOUNTS {
+                /// Total quantity of ADA paid, excluding treasury leftovers
+                optional total_paid_or_refunded: u64
+                /// Total amounts that couldn't be paid to accounts, going back to treasury instead.
+                optional treasury_leftovers: u64
+            }
 
+            /// Updating pools metadata or retiring pools at an epoch boundary.
+            public UPDATE_OR_RETIRE_POOLS {
+                /// Total number of pools updating metadata
+                required pools_updated: u64
+                /// Total number of pools retired
+                required pools_retired: u64
+            }
+
+            /// Enact all governance updates and flush their outcome to disk
+            public APPLY_GOVERNANCE_UPDATES {}
+
+            /// Add or remove CC members; or switch to a no-confidence state
+            public UPDATE_CONSTITUTIONAL_COMMITTEE {
+                /// Whether or not updates switches the committee to a "no-confidence" state
+                required no_confidence: bool
+            }
         }
 
         context {
@@ -278,8 +323,19 @@ define_schemas! {
         }
 
         governance {
+            /// Create ratification context
+            public NEW_RATIFICATION_CONTEXT {
+                /// Epoch to ratify; distinct from the actual epoch this calculation is happening.
+                required ratifying_epoch: u64
+                /// Value of the treasury considered for this ratification round.
+                optional treasury: u64
+                /// Total number of votes to ratify.
+                optional votes: u64
+            }
+
             /// Ratify proposals at epoch boundary
             public RATIFY_PROPOSALS {
+                required epoch: u64
                 optional roots_protocol_parameters: String
                 optional roots_hard_fork: String
                 optional roots_constitutional_committee: String
@@ -287,9 +343,22 @@ define_schemas! {
             }
 
             /// Ratify a proposal while traversing the governance forest
-            RATIFYING {
+            public RATIFYING {
                 required proposal_id: String
                 required proposal_kind: String
+                optional approved_by_constitutional_committee: bool
+                optional committee_approval_threshold: String
+                optional approved_by_pools: bool
+                optional pools_approval_threshold: String
+                optional approved_by_dreps: bool
+                optional dreps_approval_threshold: String
+            }
+
+            /// Computing enactment of a ratified proposal
+            public ENACTING {
+                required proposal_id: String
+                required proposal_kind: String
+                optional pruned_relatives: String
             }
         }
     }
@@ -312,21 +381,10 @@ define_schemas! {
 
             /// Epoch transition tracking
             public TRY_EPOCH_TRANSITION {
-                optional has_from: bool
-                optional has_to: bool
-                optional point: String
-                optional snapshots: String
+                required from: String
+                required to: String
                 required db_system_name: String
                 required db_operation_name: String
-            }
-
-            /// Remove DRep delegations
-            public DREPS_DELEGATION_REMOVE {
-                required drep_hash: amaru_kernel::Hash<28>
-                required drep_type: amaru_kernel::StakeCredentialKind
-                required db_system_name: String
-                required db_operation_name: String
-                required db_collection_name: String
             }
 
             columns {
@@ -402,13 +460,6 @@ define_schemas! {
 
                 /// Reset rewards counters for many accounts
                 public ACCOUNTS_RESET_MANY {
-                    required db_system_name: String
-                    required db_operation_name: String
-                    required db_collection_name: String
-                }
-
-                /// Clear DRep delegation for accounts (protocol v9 bug compat)
-                public ACCOUNTS_RESET_DELEGATION {
                     required db_system_name: String
                     required db_operation_name: String
                     required db_collection_name: String
@@ -579,6 +630,49 @@ define_schemas! {
         }
     }
 
+    mempool {
+        /// Transaction received by the mempool stage, before validation.
+        public TX_RECEIVED {
+            required tx_id: String
+            required origin: String
+        }
+
+        /// Transaction validated and inserted into the mempool.
+        public TX_ACCEPTED {
+            required tx_id: String
+            required seq_no: u64
+            required origin: String
+        }
+
+        /// Transaction rejected at insertion. Reason ∈ {invalid, duplicate, mempool_full}.
+        public TX_REJECTED {
+            required tx_id: String
+            required reason: String
+            optional validation_error: String
+        }
+
+        /// Transaction removed from the mempool. Reason ∈ {invalid_after_tip}.
+        /// TODO: split the reason into invalid after tip + present in applied block
+        public TX_EVICTED {
+            required tx_id: String
+            required reason: String
+        }
+
+        /// Detail trace carrying upstream peer attribution for a received tx.
+        TX_RECEIVED_DETAIL {
+            required tx_id: String
+            required peer: String
+        }
+
+        /// Detail trace for a tip-driven revalidation pass.
+        REVALIDATION_DETAIL {
+            required tip_slot: u64
+            required total_before: u64
+            required evicted_count: u64
+            required duration_micros: u64
+        }
+    }
+
     protocols {
         connection {
             /// Handle connection stage messages
@@ -622,6 +716,26 @@ define_schemas! {
                 required peer: String
                 required conn_id: String
                 required role: String
+            }
+        }
+
+        peer_selection {
+            /// A connection has been established and the handshake completed successfully.
+            public CONNECTED {
+                required peer: String
+                required conn_id: u64
+                required direction: String
+                required full_duplex_capable: bool
+                required full_duplex: bool
+            }
+
+            /// A connection has been terminated (graceful disconnect, error, handshake refusal,
+            /// or network error).
+            public DISCONNECTED {
+                required peer: String
+                required conn_id: u64
+                required direction: String
+                optional reason: String
             }
         }
 

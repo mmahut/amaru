@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 
 use amaru_kernel::Transaction;
 use amaru_ouroboros::{MempoolMsg, TxInsertResult, TxOrigin, TxRejectReason};
-use amaru_protocols::tx_submission::MEMPOOL_INSERT_TIMEOUT;
+use amaru_protocols::tx_submission::DEFAULT_MEMPOOL_INSERT_TIMEOUT;
 use anyhow::Context;
 use axum::{
     Json, Router,
@@ -82,7 +82,10 @@ async fn submit_tx(State(mempool_sender): State<SubmitApiState>, headers: Header
     };
 
     match mempool_sender
-        .call(|caller| MempoolMsg::Insert { tx: Box::new(tx), origin: TxOrigin::Local, caller }, MEMPOOL_INSERT_TIMEOUT)
+        .call(
+            |caller| MempoolMsg::Insert { tx: Box::new(tx), origin: TxOrigin::Local, caller },
+            DEFAULT_MEMPOOL_INSERT_TIMEOUT.as_duration(),
+        )
         .await
     {
         Ok(Ok(TxInsertResult::Accepted { tx_id, .. })) => json_response(StatusCode::ACCEPTED, tx_id.to_string()),
@@ -95,7 +98,7 @@ async fn submit_tx(State(mempool_sender): State<SubmitApiState>, headers: Header
             reason.to_string(),
         ),
         Ok(Err(error)) => {
-            warn!(tx_id = %error.tx_id, error = %error.error, "mempool insert failed");
+            warn!(%error, "mempool insert failed");
             text_response(StatusCode::INTERNAL_SERVER_ERROR, "mempool unavailable")
         }
         Err(CallError::TimedOut) => text_response(StatusCode::SERVICE_UNAVAILABLE, "mempool timed out"),
@@ -132,14 +135,18 @@ mod tests {
         },
     };
 
-    use amaru_consensus::{effects::ResourceTxValidation, stages::mempool::MempoolStageState};
-    use amaru_kernel::{RawBlock, Transaction, TransactionId};
+    use amaru_consensus::{
+        effects::{ResourceBlockValidation, ResourceEraHistory, ResourceTxValidation},
+        stages::mempool::MempoolStageState,
+    };
+    use amaru_kernel::{NetworkName, RawBlock, Transaction, to_cbor};
     use amaru_mempool::{InMemoryMempool, MempoolConfig};
     use amaru_ouroboros::{MempoolMsg, ResourceMempool};
     use amaru_ouroboros_traits::{
-        MempoolError, MempoolSeqNo, MockCanValidateTxs, TransactionValidationError, TxInsertResult, TxOrigin,
-        TxSubmissionMempool,
+        MempoolError, MempoolSeqNo, MockCanValidateBlocks, MockCanValidateTxs, TransactionValidationError,
+        TxInsertResult, TxSubmissionMempool, overriding_mempool::OverridingMempool,
     };
+    use amaru_protocols::store_effects::ResourceParameters;
     use axum::{
         body::{Bytes, to_bytes},
         extract::State,
@@ -221,12 +228,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_mempool_full() -> anyhow::Result<()> {
-        let mempool: Arc<dyn TxSubmissionMempool<Transaction>> =
-            Arc::new(InMemoryMempool::<Transaction>::new(MempoolConfig::default().with_max_txs(1)));
-        let (addr, _shutdown) = start_test_server_with_mempool(mempool).await?;
-
         let first = create_transaction(0);
         let second = create_transaction(1);
+
+        let max_bytes = to_cbor(&first).len() as u64;
+        let mempool: Arc<dyn TxSubmissionMempool<Transaction>> =
+            Arc::new(InMemoryMempool::<Transaction>::new(MempoolConfig::default().with_max_bytes(max_bytes)));
+        let (addr, _shutdown) = start_test_server_with_mempool(mempool).await?;
 
         let resp = submit_tx(addr, amaru_kernel::to_cbor(&first)).await?;
         assert_eq!(resp.status(), 202);
@@ -270,7 +278,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_mempool_stage_survives_insert_failure() -> anyhow::Result<()> {
-        let mempool: Arc<dyn TxSubmissionMempool<Transaction>> = Arc::new(FailOnceMempool::default());
+        let attempts = AtomicUsize::new(0);
+        let mempool: Arc<dyn TxSubmissionMempool<Transaction>> = Arc::new(
+            OverridingMempool::builder(Arc::new(InMemoryMempool::default()))
+                .with_insert(move |_, tx: Transaction, _| {
+                    if attempts.fetch_add(1, Ordering::Relaxed) == 0 {
+                        Err(MempoolError::new("temporary failure"))
+                    } else {
+                        Ok(TxInsertResult::accepted(tx.tx_id(), MempoolSeqNo(1)))
+                    }
+                })
+                .build(),
+        );
         let first = create_transaction(0);
         let second = create_transaction(1);
         let sender = make_mempool_sender(mempool, Arc::new(MockCanValidateTxs));
@@ -358,6 +377,11 @@ mod tests {
         let mut stage_graph = TokioBuilder::default();
         let mempool_stage = stage_graph.stage("mempool", mempool::stage);
         let mempool_stage = stage_graph.wire_up(mempool_stage, MempoolStageState::default());
+        let era_history = <&amaru_kernel::EraHistory>::from(NetworkName::Preprod);
+        let global_parameters = <&amaru_kernel::GlobalParameters>::from(NetworkName::Preprod);
+        stage_graph.resources().put::<ResourceParameters>(global_parameters.clone());
+        stage_graph.resources().put::<ResourceEraHistory>(era_history.clone());
+        stage_graph.resources().put::<ResourceBlockValidation>(Arc::new(MockCanValidateBlocks));
         stage_graph.resources().put::<ResourceMempool<Transaction>>(mempool);
         stage_graph.resources().put::<ResourceTxValidation>(validator);
         let sender = stage_graph.input(mempool_stage.without_state());
@@ -394,7 +418,7 @@ mod tests {
     // This transaction is reconstructed from the transaction contained in the real preprod
     // block fixture `b9bef52dd8dedf992837d20c18399a284d80fde0ae9435f2a33649aaee7c5698`
     // (slot 70175999, block height 2671560).
-    const TX_ID: &str = "43f396b0d5c5";
+    const TX_ID: &str = "43f396b0d5c55e34b507cfe9964672586370cc09912a4790488fba4079f96429";
 
     /// Return a serialized transaction extracted from an actual block
     fn serialized_transaction() -> anyhow::Result<Vec<u8>> {
@@ -409,36 +433,5 @@ mod tests {
             "/sample.cbor"
         ));
         RawBlock::from(RAW_BLOCK)
-    }
-
-    #[derive(Default)]
-    struct FailOnceMempool {
-        attempts: AtomicUsize,
-    }
-
-    impl TxSubmissionMempool<Transaction> for FailOnceMempool {
-        fn insert(&self, tx: Transaction, _tx_origin: TxOrigin) -> Result<TxInsertResult, MempoolError> {
-            if self.attempts.fetch_add(1, Ordering::Relaxed) == 0 {
-                Err(MempoolError::new("temporary failure"))
-            } else {
-                Ok(TxInsertResult::accepted(tx.tx_id(), MempoolSeqNo(1)))
-            }
-        }
-
-        fn get_tx(&self, _tx_id: &TransactionId) -> Option<Transaction> {
-            None
-        }
-
-        fn tx_ids_since(&self, _from_seq: MempoolSeqNo, _limit: u16) -> Vec<(TransactionId, u32, MempoolSeqNo)> {
-            vec![]
-        }
-
-        fn get_txs_for_ids(&self, _ids: &[TransactionId]) -> Vec<Transaction> {
-            vec![]
-        }
-
-        fn last_seq_no(&self) -> MempoolSeqNo {
-            MempoolSeqNo(0)
-        }
     }
 }

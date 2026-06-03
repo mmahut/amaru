@@ -16,6 +16,12 @@ pub use pallas_primitives::conway::ExUnitPrices;
 #[cfg(any(test, feature = "test-utils"))]
 pub use proxy::*;
 
+use crate::rational_number;
+
+pub fn fmt(prices: &ExUnitPrices) -> String {
+    format!("{{mem={}, cpu={}}}", rational_number::fmt(&prices.mem_price), rational_number::fmt(&prices.step_price))
+}
+
 #[cfg(any(test, feature = "test-utils"))]
 mod proxy {
     use serde::Deserialize;

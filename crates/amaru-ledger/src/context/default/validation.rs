@@ -31,13 +31,13 @@ use crate::{
         ProposalsSlice, RegisterError, UnregisterError, UpdateError, UtxoSlice, ValidationContext, WitnessSlice,
         blanket_known_datums, blanket_known_scripts,
     },
-    state::volatile_db::VolatileState,
+    state::volatile::VolatileFragment,
 };
 
 #[derive(Debug)]
 pub struct DefaultValidationContext {
     utxo: BTreeMap<TransactionInput, MemoizedTransactionOutput>,
-    state: VolatileState,
+    state: VolatileFragment,
     known_scripts: BTreeMap<Hash<SCRIPT>, TransactionInput>,
     known_datums: BTreeMap<Hash<DATUM>, TransactionInput>,
     required_signers: BTreeSet<Hash<KEY>>,
@@ -50,7 +50,7 @@ impl DefaultValidationContext {
     pub fn new(utxo: BTreeMap<TransactionInput, MemoizedTransactionOutput>) -> Self {
         Self {
             utxo,
-            state: VolatileState::default(),
+            state: VolatileFragment::default(),
             required_signers: BTreeSet::default(),
             known_scripts: BTreeMap::new(),
             known_datums: BTreeMap::new(),
@@ -61,14 +61,14 @@ impl DefaultValidationContext {
     }
 }
 
-impl From<DefaultValidationContext> for VolatileState {
-    fn from(ctx: DefaultValidationContext) -> VolatileState {
+impl From<DefaultValidationContext> for VolatileFragment {
+    fn from(ctx: DefaultValidationContext) -> VolatileFragment {
         ctx.state
     }
 }
 
 impl ValidationContext for DefaultValidationContext {
-    type FinalState = VolatileState;
+    type FinalState = VolatileFragment;
 }
 
 impl PotsSlice for DefaultValidationContext {
@@ -275,7 +275,7 @@ impl CommitteeSlice for DefaultValidationContext {
 
 impl ProposalsSlice for DefaultValidationContext {
     fn acknowledge(&mut self, id: ProposalId, pointer: ProposalPointer, proposal: Proposal) {
-        self.state.proposals.register(id.into(), (proposal, pointer), None, None).unwrap_or_default(); // Can't happen as by construction key is unique
+        self.state.proposals.insert(id.into(), (proposal, pointer));
     }
 
     fn vote(&mut self, proposal: ProposalId, voter: Voter, vote: Vote, anchor: Option<Anchor>) {
