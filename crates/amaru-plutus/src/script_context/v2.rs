@@ -18,7 +18,7 @@ use amaru_kernel::{Address, MemoizedTransactionOutput, PlutusData, StakePayload}
 
 use crate::{
     PlutusDataError, ToPlutusData, constr_v2,
-    script_context::{Datums, OutputReference, ScriptContext, StakeAddress, TxInfo, Withdrawals},
+    script_context::{OutputReference, PlutusDatums, PlutusStakeAddress, PlutusWithdrawals, ScriptContext, TxInfo},
 };
 
 impl ToPlutusData<2> for ScriptContext<'_> {
@@ -70,13 +70,13 @@ impl ToPlutusData<2> for MemoizedTransactionOutput {
     }
 }
 
-impl ToPlutusData<2> for Datums<'_> {
+impl ToPlutusData<2> for PlutusDatums<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <BTreeMap<_, _> as ToPlutusData<2>>::to_plutus_data(&self.0)
     }
 }
 
-impl ToPlutusData<2> for Withdrawals {
+impl ToPlutusData<2> for PlutusWithdrawals {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         let map = self.iter().collect::<BTreeMap<_, _>>();
         <BTreeMap<_, _> as ToPlutusData<2>>::to_plutus_data(&map)
@@ -96,7 +96,7 @@ impl ToPlutusData<2> for amaru_kernel::StakeAddress {
     }
 }
 
-impl ToPlutusData<2> for StakeAddress {
+impl ToPlutusData<2> for PlutusStakeAddress {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <amaru_kernel::StakeAddress as ToPlutusData<2>>::to_plutus_data(self.as_ref())
     }

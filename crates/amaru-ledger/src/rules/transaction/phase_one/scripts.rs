@@ -20,8 +20,8 @@ use std::{
 
 use amaru_kernel::{
     ExUnits, HasRedeemers, HasScriptHash, Hash, Language, MemoizedDatum, MemoizedScript, NativeScript, PlutusScript,
-    ProtocolParameters, ProtocolVersion, RedeemerKey, RequiredScript, ScriptIntegrityData, ScriptPurpose,
-    ValidityInterval, WitnessSet, decode_plutus_script, script_purpose_to_string,
+    ProtocolParameters, ProtocolVersion, RedeemerKey, RedeemerTag, RequiredScript, ScriptIntegrityData,
+    ValidityInterval, WitnessSet, decode_plutus_script, redeemer_tag_to_string,
     size::{DATUM, SCRIPT},
     sum_ex_units,
     utils::string::display_collection,
@@ -127,7 +127,7 @@ pub enum InvalidScripts {
         "extraneous redeemers: [{}]",
         .0.iter().map(|redeemer_key| format!(
             "[{}, {}]",
-            script_purpose_to_string(&redeemer_key.tag),
+            redeemer_tag_to_string(&redeemer_key.tag),
             redeemer_key.index
         )).collect::<Vec<_>>().join(", ")
     )]
@@ -137,7 +137,7 @@ pub enum InvalidScripts {
         "missing redeemers: [{}]",
         .0.iter().map(|redeemer_key| format!(
             "[{}, {}]",
-            script_purpose_to_string(&redeemer_key.tag),
+            redeemer_tag_to_string(&redeemer_key.tag),
             redeemer_key.index
         )).collect::<Vec<_>>().join(", ")
     )]
@@ -292,7 +292,7 @@ fn partition_scripts(
         let mut require_redeemer = || required_redeemers.push(RedeemerKey::from(required_script));
 
         let mut unspendable_without_datum = || {
-            if purpose == &ScriptPurpose::Spend && matches!(datum, MemoizedDatum::None) {
+            if purpose == &RedeemerTag::Spend && matches!(datum, MemoizedDatum::None) {
                 missing_datums.insert(*index);
             }
         };

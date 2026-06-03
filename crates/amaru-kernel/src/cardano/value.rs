@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{borrow::Cow, collections::BTreeMap};
+
 pub use pallas_primitives::conway::Value;
 
+use crate::{AssetName, NonEmptyKeyValuePairs, NonZeroInt};
 pub use crate::{Hash, size::CREDENTIAL};
 
 /// An identifier for a currency in a [`Value`].
@@ -25,4 +28,33 @@ pub use crate::{Hash, size::CREDENTIAL};
 pub enum CurrencySymbol {
     Lovelace,
     Native(Hash<CREDENTIAL>),
+}
+
+/// The assets minted and burned by a transaction.
+///
+/// A map from minting-policy [`struct@Hash`] to that policy's assets, each carrying a signed
+/// quantity: positive mints, negative burns. Unlike [`Value`], amounts are signed and
+/// there is no ada entry; only native assets can be minted or burned.
+#[derive(Debug, Default)]
+pub struct PlutusMint<'a>(pub BTreeMap<Hash<CREDENTIAL>, BTreeMap<Cow<'a, AssetName>, i64>>);
+
+impl<'a> From<&'a NonEmptyKeyValuePairs<Hash<CREDENTIAL>, NonEmptyKeyValuePairs<AssetName, NonZeroInt>>>
+    for PlutusMint<'a>
+{
+    fn from(value: &'a NonEmptyKeyValuePairs<Hash<CREDENTIAL>, NonEmptyKeyValuePairs<AssetName, NonZeroInt>>) -> Self {
+        let mints = value
+            .iter()
+            .map(|(policy, multiasset)| {
+                (
+                    *policy,
+                    multiasset
+                        .iter()
+                        .map(|(asset_name, amount)| (Cow::Borrowed(asset_name), (*amount).into()))
+                        .collect(),
+                )
+            })
+            .collect();
+
+        Self(mints)
+    }
 }

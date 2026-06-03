@@ -14,10 +14,10 @@
 
 use std::collections::BTreeMap;
 
-use super::{mint::Mint, output_reference::OutputReference, script::Script, votes::Votes, withdrawals::Withdrawals};
 use crate::{
-    AsShelley, Certificate, GovernanceAction, HasOwnership, Hash, Nullable, PlutusData, Proposal, RedeemerKey,
-    ScriptPurpose as RedeemerTag, StakeCredential, StakePayload, TransactionInput, Voter,
+    AsShelley, BorrowedScript, Certificate, GovernanceAction, HasOwnership, Hash, Nullable, OutputReference,
+    PlutusData, PlutusMint, PlutusVotes, PlutusWithdrawals, Proposal, RedeemerKey, RedeemerTag, StakeCredential,
+    StakePayload, TransactionInput, Voter,
     size::{CREDENTIAL, SCRIPT},
 };
 
@@ -56,13 +56,13 @@ impl<'a> ScriptPurpose<'a> {
     pub fn builder(
         key: &RedeemerKey,
         inputs: &[OutputReference<'a>],
-        mint: &Mint<'a>,
-        withdrawals: &Withdrawals,
+        mint: &PlutusMint<'a>,
+        withdrawals: &PlutusWithdrawals,
         certs: &[&'a Certificate],
         proposal_procedures: &[&'a Proposal],
-        votes: &Votes<'a>,
-        scripts: &BTreeMap<Hash<SCRIPT>, Script<'a>>,
-    ) -> Option<(Self, Script<'a>)> {
+        votes: &PlutusVotes<'a>,
+        scripts: &BTreeMap<Hash<SCRIPT>, BorrowedScript<'a>>,
+    ) -> Option<(Self, BorrowedScript<'a>)> {
         let index = key.index as usize;
         match key.tag {
             RedeemerTag::Spend => inputs.get(index).and_then(|OutputReference { input, output }| {

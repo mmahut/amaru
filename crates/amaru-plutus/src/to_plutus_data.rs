@@ -23,7 +23,7 @@ use thiserror::Error;
 
 use crate::{
     constr,
-    script_context::{IsPrePlutusVersion3, RequiredSigners, Script, TimeRange},
+    script_context::{BorrowedScript, IsPrePlutusVersion3, RequiredSigners, TimeRange},
 };
 
 /// Represents an error that occured during serialization to `PlutusData`.
@@ -267,16 +267,16 @@ where
     }
 }
 
-impl<const V: u8> ToPlutusData<V> for Script<'_>
+impl<const V: u8> ToPlutusData<V> for BorrowedScript<'_>
 where
     PlutusVersion<V>: IsKnownPlutusVersion,
 {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         match self {
-            Script::Native(native) => native.compute_hash().to_plutus_data(),
-            Script::PlutusV1(plutus) => plutus.compute_hash().to_plutus_data(),
-            Script::PlutusV2(plutus) => plutus.compute_hash().to_plutus_data(),
-            Script::PlutusV3(plutus) => plutus.compute_hash().to_plutus_data(),
+            BorrowedScript::Native(native) => native.compute_hash().to_plutus_data(),
+            BorrowedScript::PlutusV1(plutus) => plutus.compute_hash().to_plutus_data(),
+            BorrowedScript::PlutusV2(plutus) => plutus.compute_hash().to_plutus_data(),
+            BorrowedScript::PlutusV3(plutus) => plutus.compute_hash().to_plutus_data(),
         }
     }
 }
@@ -286,9 +286,9 @@ where
     PlutusVersion<V>: IsKnownPlutusVersion,
 {
     /// A script appears in a transaction output only as its hash; the encoding is delegated to
-    /// the borrowed [`Script`] view to keep that hashing logic in a single place.
+    /// the borrowed [`BorrowedScript`] view to keep that hashing logic in a single place.
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        <Script<'_> as ToPlutusData<V>>::to_plutus_data(&Script::from(self))
+        <BorrowedScript<'_> as ToPlutusData<V>>::to_plutus_data(&BorrowedScript::from(self))
     }
 }
 

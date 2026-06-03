@@ -25,8 +25,8 @@ use num::Integer;
 use crate::{
     PlutusDataError, ToPlutusData, constr, constr_v3,
     script_context::{
-        Datums, Mint, OutputReference, ScriptContext, ScriptInfo, ScriptPurpose, StakeAddress, TxInfo, Votes,
-        Withdrawals,
+        OutputReference, PlutusDatums, PlutusMint, PlutusStakeAddress, PlutusVotes, PlutusWithdrawals, ScriptContext,
+        ScriptInfo, ScriptPurpose, TxInfo,
     },
 };
 
@@ -490,25 +490,25 @@ impl ToPlutusData<3> for Vote {
     }
 }
 
-impl ToPlutusData<3> for Mint<'_> {
+impl ToPlutusData<3> for PlutusMint<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&self.0)
     }
 }
 
-impl ToPlutusData<3> for Withdrawals {
+impl ToPlutusData<3> for PlutusWithdrawals {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&self.iter().collect::<BTreeMap<_, _>>())
     }
 }
 
-impl ToPlutusData<3> for Datums<'_> {
+impl ToPlutusData<3> for PlutusDatums<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&self.0)
     }
 }
 
-impl ToPlutusData<3> for Votes<'_> {
+impl ToPlutusData<3> for PlutusVotes<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         self.0.to_plutus_data()
     }
@@ -523,7 +523,7 @@ impl ToPlutusData<3> for amaru_kernel::StakeAddress {
     }
 }
 
-impl ToPlutusData<3> for StakeAddress {
+impl ToPlutusData<3> for PlutusStakeAddress {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <amaru_kernel::StakeAddress as ToPlutusData<3>>::to_plutus_data(self.as_ref())
     }

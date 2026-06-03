@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 
 use amaru_kernel::{
-    Lovelace, MemoizedDatum, Network, RequiredScript, RewardAccount, ScriptPurpose, parse_reward_account,
+    Lovelace, MemoizedDatum, Network, RedeemerTag, RequiredScript, RewardAccount, parse_reward_account,
 };
 use thiserror::Error;
 
@@ -74,7 +74,7 @@ where
                     amaru_kernel::StakeCredential::ScriptHash(hash) => context.require_script_witness(RequiredScript {
                         hash,
                         index: position as u32,
-                        purpose: ScriptPurpose::Reward,
+                        purpose: RedeemerTag::Reward,
                         datum: MemoizedDatum::None,
                     }),
                     amaru_kernel::StakeCredential::AddrKeyhash(hash) => context.require_vkey_witness(hash),

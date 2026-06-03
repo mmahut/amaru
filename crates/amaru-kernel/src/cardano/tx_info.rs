@@ -17,24 +17,11 @@ use std::collections::BTreeMap;
 use itertools::Itertools;
 use thiserror::Error;
 
-use super::{
-    datums::Datums,
-    mint::Mint,
-    output_reference::OutputReference,
-    redeemers::{RedeemerEntry, Redeemers},
-    required_signers::RequiredSigners,
-    script::Script,
-    script_context::ScriptContext,
-    script_info::ScriptPurpose,
-    time_range::TimeRange,
-    utxos::Utxos,
-    votes::Votes,
-    withdrawals::{WithdrawalError, Withdrawals},
-};
 use crate::{
-    Certificate, EraHistory, EraHistoryError, HasScriptHash, Hash, Lovelace, MemoizedTransactionOutput, NetworkName,
-    Proposal, RedeemerKey, TransactionBody, TransactionId, TransactionInput, WitnessSet, size::SCRIPT,
-    transaction_input_to_string,
+    BorrowedScript, Certificate, EraHistory, EraHistoryError, HasScriptHash, Hash, Lovelace, MemoizedTransactionOutput,
+    NetworkName, OutputReference, PlutusDatums, PlutusMint, PlutusRedeemers, PlutusVotes, PlutusWithdrawals, Proposal,
+    RedeemerEntry, RedeemerKey, RequiredSigners, ScriptContext, ScriptPurpose, TimeRange, TransactionBody,
+    TransactionId, TransactionInput, Utxos, WithdrawalError, WitnessSet, size::SCRIPT, transaction_input_to_string,
 };
 
 /// An opaque type that represents the `TxInfo` field used in a [`ScriptContext`].
@@ -49,15 +36,15 @@ pub struct TxInfo<'a> {
     pub reference_inputs: Vec<OutputReference<'a>>,
     pub outputs: Vec<&'a MemoizedTransactionOutput>,
     pub fee: Lovelace,
-    pub mint: Mint<'a>,
+    pub mint: PlutusMint<'a>,
     pub certificates: Vec<&'a Certificate>,
-    pub withdrawals: Withdrawals,
+    pub withdrawals: PlutusWithdrawals,
     pub valid_range: TimeRange,
     pub signatories: RequiredSigners,
-    pub redeemers: Redeemers<'a>,
-    pub data: Datums<'a>,
+    pub redeemers: PlutusRedeemers<'a>,
+    pub data: PlutusDatums<'a>,
     pub id: TransactionId,
-    pub votes: Votes<'a>,
+    pub votes: PlutusVotes<'a>,
     pub proposal_procedures: Vec<&'a Proposal>,
     pub current_treasury_amount: Option<Lovelace>,
     pub treasury_donation: Option<Lovelace>,
@@ -105,7 +92,7 @@ impl<'a> TxInfo<'a> {
         network: NetworkName,
         era_history: &EraHistory,
     ) -> Result<Self, TxInfoTranslationError> {
-        let mut scripts: BTreeMap<Hash<SCRIPT>, Script<'_>> = BTreeMap::new();
+        let mut scripts: BTreeMap<Hash<SCRIPT>, BorrowedScript<'_>> = BTreeMap::new();
         let inputs = Self::translate_inputs(&tx.inputs, utxos, &mut scripts)?;
         let reference_inputs = tx
             .reference_inputs
@@ -116,12 +103,12 @@ impl<'a> TxInfo<'a> {
 
         let outputs = tx.outputs.iter().collect::<Vec<_>>();
 
-        let mint = tx.mint.as_ref().map(Mint::from).unwrap_or_default();
+        let mint = tx.mint.as_ref().map(PlutusMint::from).unwrap_or_default();
 
         let certificates: Vec<&'a Certificate> =
             tx.certificates.as_ref().map(|set| set.iter().collect()).unwrap_or_default();
 
-        let withdrawals = tx.withdrawals.as_ref().map(Withdrawals::try_from).transpose()?.unwrap_or_default();
+        let withdrawals = tx.withdrawals.as_ref().map(PlutusWithdrawals::try_from).transpose()?.unwrap_or_default();
 
         let valid_range =
             TimeRange::new(tx.validity_interval_start, tx.validity_interval_end, slot, era_history, network)?;
@@ -131,32 +118,32 @@ impl<'a> TxInfo<'a> {
         let proposal_procedures: Vec<_> =
             tx.proposals.as_ref().map(|proposals| proposals.iter().collect()).unwrap_or_default();
 
-        let votes = tx.votes.as_ref().map(Votes::from).unwrap_or_default();
+        let votes = tx.votes.as_ref().map(PlutusVotes::from).unwrap_or_default();
 
         if let Some(plutus_v1_scripts) = witness_set.plutus_v1_script.as_ref() {
             plutus_v1_scripts.iter().for_each(|script| {
-                let script = Script::PlutusV1(script);
+                let script = BorrowedScript::PlutusV1(script);
                 scripts.insert(script.script_hash(), script);
             });
         }
 
         if let Some(plutus_v2_scripts) = witness_set.plutus_v2_script.as_ref() {
             plutus_v2_scripts.iter().for_each(|script| {
-                let script = Script::PlutusV2(script);
+                let script = BorrowedScript::PlutusV2(script);
                 scripts.insert(script.script_hash(), script);
             });
         }
 
         if let Some(plutus_v3_scripts) = witness_set.plutus_v3_script.as_ref() {
             plutus_v3_scripts.iter().for_each(|script| {
-                let script = Script::PlutusV3(script);
+                let script = BorrowedScript::PlutusV3(script);
                 scripts.insert(script.script_hash(), script);
             });
         }
 
         let mut redeemers_map: BTreeMap<RedeemerKey, RedeemerEntry<'a>> = BTreeMap::new();
         if let Some(redeemers) = witness_set.redeemer.as_ref() {
-            for (ix, (key, data, ex_units)) in Redeemers::iter_from(redeemers.as_ref()).enumerate() {
+            for (ix, (key, data, ex_units)) in PlutusRedeemers::iter_from(redeemers.as_ref()).enumerate() {
                 let (purpose, script) = ScriptPurpose::builder(
                     &key,
                     &inputs[..],
@@ -176,7 +163,7 @@ impl<'a> TxInfo<'a> {
             }
         }
 
-        let datums = witness_set.plutus_data.as_ref().map(Datums::from).unwrap_or_default();
+        let datums = witness_set.plutus_data.as_ref().map(PlutusDatums::from).unwrap_or_default();
 
         Ok(Self {
             inputs,
@@ -188,7 +175,7 @@ impl<'a> TxInfo<'a> {
             withdrawals,
             valid_range,
             signatories,
-            redeemers: Redeemers::new(redeemers_map),
+            redeemers: PlutusRedeemers::new(redeemers_map),
             data: datums,
             id: tx_id,
             votes,
@@ -199,7 +186,7 @@ impl<'a> TxInfo<'a> {
     }
 
     /// Construct all script contexts for this TxInfo
-    pub fn to_script_contexts(&self) -> Vec<(ScriptContext<'_>, &Script<'_>)> {
+    pub fn to_script_contexts(&self) -> Vec<(ScriptContext<'_>, &BorrowedScript<'_>)> {
         self.redeemers
             .iter()
             .filter_map(|(key, entry)| {
@@ -212,7 +199,7 @@ impl<'a> TxInfo<'a> {
     fn translate_inputs(
         inputs: &'a [TransactionInput],
         utxos: &'a Utxos,
-        scripts: &mut BTreeMap<Hash<SCRIPT>, Script<'a>>,
+        scripts: &mut BTreeMap<Hash<SCRIPT>, BorrowedScript<'a>>,
     ) -> Result<Vec<OutputReference<'a>>, TxInfoTranslationError> {
         inputs
             .iter()
@@ -222,7 +209,7 @@ impl<'a> TxInfo<'a> {
                     utxos.resolve_input(input).ok_or(TxInfoTranslationError::MissingInput(input.clone()))?;
 
                 if let Some(script) = output_ref.output.script.as_ref() {
-                    scripts.insert(script.script_hash(), Script::from(script));
+                    scripts.insert(script.script_hash(), BorrowedScript::from(script));
                 };
 
                 Ok(output_ref)

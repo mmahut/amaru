@@ -14,8 +14,7 @@
 
 use std::{collections::BTreeMap, ops::Deref};
 
-use super::output_reference::OutputReference;
-use crate::{MemoizedTransactionOutput, TransactionInput};
+use crate::{MemoizedTransactionOutput, OutputReference, TransactionInput};
 
 /// A subset of the UTxO set.
 ///

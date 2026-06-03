@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{script_info::ScriptPurpose, tx_info::TxInfo};
-use crate::{ExUnits, MemoizedDatum, PlutusData, RedeemerKey, ScriptPurpose as RedeemerTag};
+use crate::{ExUnits, MemoizedDatum, PlutusData, RedeemerKey, RedeemerTag, ScriptPurpose, TxInfo};
 
 /// One of the arguments passed to a Plutus validator.
 ///

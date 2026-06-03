@@ -20,11 +20,68 @@ use pallas_primitives::{
 use serde::ser::SerializeStruct;
 
 use crate::{
-    Bytes, MemoizedNativeScript, PlutusScript, cbor,
+    Bytes, ComputeHash, HasScriptHash, Hash, MemoizedNativeScript, PlutusScript, cbor,
     cbor::{bytes::ByteSlice, data::IanaTag},
+    size::SCRIPT,
 };
 
 pub type MemoizedScript = PseudoScript<MemoizedNativeScript>;
+
+/// A borrowed reference to a script.
+///
+/// The by-reference counterpart of the owned [`MemoizedScript`], flattened to its four
+/// kinds: a native script, or a Plutus script whose language version is carried in the
+/// type. The version travels with the script because execution depends on it.
+/// The available builtins, the cost model, and the  script-context encoding all differ by Plutus version.
+#[derive(Debug, Clone)]
+pub enum BorrowedScript<'a> {
+    Native(&'a NativeScript),
+    PlutusV1(&'a PlutusScript<1>),
+    PlutusV2(&'a PlutusScript<2>),
+    PlutusV3(&'a PlutusScript<3>),
+}
+
+impl BorrowedScript<'_> {
+    /// Unwraps a layer of CBOR, returning the flat-encoded bytes
+    /// that are passed to the CEK machine for evaluation.
+    ///
+    /// A `BorrowedScript::Native` is treated `unreachable` since there are no redeemers for NativeScript
+    /// and they are not flat-encoded bytes.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, cbor::decode::Error> {
+        fn decode_cbor_bytes(cbor: &[u8]) -> Result<Vec<u8>, cbor::decode::Error> {
+            cbor::decode::Decoder::new(cbor).bytes().map(|b| b.to_vec())
+        }
+
+        match self {
+            BorrowedScript::PlutusV1(s) => decode_cbor_bytes(s.0.as_ref()),
+            BorrowedScript::PlutusV2(s) => decode_cbor_bytes(s.0.as_ref()),
+            BorrowedScript::PlutusV3(s) => decode_cbor_bytes(s.0.as_ref()),
+            BorrowedScript::Native(_) => unreachable!("a redeemer should never point to a native_script"),
+        }
+    }
+}
+
+impl<'a> From<&'a MemoizedScript> for BorrowedScript<'a> {
+    fn from(value: &'a MemoizedScript) -> Self {
+        match value {
+            MemoizedScript::NativeScript(script) => BorrowedScript::Native(script.as_ref()),
+            MemoizedScript::PlutusV1Script(script) => BorrowedScript::PlutusV1(script),
+            MemoizedScript::PlutusV2Script(script) => BorrowedScript::PlutusV2(script),
+            MemoizedScript::PlutusV3Script(script) => BorrowedScript::PlutusV3(script),
+        }
+    }
+}
+
+impl HasScriptHash for BorrowedScript<'_> {
+    fn script_hash(&self) -> Hash<SCRIPT> {
+        match self {
+            BorrowedScript::Native(native_script) => native_script.compute_hash(),
+            BorrowedScript::PlutusV1(plutus_script) => plutus_script.compute_hash(),
+            BorrowedScript::PlutusV2(plutus_script) => plutus_script.compute_hash(),
+            BorrowedScript::PlutusV3(plutus_script) => plutus_script.compute_hash(),
+        }
+    }
+}
 
 pub fn serialize_memoized_script<S: serde::ser::Serializer>(
     script: &MemoizedScript,

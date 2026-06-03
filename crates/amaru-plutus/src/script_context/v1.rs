@@ -22,8 +22,8 @@ use amaru_kernel::{
 use crate::{
     IsKnownPlutusVersion, PlutusDataError, PlutusVersion, ToPlutusData, constr, constr_v1,
     script_context::{
-        Datums, IsPrePlutusVersion3, Mint, OutputReference, ScriptContext, ScriptPurpose, StakeAddress, TxInfo,
-        Withdrawals,
+        IsPrePlutusVersion3, OutputReference, PlutusDatums, PlutusMint, PlutusStakeAddress, PlutusWithdrawals,
+        ScriptContext, ScriptPurpose, TxInfo,
     },
 };
 
@@ -114,7 +114,7 @@ impl ToPlutusData<1> for amaru_kernel::StakeAddress {
     }
 }
 
-impl ToPlutusData<1> for StakeAddress {
+impl ToPlutusData<1> for PlutusStakeAddress {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <amaru_kernel::StakeAddress as ToPlutusData<1>>::to_plutus_data(self.as_ref())
     }
@@ -212,7 +212,7 @@ impl ToPlutusData<1> for MemoizedTransactionOutput {
     }
 }
 
-impl<const V: u8> ToPlutusData<V> for Mint<'_>
+impl<const V: u8> ToPlutusData<V> for PlutusMint<'_>
 where
     PlutusVersion<V>: IsKnownPlutusVersion + IsPrePlutusVersion3,
 {
@@ -231,13 +231,13 @@ where
     }
 }
 
-impl ToPlutusData<1> for Withdrawals {
+impl ToPlutusData<1> for PlutusWithdrawals {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <Vec<_> as ToPlutusData<1>>::to_plutus_data(&self.iter().collect::<Vec<_>>())
     }
 }
 
-impl ToPlutusData<1> for Datums<'_> {
+impl ToPlutusData<1> for PlutusDatums<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <Vec<_> as ToPlutusData<1>>::to_plutus_data(&self.0.iter().collect::<Vec<_>>())
     }

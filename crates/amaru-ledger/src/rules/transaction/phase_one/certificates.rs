@@ -14,7 +14,7 @@
 
 use amaru_kernel::{
     Certificate, CertificatePointer, DRep, DRepRegistration, Epoch, EraHistory, EraHistoryError, Hash, Lovelace,
-    MemoizedDatum, Network, NonEmptySet, PoolId, PoolParams, ProtocolParameters, RequiredScript, ScriptPurpose,
+    MemoizedDatum, Network, NonEmptySet, PoolId, PoolParams, ProtocolParameters, RedeemerTag, RequiredScript,
     StakeCredential, TransactionPointer, parse_reward_account, size::SCRIPT,
 };
 use thiserror::Error;
@@ -118,7 +118,7 @@ where
         RequiredScript {
             hash,
             index: pointer.certificate_index as u32,
-            purpose: ScriptPurpose::Cert,
+            purpose: RedeemerTag::Cert,
             datum: MemoizedDatum::None,
         }
     };

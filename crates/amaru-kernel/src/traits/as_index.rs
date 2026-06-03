@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Network, ScriptPurpose};
+use crate::{Network, RedeemerTag};
 
 // TODO: Unnecessary AsIndex trait
 //
@@ -22,7 +22,7 @@ pub trait AsIndex<T> {
     fn as_index(&self) -> T;
 }
 
-impl AsIndex<u32> for ScriptPurpose {
+impl AsIndex<u32> for RedeemerTag {
     fn as_index(&self) -> u32 {
         match self {
             Self::Spend => 0,

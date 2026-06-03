@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use amaru_kernel::{
-    AddrType, Address, AddressError, HasScriptHash, MemoizedDatum, RequiredScript, ScriptPurpose, TransactionInput,
-    cbor, transaction_input_to_string,
+    AddrType, Address, AddressError, HasScriptHash, MemoizedDatum, RedeemerTag, RequiredScript, TransactionInput, cbor,
+    transaction_input_to_string,
 };
 use thiserror::Error;
 
@@ -125,7 +125,7 @@ where
                     context.require_script_witness(RequiredScript {
                         hash: *shelley_address.payment().as_hash(),
                         index: input_index as u32,
-                        purpose: ScriptPurpose::Spend,
+                        purpose: RedeemerTag::Spend,
                         datum,
                     });
                 } else {

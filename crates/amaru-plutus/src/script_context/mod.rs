@@ -13,21 +13,10 @@
 // limitations under the License.
 
 use amaru_kernel::PlutusData;
-pub use amaru_kernel::phase_two::{
-    datums::Datums,
-    mint::Mint,
-    output_reference::OutputReference,
-    redeemers::{RedeemerEntry, Redeemers},
-    required_signers::RequiredSigners,
-    script::Script,
-    script_context::ScriptContext,
-    script_info::{ScriptInfo, ScriptPurpose},
-    stake_address::StakeAddress,
-    time_range::TimeRange,
-    tx_info::{TxInfo, TxInfoTranslationError},
-    utxos::Utxos,
-    votes::Votes,
-    withdrawals::{WithdrawalError, Withdrawals},
+pub use amaru_kernel::{
+    BorrowedScript, OutputReference, PlutusDatums, PlutusMint, PlutusRedeemers, PlutusStakeAddress, PlutusVotes,
+    PlutusWithdrawals, RedeemerEntry, RequiredSigners, ScriptContext, ScriptInfo, ScriptPurpose, TimeRange, TxInfo,
+    TxInfoTranslationError, Utxos, WithdrawalError,
 };
 
 pub mod v1;
@@ -96,7 +85,7 @@ fn v3_script_args(ctx: &ScriptContext<'_>) -> Result<Vec<PlutusData>, PlutusData
     Ok(vec![<ScriptContext<'_> as ToPlutusData<3>>::to_plutus_data(ctx)?])
 }
 
-impl<'a, const V: u8> ToPlutusData<V> for Redeemers<'a>
+impl<'a, const V: u8> ToPlutusData<V> for PlutusRedeemers<'a>
 where
     PlutusVersion<V>: IsKnownPlutusVersion,
     ScriptPurpose<'a>: ToPlutusData<V>,
