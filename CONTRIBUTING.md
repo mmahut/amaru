@@ -6,15 +6,23 @@ This document explains how to contribute, our process and our governance rules i
 
 > [!NOTE]
 >
-> If this feels overwhelming and you are unsure about where to start, feel free to [come and chat on Discord](https://discord.gg/3nZYCHW9Ns).
+> If this feels overwhelming and you are unsure about where to start, feel free to [come and chat on Discord][PRAGMA's Discord].
 
 ## Communication
 
 ### Discord
 
-[PRAGMA's Discord](https://discord.gg/P7xUTjZxy6) is our main day-to-day communication channel.
+[PRAGMA's Discord][] is our main day-to-day communication channel.
 
 Important decisions must be captured in an EDR or issues — Discord posts alone are not durable.
+
+### Weekly release ceremony
+
+We hold a weekly release ceremony every Thursday, at 3:30 P.M. UTC.
+
+This meeting's purpose is to trigger the [release workflow][] and draft the release notes from the [CHANGELOG.md][] and other important items found in issues and pull requests.
+
+Though speaker time is mostly reserved to [Amaru committers][], the meeting is public (held on [PRAGMA's Discord][]) and open to all.
 
 ### Bi-weekly Meetings
 
@@ -47,7 +55,7 @@ Details about Amaru's treasury management are logged separately on a [financial 
 
 ### GitHub Projects and Milestones
 
-Work is tracked on our [GitHub Projects board](https://github.com/orgs/pragma-org/projects/3) with a simple **Todo** / **In Progress** / **Interrupted** / **Ready For Demo** / **Done** Kanban workflow.
+Work is tracked on our [GitHub Projects board](https://github.com/orgs/pragma-org/projects/3) with a simple **Todo** / **In Progress** / **Interrupted** / **Done** Kanban workflow.
 
 Issues follow a [well-defined template](./.github/ISSUE_TEMPLATE/task.yml).
 
@@ -200,15 +208,15 @@ The maintainers committee is responsible for overseeing budgets and their associ
 
 They provide guidance on the roadmap and are responsible for ensuring the delivery of the budget items.
 
-In particular, they have the authority to manage the [Amaru committers](https://github.com/orgs/pragma-org/teams/amaru-committers) GitHub team.
+In particular, they have the authority to manage the [Amaru committers][] GitHub team.
 
 ### Merge / Review Authority
 
 Changes to `main` are proposed via pull requests, and guarded by a [continuous integration pipeline](./.github/workflows/continuous-integration.yml), whose checks must pass before any change is merged.
 
-Contributors part of the [Amaru committers](https://github.com/orgs/pragma-org/teams/amaru-committers) GitHub team shall seek review from one or more other Amaru committers. Yet each member of this team is entrusted with the ability to make judgment on the mergeability of their changes and shall use that power with great care.
+Contributors part of the [Amaru committers][] GitHub team shall seek review from one or more other Amaru committers. Yet each member of this team is entrusted with the ability to make judgment on the mergeability of their changes and shall use that power with great care.
 
-External contributors must have their contributions approved by at **least two members** of the [Amaru committers](https://github.com/orgs/pragma-org/teams/amaru-committers).
+External contributors must have their contributions approved by at **least two members** of the [Amaru committers][].
 
 Occasionally, members of the [Amaru Maintainers Committee](https://github.com/orgs/pragma-org/teams/amaru-maintainers-committee) may request additional reviews or inputs from any contribution.
 
@@ -218,7 +226,7 @@ Triage of [issues](https://github.com/pragma-org/amaru/issues) and [discussions]
 
 - synchronously
 - at least once per month
-- in a public recurring call held on [PRAGMA's Discord](https://discord.gg/P7xUTjZxy6)
+- in a public recurring call held on [PRAGMA's Discord][]
 - under 2h each time
 
 Participants to that call priorise items based on **impact**, **risk**, and **effort**. Whoever is present are the right people.
@@ -245,4 +253,9 @@ Technical proposals with broad or long-term impact require an approved Engineeri
 
 Each EDR is numbered, located under [./engineering-decision-records](./engineering-decision-records) and must follow [a well-defined template](./.github/templates/edr.md).
 
-EDRs must be approved by the lead maintainer and at least one other [Amaru committer](https://github.com/orgs/pragma-org/teams/amaru-committers).
+EDRs must be approved by the lead maintainer and at least one other [Amaru committer][Amaru committers].
+
+[Amaru committers]: https://github.com/orgs/pragma-org/teams/amaru-committers
+[PRAGMA's Discord]: https://discord.gg/P7xUTjZxy6
+[CHANGELOG.md]: https://github.com/pragma-org/amaru/tree/main/CHANGELOG.md
+[release workflow]: https://github.com/pragma-org/amaru/blob/main/engineering-decision-records/025-release-and-distribution-workflow.md#release-and-distribution-workflow
