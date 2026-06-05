@@ -274,7 +274,7 @@ impl TrackPeers {
             })));
         }
 
-        // TODO: check that slot time is within the permissible clock skew
+        // FIXME: check that slot time is within the permissible clock skew
 
         ledger
             .validate_header(header, Span::current().context())

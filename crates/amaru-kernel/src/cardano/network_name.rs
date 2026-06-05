@@ -44,6 +44,7 @@ impl From<NetworkName> for &GlobalParameters {
             NetworkName::Mainnet => &MAINNET_GLOBAL_PARAMETERS,
             NetworkName::Preprod => &PREPROD_GLOBAL_PARAMETERS,
             NetworkName::Preview => &PREVIEW_GLOBAL_PARAMETERS,
+            // TODO: define global parameters for all the networks
             NetworkName::Testnet(_) => &TESTNET_GLOBAL_PARAMETERS,
         }
     }
@@ -52,7 +53,7 @@ impl From<NetworkName> for &GlobalParameters {
 impl TryFrom<NetworkName> for &ProtocolParameters {
     type Error = String;
 
-    /// TODO: define protocol parameters for all the networks
+    // TODO: define protocol parameters for all the networks
     fn try_from(value: NetworkName) -> Result<Self, String> {
         match value {
             NetworkName::Mainnet => Ok(&MAINNET_DEFAULT_PROTOCOL_PARAMETERS),

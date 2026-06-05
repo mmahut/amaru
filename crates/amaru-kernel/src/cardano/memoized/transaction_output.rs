@@ -240,7 +240,7 @@ fn deserialize_address<'de, D: serde::de::Deserializer<'de>>(deserializer: D) ->
     Address::from_hex(bytes).map_err(serde::de::Error::custom)
 }
 
-// FIXME: Eventually allow serializing complete values, not just coins.
+// TODO: Eventually allow serializing complete values, not just coins.
 fn serialize_value<S: serde::ser::Serializer>(value: &MemoizedValue, serializer: S) -> Result<S::Ok, S::Error> {
     match value.as_ref() {
         Value::Coin(coin) => serializer.serialize_u64(*coin),

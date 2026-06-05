@@ -133,8 +133,6 @@ impl TryFrom<PlaceholderScript> for MemoizedScript {
             PlaceholderScript::NativeScript(bytes) => {
                 MemoizedScript::NativeScript(MemoizedNativeScript::try_from(bytes)?)
             }
-            // FIXME: We should at least verify that the inner bytes are _plausible_ Plutus
-            // scripts. Not just gibberish. For V1, V2 and V3.
             PlaceholderScript::PlutusV1(bytes) => MemoizedScript::PlutusV1Script(PlutusScript(bytes)),
             PlaceholderScript::PlutusV2(bytes) => MemoizedScript::PlutusV2Script(PlutusScript(bytes)),
             PlaceholderScript::PlutusV3(bytes) => MemoizedScript::PlutusV3Script(PlutusScript(bytes)),

@@ -30,7 +30,7 @@ use crate::{
 
 /// The certified natural max value represents 2^256 in praos consensus
 ///
-/// FIXME: Ideally, we should replace the use of dashu in pallas-math with num-bigint
+/// TODO: Ideally, we should replace the use of dashu in pallas-math with num-bigint
 /// since it has become our weapong of choice within Amaru. Mixing maths libraries is
 /// a recipe for mistakes.
 #[expect(clippy::expect_used)]

@@ -169,7 +169,7 @@ impl Rewards<Effective> {
             step: PhantomData,
         };
 
-        // FIXME: retain unregistered accounts for epoch transition instead of searching for them
+        // TODO: retain unregistered accounts for epoch transition instead of searching for them
         //
         // We have to prune accounts from that have been unregistered in this epoch and can no longer
         // receive rewards. The number of accounts doing so is usually limited compared to the total

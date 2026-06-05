@@ -166,7 +166,7 @@ impl GovernanceUpdates {
                     // recent set of proposals available. While recently submitted proposals won't have any
                     // votes, they might still end up being pruned due to a previous proposal being enacted.
                     //
-                    // FIXME: Lazily fetch governance proposals on epoch boundary
+                    // TODO: Lazily fetch governance proposals on epoch boundary
                     //
                     // We shouldn't collect all proposals here, but provides iterators for the
                     // ratification step to go over them lazily.

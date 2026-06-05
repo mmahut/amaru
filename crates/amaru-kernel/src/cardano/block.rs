@@ -148,6 +148,8 @@ impl<'b, C> cbor::Decode<'b, C> for Block {
                 // decoder regarding duplicate keys: if allowed, should they overwrite a previously
                 // decoded value or give precedence to the first value decoded? If not allowed,
                 // we should loudly fail.
+                //
+                // See #866.
                 cbor::tee(d, |d| cbor::heterogeneous_map(d, BTreeMap::new(), |d| d.u32(), |d, st, field| {
                     st.insert(field, d.decode_with(ctx)?);
                     Ok(())

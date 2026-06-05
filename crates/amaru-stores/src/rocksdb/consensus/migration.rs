@@ -123,7 +123,9 @@ fn migrate_to_v3(db: &OptimisticTransactionDB) -> Result<(), StoreError> {
     Ok(())
 }
 
-// FIXME: this function and the following duplicate code in mod.rs The
+// TODO: Less code duplication
+//
+// This function and the following duplicate code in mod.rs The
 // problem is that we need it to be polymorphic in the type of DB but
 // we have 2 different incompatible types, DB and
 // OptimisticTransactionDB.

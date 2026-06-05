@@ -33,7 +33,7 @@ use crate::context::{UtxoSlice, WitnessSlice};
 
 #[derive(Clone, Copy)]
 pub(super) enum ProvidedScript<'a> {
-    // FIXME: Use of 'NativeScript'
+    // TODO: Use of 'NativeScript'
     //
     // This should very likely be 'MemoizedNativeScript'; we could likely get rid of the
     // 'NativeScript' entirely now already?
@@ -511,7 +511,7 @@ pub(crate) fn validate_plutus_script<const V: usize>(
         )));
     }
 
-    // FIXME: Carry decoded programs throughout
+    // TODO: Carry decoded programs throughout
     //
     // We decode the script bytes here and, if they're well-formed, again during phase 2 validations.
     // We should decode the script bytes once, and then pass them to phase 2 validation for execution.
