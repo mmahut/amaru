@@ -494,7 +494,8 @@ fn new_default_filter(var: &str, default: &str) -> (ThrottledEnvFilter, DelayedW
             let var = var.to_string();
             let warning = match e.source().and_then(|e| e.downcast_ref::<VarError>()) {
                 Some(VarError::NotPresent) => {
-                    Box::new(move || info!(var, fallback, "unspecified ENV variable")) as Box<dyn FnOnce()>
+                    Box::new(move || info!(var, fallback, "using default as ENV variable is not set"))
+                        as Box<dyn FnOnce()>
                 }
                 _ => Box::new(move || warn!(var, fallback, reason = %e, "invalid ENV variable")) as Box<dyn FnOnce()>,
             };
