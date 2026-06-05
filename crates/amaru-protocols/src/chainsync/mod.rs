@@ -20,6 +20,14 @@ pub use initiator::{ChainSyncInitiator, ChainSyncInitiatorMsg, InitiatorMessage,
 pub use messages::HeaderContent;
 pub use responder::{ChainSyncResponder, ResponderMessage, responder};
 
+/// Number of RequestNext we keep in flight to not be limited by round-trip time.
+/// This value has been obtained by testing between European countries and may therefore be too low for
+/// catching up across continents; that might not be a smart use-case, though, which is why we use this
+/// value for now.
+///
+/// Note that this also scales the buffer size limit accordingly.
+pub const PIPELINE_DEPTH: u8 = 10;
+
 pub fn register_deserializers() -> pure_stage::DeserializerGuards {
     vec![messages::register_deserializers(), initiator::register_deserializers(), responder::register_deserializers()]
         .into_iter()
@@ -70,9 +78,7 @@ mod register {
                 protocol: PROTO_N2N_CHAIN_SYNC.erase(),
                 frame: Frame::OneCborItem,
                 handler: eff.contramap(&chainsync, "chainsync_bytes", Inputs::Network).await,
-                max_buffer: 57600, // FIXME:
-                                   // Figure out how to scale this with pipelining depth.
-                                   // This number MUST depend on the pipeline depth as a constant.
+                max_buffer: 5760 * usize::from(PIPELINE_DEPTH),
             },
         )
         .await;
