@@ -48,6 +48,7 @@ pub fn import_snapshot_from_tvar<S, F>(
     utxo_file: &mut std::fs::File,
     network: NetworkName,
     nonce_tail: Option<HeaderHash>,
+    era_history_override: Option<EraHistory>,
     with_progress: F,
 ) -> Result<(Epoch, Point, Option<InitialNonces>), Box<dyn std::error::Error>>
 where
@@ -64,7 +65,11 @@ where
         (parse_state_snapshot(&mut decoder, &network)?, None)
     };
     let point = Point::Specific(parsed_snapshot.slot.into(), parsed_snapshot.hash);
-    let era_history = parsed_snapshot.era_history;
+    // The cardano-node snapshot only carries the network-default epoch size for
+    // the open-ended current era (parse_state_snapshot). Custom testnets supply
+    // the real era-history out of band (the bootstrap sidecar), so honor that
+    // override when provided; public networks keep the snapshot-derived history.
+    let era_history = era_history_override.unwrap_or(parsed_snapshot.era_history);
     let new_epoch_state_offset = parsed_snapshot.ledger_data_begin;
 
     info!(point = %point, new_epoch_state_offset, "importing state snapshot with external utxo source");
