@@ -32,10 +32,6 @@ pub struct Row {
     pub pool: Option<(PoolId, CertificatePointer)>,
     pub deposit: Lovelace,
     pub drep: Option<(DRep, CertificatePointer)>,
-    // FIXME: We probably want to use an arbitrarily-sized for rewards; Going
-    // for a Lovelace (aliasing u64) for now as we are only demonstrating the
-    // ledger-state storage capabilities and it doesn't *fundamentally* change
-    // anything.
     pub rewards: Lovelace,
 }
 

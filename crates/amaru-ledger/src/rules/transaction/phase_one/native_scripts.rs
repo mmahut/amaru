@@ -62,7 +62,7 @@ pub(super) fn execute(
     Ok(())
 }
 
-// FIXME: This duplicates the vkey hashing already done in
+// TODO: This duplicates the vkey hashing already done in
 // `vkey_witness::execute`, which builds a `provided_keys_or_roots` set from the same vkey
 // witnesses. However, that set is the UNION of vkey hashes and bootstrap-witness roots.
 // Native script `RequireSignature` evaluation must NOT consider bootstrap roots.

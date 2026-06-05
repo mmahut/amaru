@@ -73,7 +73,7 @@ pub enum ProtocolError {
     ///
     /// Note: this is stricter than the Haskell `ouroboros-network` V2 inbound side, which
     /// admits any advertised size and only verifies received-vs-advertised after the body is
-    /// fetched (see the `Decision.hs` TODO "we must validate that `txSize` is smaller than
+    /// fetched (see the `Decision.hs` todos "we must validate that `txSize` is smaller than
     /// maximum txs size"). Honest peers pull from a mempool that already enforces
     /// `max_transaction_size`, so this should never fire in practice.
     TxAdvertisedSizeTooLarge { tx_id: TransactionId, advertised: u32, budget: u64 },

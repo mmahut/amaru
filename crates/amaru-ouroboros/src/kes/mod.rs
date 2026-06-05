@@ -29,7 +29,8 @@ pub struct SecretKey<'a>(Sum6Kes<'a>);
 impl SecretKey<'_> {
     /// Create a new KES secret key
     pub fn from_bytes(sk_bytes: &mut Vec<u8>) -> Result<SecretKey<'_>, Error> {
-        // TODO: extend() could potentially re-allocate memory to a new location and copy the sk_bytes.
+        // FIXME: Avoid leaking KES secret keys
+        // extend() could potentially re-allocate memory to a new location and copy the sk_bytes.
         // This would leave the original memory containing the secret key without being wiped.
         sk_bytes.extend([0u8; 4]); // default to period = 0
         let sum_6_kes = Sum6Kes::from_bytes(sk_bytes.as_mut_slice())?;

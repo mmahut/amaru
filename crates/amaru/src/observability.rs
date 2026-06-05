@@ -348,7 +348,6 @@ pub fn setup_open_telemetry(
         .with_resource(resource.clone())
         .build();
 
-    // FIXME RK: this doesn’t seem to be used anywhere?
     opentelemetry::global::set_meter_provider(metrics_provider.clone());
 
     // Subscriber
@@ -385,7 +384,8 @@ fn teardown_open_telemetry(
     logs: SdkLoggerProvider,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Shut down the providers so that it flushes any remaining spans
-    // TODO: we might also want to wrap this in a timeout, so we don't hold the process open forever?
+    //
+    // FIXME: we might also want to wrap this in a timeout, so we don't hold the process open forever?
     tracing.shutdown()?;
     metrics.shutdown()?;
     logs.shutdown()?;

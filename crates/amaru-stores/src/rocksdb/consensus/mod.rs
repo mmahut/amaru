@@ -91,6 +91,11 @@ impl DbOps for DB {
     }
 }
 
+// FIXME: Switch to full Transaction intead of optimistic?
+//
+// RocksDB iterator errors (transient I/O, corruption) panic the node here.
+// Propagating as StoreError requires changing the `get_children` trait signature
+// across ReadOnlyChainStore and all impls/callers. Tracked as follow-up.
 impl DbOps for SnapshotWithThreadMode<'_, OptimisticTransactionDB> {
     type Iter<'a>
         = DBIteratorWithThreadMode<'a, OptimisticTransactionDB>
@@ -264,9 +269,6 @@ where
         opts.set_iterate_range(PrefixRange([&CHILD_PREFIX[..], &hash[..]].concat()));
 
         for res in self.db.iterator_opt(IteratorMode::Start, opts) {
-            // FIXME: RocksDB iterator errors (transient I/O, corruption) panic the node here.
-            // Propagating as StoreError requires changing the `get_children` trait signature
-            // across ReadOnlyChainStore and all impls/callers. Tracked as follow-up.
             #[expect(clippy::expect_used)]
             let (key, _value) = res.expect("error iterating over children");
             let mut arr = [0u8; HEADER];
@@ -412,8 +414,6 @@ impl DiagnosticChainStore for RocksDBStore<DB> {
         opts.set_iterate_range(PrefixRange(&CHILD_PREFIX[..]));
 
         for kv in self.db.iterator_opt(IteratorMode::Start, opts) {
-            // FIXME: same as `get_children`; iterator errors panic the node. Diagnostic-only
-            // path today, but worth unifying when the trait-level fix lands.
             let (k, _v) = kv.expect("error iterating over children keys");
 
             //Key layout: [CHILD_PREFIX][parent][child]
