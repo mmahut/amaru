@@ -27,6 +27,7 @@ pure-stage.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 vrf_dalek.workspace = true
+zeroize.workspace = true
 
 # Internal dependencies ───────────────────────────────────────────────────────┐
 amaru-kernel.workspace = true
