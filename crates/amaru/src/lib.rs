@@ -164,6 +164,9 @@ pub mod env_vars {
     /// Runtime bootstrap config directory override.
     pub const BOOTSTRAP_CONFIG_DIR: &str = "AMARU_BOOTSTRAP_CONFIG_DIR";
 
+    /// --cardano-db-dir
+    pub const CARDANO_DB_DIR: &str = "AMARU_CARDANO_DB_DIR";
+
     /// --cardano-node-config-dir
     pub const CARDANO_NODE_CONFIG_DIR: &str = "AMARU_CARDANO_NODE_CONFIG_DIR";
 
@@ -226,6 +229,9 @@ pub mod env_vars {
 
     /// --submit-api-address
     pub const SUBMIT_API_ADDRESS: &str = "AMARU_SUBMIT_API_ADDRESS";
+
+    /// --targets-file
+    pub const TARGETS_FILE: &str = "AMARU_TARGETS_FILE";
 
     /// --trace-buffer
     pub const TRACE_BUFFER: &str = "AMARU_TRACE_BUFFER";

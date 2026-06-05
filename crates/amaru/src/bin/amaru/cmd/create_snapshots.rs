@@ -104,6 +104,32 @@ pub struct Args {
         env = amaru::env_vars::CARDANO_NODE_CONFIG_DIR,
     )]
     cardano_node_config_dir: Option<PathBuf>,
+
+    /// Use an existing local cardano-node database instead of downloading via Mithril.
+    ///
+    /// The directory must contain the cardano-node `immutable/` chunks covering all
+    /// target slots (the standard chain-db layout). Required for custom testnets,
+    /// which have no Mithril aggregator; when the local chunks already cover the
+    /// requested slots the Mithril download is skipped entirely.
+    #[arg(
+        long,
+        value_name = amaru::value_names::DIRECTORY,
+        env = amaru::env_vars::CARDANO_DB_DIR,
+    )]
+    cardano_db_dir: Option<PathBuf>,
+
+    /// Path to a JSON file of explicit epoch targets, bypassing Koios.
+    ///
+    /// Required for custom testnets, where Koios is unavailable. The file is a JSON
+    /// array of objects with `epoch`, `slot`, `hash` and `parent_point`
+    /// (`"<slot>.<hash>"`) — the same shape Koios resolution produces. When provided,
+    /// the start-epoch and last-block lookups are taken from the file instead of Koios.
+    #[arg(
+        long,
+        value_name = amaru::value_names::FILEPATH,
+        env = amaru::env_vars::TARGETS_FILE,
+    )]
+    targets_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -111,10 +137,25 @@ struct EpochTarget {
     epoch: u64,
     slot: u64,
     hash: String,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "header_parent")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "header_parent")]
     parent_point: Option<String>,
+    #[serde(default)]
     archive_path: Option<String>,
+    #[serde(default)]
     snapshot_path: Option<String>,
+}
+
+/// Load explicit epoch targets from a JSON file, bypassing Koios. Used for custom
+/// testnets, where Koios is unavailable but the operator already knows each epoch's
+/// last block (e.g. from a local chain-db scan).
+fn load_targets_from_file(path: &Path) -> Result<Vec<EpochTarget>, Box<dyn std::error::Error>> {
+    let bytes = fs::read(path).map_err(|err| format!("cannot read targets file {}: {err}", path.display()))?;
+    let targets: Vec<EpochTarget> =
+        serde_json::from_slice(&bytes).map_err(|err| format!("cannot parse targets file {}: {err}", path.display()))?;
+    if targets.is_empty() {
+        return Err(format!("targets file {} contains no epoch targets", path.display()).into());
+    }
+    Ok(targets)
 }
 
 fn default_dist_dir(network: NetworkName) -> PathBuf {
@@ -126,16 +167,17 @@ fn default_snapshot_output_dir(network: NetworkName) -> PathBuf {
 }
 
 pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    let Args { network, epoch, dist_dir, snapshot_dir, force, cardano_node_config_dir } = args;
+    let Args { network, epoch, dist_dir, snapshot_dir, force, cardano_node_config_dir, cardano_db_dir, targets_file } =
+        args;
     let client = reqwest::Client::new();
     let requested_epoch = epoch;
-    let epoch = resolve_start_epoch(&client, network, requested_epoch).await?;
-    let target_epochs = bootstrap_target_epochs(epoch)?;
     let dist_dir = dist_dir.unwrap_or_else(|| default_dist_dir(network));
     let metadata_dir = dist_dir.join("epochs");
     let snapshot_output_dir = snapshot_dir.unwrap_or_else(|| default_snapshot_output_dir(network));
     let work_dir = dist_dir.join("work");
-    let cardano_db_dir = work_dir.join("cardano-db");
+    // Use the operator-supplied cardano-db when given (custom testnets), otherwise the
+    // Mithril-managed work directory (public networks).
+    let cardano_db_dir = cardano_db_dir.unwrap_or_else(|| work_dir.join("cardano-db"));
     let ledger_snapshot_dir = cardano_db_dir.join("ledger");
 
     fs::create_dir_all(&metadata_dir)?;
@@ -145,29 +187,53 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let config_dir = resolve_config_dir(&client, cardano_node_config_dir, network, &work_dir).await?;
 
+    // Resolve the epoch targets: from an explicit targets file (Koios bypass, for custom
+    // testnets) or from Koios (public networks).
+    let mut targets = if let Some(targets_file) = targets_file.as_ref() {
+        load_targets_from_file(targets_file)?
+    } else {
+        let start_epoch = resolve_start_epoch(&client, network, requested_epoch).await?;
+        let target_epochs = bootstrap_target_epochs(start_epoch)?;
+        let mut resolved = Vec::with_capacity(target_epochs.len());
+        for epoch in target_epochs {
+            resolved.push(fetch_last_block_for_epoch(&client, network, epoch).await?);
+        }
+        resolved
+    };
+
+    for target in &mut targets {
+        target.archive_path =
+            Some(archive_path_for_target(&snapshot_output_dir, target).to_string_lossy().into_owned());
+        target.snapshot_path =
+            Some(snapshot_path_for_target(&snapshot_output_dir, target).to_string_lossy().into_owned());
+    }
+    targets.sort_unstable_by_key(|target| target.slot);
+
+    // Fail fast: every target except the oldest must carry a parent_point, since
+    // bootstrap packages headers for the 2nd and 3rd snapshots from it. Without
+    // this, create-snapshots succeeds but bootstrap later fails for want of the
+    // packaged bootstrap.headers.json.
+    if let Some(target) = targets.iter().skip(1).find(|target| target.parent_point.is_none()) {
+        return Err(format!(
+            "target epoch {} (slot {}) is missing parent_point; required to package bootstrap headers",
+            target.epoch, target.slot
+        )
+        .into());
+    }
+
     info!(
         _command = "create-snapshots",
         snapshot_output_dir = %snapshot_output_dir.display(),
         config_dir = %config_dir.display(),
+        cardano_db_dir = %cardano_db_dir.display(),
         network = %network,
         dist_dir = %dist_dir.display(),
         force,
         requested_epoch = ?requested_epoch,
-        start_epoch = epoch,
-        target_epochs = ?target_epochs,
+        targets_file = ?targets_file,
+        target_epochs = ?targets.iter().map(|t| t.epoch).collect::<Vec<_>>(),
         "running",
     );
-
-    let mut targets = Vec::with_capacity(target_epochs.len());
-    for epoch in target_epochs {
-        let mut target = fetch_last_block_for_epoch(&client, network, epoch).await?;
-        target.archive_path =
-            Some(archive_path_for_target(&snapshot_output_dir, &target).to_string_lossy().into_owned());
-        target.snapshot_path =
-            Some(snapshot_path_for_target(&snapshot_output_dir, &target).to_string_lossy().into_owned());
-        targets.push(target);
-    }
-    targets.sort_unstable_by_key(|target| target.slot);
 
     if force {
         remove_target_outputs(&snapshot_output_dir, &targets)?;
