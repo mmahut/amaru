@@ -20,7 +20,10 @@ use pure_stage::{DeserializerGuards, Effects, StageRef, Void};
 use tracing::Instrument;
 
 use crate::{
-    chainsync::messages::{HeaderContent, Message},
+    chainsync::{
+        PIPELINE_DEPTH,
+        messages::{HeaderContent, Message},
+    },
     mux::MuxMessage,
     protocol::{
         Initiator, Inputs, Miniprotocol, Outcome, PROTO_N2N_CHAIN_SYNC, ProtocolState, StageState, miniprotocol,
@@ -238,7 +241,7 @@ impl ProtocolState<Initiator> for InitiatorState {
                 // only for this first time do we sent two requests
                 // this initiates the desired pipelining behaviour
                 outcome()
-                    .send(Message::RequestNext(10))
+                    .send(Message::RequestNext(PIPELINE_DEPTH))
                     .want_next()
                     .result(InitiatorResult::IntersectFound(point, tip)),
                 CanAwait(1),
