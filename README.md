@@ -23,6 +23,10 @@
 > integration of components, so that progress is instantly visible, even though
 > features might be limited or incomplete.
 
+> [!NOTE]
+> **Prefer not to install Rust locally?** We provide a Docker-based build and run path.
+> See [docker/README.md](./docker/README.md) for instructions on using Docker instead.
+
 ### Installing
 
 ```console
