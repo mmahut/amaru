@@ -95,6 +95,7 @@ tracing-subscriber = { version = "0.3.20", features = [
   "json",
 ] }
 typetag = "0.2.21"
+zeroize = "1.8.2"
 
 # Internal dependencies
 amaru = { path = "crates/amaru", version = "0.1.2" }
