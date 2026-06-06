@@ -70,7 +70,7 @@ jobs:
             target_epoch: 288
           - name: preview
             magic: 2
-            target_epoch: 673
+            target_epoch: 1020
             tests-may-fail: false
         cardano_node_version: [10.5.3]
     env:
