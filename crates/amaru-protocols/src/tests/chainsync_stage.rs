@@ -27,48 +27,27 @@ use crate::{
 /// State for the ChainSync stage
 /// The stage batches block fetch requests to test the manager's block fetch capabilities with the Message::RequestRange variant.
 /// We accumulate the next points to fetch in this state and keep track of the total number of requested blocks.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(super) struct ChainSyncStageState {
     manager: StageRef<ManagerMessage>,
     fetcher: StageRef<StoreFetchedBlocksMessage>,
     blocks_to_fetch: Vec<Point>,
     total_requested_blocks: usize,
     processing_wait: Option<Duration>,
-    #[serde(skip)]
-    notify: Arc<Notify>,
 }
-
-impl PartialEq for ChainSyncStageState {
-    fn eq(&self, other: &Self) -> bool {
-        self.manager == other.manager
-            && self.fetcher == other.fetcher
-            && self.blocks_to_fetch == other.blocks_to_fetch
-            && self.total_requested_blocks == other.total_requested_blocks
-            && self.processing_wait == other.processing_wait
-    }
-}
-
-impl Eq for ChainSyncStageState {}
 
 impl ChainSyncStageState {
     pub(super) fn new(
         manager: StageRef<ManagerMessage>,
+        fetcher: StageRef<StoreFetchedBlocksMessage>,
         processing_wait: Option<Duration>,
-        notify: Arc<Notify>,
     ) -> Self {
-        Self {
-            manager,
-            fetcher: StageRef::blackhole(),
-            blocks_to_fetch: Vec::new(),
-            total_requested_blocks: 0,
-            processing_wait,
-            notify,
-        }
+        Self { manager, fetcher, blocks_to_fetch: Vec::new(), total_requested_blocks: 0, processing_wait }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-struct FetchBatch {
+pub(super) struct FetchBatch {
     from: Point,
     through: Point,
     expected_points: VecDeque<Point>,
@@ -76,7 +55,7 @@ struct FetchBatch {
 }
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-enum StoreFetchedBlocksMessage {
+pub(super) enum StoreFetchedBlocksMessage {
     FetchBatch(FetchBatch),
     Blocks(Blocks),
 }
@@ -89,7 +68,7 @@ struct PendingFetch {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct StoreFetchedBlocks {
+pub(super) struct StoreFetchedBlocks {
     manager: StageRef<ManagerMessage>,
     blocks: StageRef<Blocks>,
     next_id: u64,
@@ -114,16 +93,8 @@ impl PartialEq for StoreFetchedBlocks {
 impl Eq for StoreFetchedBlocks {}
 
 impl StoreFetchedBlocks {
-    fn new(manager: StageRef<ManagerMessage>, notify: Arc<Notify>) -> Self {
-        Self {
-            manager,
-            blocks: StageRef::blackhole(),
-            next_id: 0,
-            current: None,
-            queue: VecDeque::new(),
-            total_requested_blocks: 0,
-            notify,
-        }
+    pub(super) fn new(manager: StageRef<ManagerMessage>, blocks: StageRef<Blocks>, notify: Arc<Notify>) -> Self {
+        Self { manager, blocks, next_id: 0, current: None, queue: VecDeque::new(), total_requested_blocks: 0, notify }
     }
 }
 
@@ -135,12 +106,6 @@ async fn start_next_fetch(state: &mut StoreFetchedBlocks, eff: &Effects<StoreFet
     let Some(batch) = state.queue.pop_front() else {
         return;
     };
-
-    if state.blocks.is_blackhole() {
-        state.blocks = eff
-            .contramap(eff.me_ref(), format!("{}-blocks", eff.me_ref().name()), StoreFetchedBlocksMessage::Blocks)
-            .await;
-    }
 
     state.next_id += 1;
     let id = state.next_id;
@@ -168,7 +133,7 @@ async fn advance_after_fetch(
     }
 }
 
-async fn store_fetched_blocks(
+pub(super) async fn store_fetched_blocks(
     mut state: StoreFetchedBlocks,
     msg: StoreFetchedBlocksMessage,
     eff: Effects<StoreFetchedBlocksMessage>,
@@ -257,12 +222,6 @@ pub(super) async fn test_chainsync_stage(
                 let through = *state.blocks_to_fetch.last().unwrap();
                 let expected_blocks = state.blocks_to_fetch.len();
                 state.total_requested_blocks += expected_blocks;
-                if state.fetcher.is_blackhole() {
-                    let fetcher = eff.stage("store_fetched_blocks", store_fetched_blocks).await;
-                    state.fetcher = eff
-                        .wire_up(fetcher, StoreFetchedBlocks::new(state.manager.clone(), state.notify.clone()))
-                        .await;
-                }
                 eff.send(
                     &state.fetcher,
                     StoreFetchedBlocksMessage::FetchBatch(FetchBatch {

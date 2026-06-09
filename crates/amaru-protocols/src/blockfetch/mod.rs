@@ -16,9 +16,7 @@ mod initiator;
 pub(crate) mod messages;
 mod responder;
 
-use std::sync::Arc;
-
-use amaru_kernel::{EraHistory, Peer, Point};
+use amaru_kernel::{Peer, Point};
 use amaru_ouroboros::ConnectionId;
 // Re-export types
 pub use initiator::{BlockFetchInitiator, BlockFetchMessage, Blocks, initiator};
@@ -70,15 +68,11 @@ pub async fn register_blockfetch_initiator<M>(
     muxer: &StageRef<MuxMessage>,
     peer: Peer,
     conn_id: ConnectionId,
-    era_history: Arc<EraHistory>,
     eff: &Effects<M>,
 ) -> StageRef<BlockFetchMessage> {
     use crate::protocol::PROTO_N2N_BLOCK_FETCH;
     let blockfetch = eff
-        .wire_up(
-            eff.stage("blockfetch", initiator()).await,
-            BlockFetchInitiator::new(muxer.clone(), peer, conn_id, era_history),
-        )
+        .wire_up(eff.stage("blockfetch", initiator()).await, BlockFetchInitiator::new(muxer.clone(), peer, conn_id))
         .await;
     eff.send(
         muxer,

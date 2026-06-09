@@ -281,8 +281,7 @@ async fn do_handshake(
 
     if *role == Role::Initiator {
         let chainsync_initiator = register_chainsync_initiator(&muxer, peer.clone(), *conn_id, pipeline, &eff).await;
-        let blockfetch_initiator =
-            register_blockfetch_initiator(&muxer, peer.clone(), *conn_id, era_history.clone(), &eff).await;
+        let blockfetch_initiator = register_blockfetch_initiator(&muxer, peer.clone(), *conn_id, &eff).await;
         State::Initiator(StateInitiator {
             chainsync_initiator,
             blockfetch_initiator,

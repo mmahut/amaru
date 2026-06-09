@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::VecDeque, sync::Arc};
+use std::collections::VecDeque;
 
-use amaru_kernel::{EraHistory, Peer, Point, RawBlock, cardano::network_block::NetworkBlock, utils::debug_bytes};
+use amaru_kernel::{Peer, Point, RawBlock, cardano::network_block::NetworkBlock, utils::debug_bytes};
 use amaru_observability::trace_span;
 use amaru_ouroboros::ConnectionId;
 use pure_stage::{DeserializerGuards, Effects, StageRef, Void};
@@ -81,12 +81,7 @@ pub struct BlockFetchInitiator {
 impl BlockFetchInitiator {
     /// Create a new BlockFetchInitiator instance for a given peer, using a given connection.
     /// Returns the initial state and the initiator instance.
-    pub fn new(
-        muxer: StageRef<MuxMessage>,
-        peer: Peer,
-        conn_id: ConnectionId,
-        _era_history: Arc<EraHistory>,
-    ) -> (State, Self) {
+    pub fn new(muxer: StageRef<MuxMessage>, peer: Peer, conn_id: ConnectionId) -> (State, Self) {
         (State::Idle, Self { muxer, peer, conn_id, queue: VecDeque::new() })
     }
 }
