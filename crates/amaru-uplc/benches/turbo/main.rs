@@ -41,7 +41,7 @@ const TURBO_ARCHIVE_URL: &str = "https://pub-2239d82d9a074482b2eb2c886191cb4e.r2
 const BUMP_ARENA_CAPACITY: usize = 1048576; // 1 MB
 
 // All known samples, loaded lazily
-static SAMPLES: LazyLock<Vec<PathBuf>> = LazyLock::new(|| samples());
+static SAMPLES: LazyLock<Vec<PathBuf>> = LazyLock::new(samples);
 
 #[derive(Debug)]
 struct CborWrapped(Vec<u8>);

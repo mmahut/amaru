@@ -364,7 +364,7 @@ mod tests {
     fn roundtrip_cbor_data_negative_bigint() {
         let n = -num::BigInt::from_bytes_be(num_bigint::Sign::Plus, &hex::decode("033b2e3c9fd0803ce7ffffff").unwrap())
             - num::BigInt::from(1);
-        let encoded = minicbor::to_vec(&PlutusData::Integer(&n)).expect("encode failed");
+        let encoded = minicbor::to_vec(PlutusData::Integer(&n)).expect("encode failed");
         let arena = Arena::new();
         let decoded = PlutusData::from_cbor(&arena, &encoded).expect("decode failed");
         assert_eq!(decoded, &PlutusData::Integer(&n));

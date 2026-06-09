@@ -24,7 +24,6 @@ hamming.workspace = true
 hex.workspace = true
 minicbor = { workspace = true, features = ["std"] }
 num-bigint.workspace = true
-num-integer.workspace = true
 num.workspace = true
 once_cell.workspace = true
 secp256k1.workspace = true
