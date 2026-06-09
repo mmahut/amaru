@@ -20,7 +20,7 @@ use amaru_ouroboros::ConnectionId;
 use pure_stage::{DeserializerGuards, Effects, StageRef, Void};
 
 use crate::{
-    blockfetch::{State, messages::Message},
+    blockfetch::{State, messages::Message, responder::MAX_FETCHED_BLOCKS},
     mux::MuxMessage,
     protocol::{
         Initiator, Inputs, Miniprotocol, Outcome, PROTO_N2N_BLOCK_FETCH, ProtocolState, StageState, miniprotocol,
@@ -75,7 +75,7 @@ pub struct BlockFetchInitiator {
     ///
     /// Note that the first two elements of the queue have already been sent
     /// to the network (pipelining).
-    queue: VecDeque<(Point, Point, u64, StageRef<Blocks>)>,
+    queue: VecDeque<(Point, Point, u64, StageRef<Blocks>, usize)>,
 }
 
 impl BlockFetchInitiator {
@@ -107,7 +107,7 @@ impl StageState<State, Initiator> for BlockFetchInitiator {
                     tracing::debug!(peer = %self.peer, "dropping request for slow peer");
                 }
                 self.queue.truncate(1);
-                self.queue.push_back((from, through, id, cr));
+                self.queue.push_back((from, through, id, cr, MAX_FETCHED_BLOCKS));
                 Ok((action, self))
             }
         }
@@ -128,14 +128,24 @@ impl StageState<State, Initiator> for BlockFetchInitiator {
         let queued = match input {
             InitiatorResult::Initialize => None,
             InitiatorResult::NoBlocks => {
-                let (_, _, id, cr) = self.queue.pop_front().expect("queue must not be empty");
+                let (_, _, id, cr, _) = self.queue.pop_front().expect("queue must not be empty");
                 eff.send(&cr, Blocks::NoBlocks(id)).await;
                 self.queue.front()
             }
             InitiatorResult::Block(body) => {
                 if let Ok(network_block) = NetworkBlock::try_from(RawBlock::from(body.as_slice())) {
-                    if let Some((_, _, id, cr)) = self.queue.front() {
-                        eff.send(cr, Blocks::Block(*id, self.peer.clone(), network_block)).await;
+                    if let Some((_, _, id, cr, remaining_blocks)) = self.queue.front_mut() {
+                        if *remaining_blocks == 0 {
+                            tracing::warn!(
+                                max_blocks = MAX_FETCHED_BLOCKS,
+                                "received more blocks than allowed for a single request; terminating the connection"
+                            );
+                            return eff.terminate().await;
+                        }
+                        *remaining_blocks -= 1;
+                        let id = *id;
+                        let cr = cr.clone();
+                        eff.send(&cr, Blocks::Block(id, self.peer.clone(), network_block)).await;
                     } else {
                         tracing::warn!("received block without a pending request; terminating the connection");
                         return eff.terminate().await;
@@ -147,13 +157,13 @@ impl StageState<State, Initiator> for BlockFetchInitiator {
                 None
             }
             InitiatorResult::Done => {
-                let (_, _, id, cr) = self.queue.pop_front().expect("queue must not be empty");
+                let (_, _, id, cr, _) = self.queue.pop_front().expect("queue must not be empty");
                 eff.send(&cr, Blocks::Done(id)).await;
                 self.queue.front()
             }
         };
         let action =
-            queued.map(|(from, through, _, _)| InitiatorAction::RequestRange { from: *from, through: *through });
+            queued.map(|(from, through, _, _, _)| InitiatorAction::RequestRange { from: *from, through: *through });
         Ok((action, self))
     }
 

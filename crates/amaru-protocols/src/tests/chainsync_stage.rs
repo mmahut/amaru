@@ -71,7 +71,7 @@ impl ChainSyncStageState {
 struct FetchBatch {
     from: Point,
     through: Point,
-    expected_blocks: usize,
+    expected_points: VecDeque<Point>,
     handler: StageRef<chainsync::InitiatorMessage>,
 }
 
@@ -84,8 +84,7 @@ enum StoreFetchedBlocksMessage {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct PendingFetch {
     id: u64,
-    expected_blocks: usize,
-    received_blocks: usize,
+    remaining_points: VecDeque<Point>,
     handler: StageRef<chainsync::InitiatorMessage>,
 }
 
@@ -145,9 +144,8 @@ async fn start_next_fetch(state: &mut StoreFetchedBlocks, eff: &Effects<StoreFet
 
     state.next_id += 1;
     let id = state.next_id;
-    state.total_requested_blocks += batch.expected_blocks;
-    state.current =
-        Some(PendingFetch { id, expected_blocks: batch.expected_blocks, received_blocks: 0, handler: batch.handler });
+    state.total_requested_blocks += batch.expected_points.len();
+    state.current = Some(PendingFetch { id, remaining_points: batch.expected_points, handler: batch.handler });
     eff.send(
         &state.manager,
         ManagerMessage::FetchBlocks { from: batch.from, through: batch.through, cr: state.blocks.clone(), id },
@@ -185,7 +183,7 @@ async fn store_fetched_blocks(
                 return state;
             }
             let current = state.current.take().expect("current fetch must exist");
-            assert_eq!(current.expected_blocks, 0, "expected blocks for request {id}, got no blocks");
+            assert!(current.remaining_points.is_empty(), "expected blocks for request {id}, got no blocks");
             advance_after_fetch(&mut state, current.handler, &eff).await;
         }
         StoreFetchedBlocksMessage::Blocks(Blocks::Block(id, _peer, network_block)) => {
@@ -193,24 +191,18 @@ async fn store_fetched_blocks(
                 return state;
             }
             let block_header = network_block.decode_header().expect("failed to extract header from block");
+            let current = state.current.as_mut().expect("current fetch must exist");
+            let expected_point = current.remaining_points.pop_front().expect("unexpected extra block");
+            assert_eq!(block_header.point(), expected_point, "unexpected block point for request {id}");
             tracing::info!("storing block {:?}", block_header.point());
             Store::new(eff.clone()).store_block(&block_header.hash(), &network_block.raw_block()).await.unwrap();
-            if let Some(current) = state.current.as_mut()
-                && current.id == id
-            {
-                current.received_blocks += 1;
-            }
         }
         StoreFetchedBlocksMessage::Blocks(Blocks::Done(id)) => {
             if !matches!(state.current.as_ref(), Some(current) if current.id == id) {
                 return state;
             }
             let current = state.current.take().expect("current fetch must exist");
-            assert_eq!(
-                current.received_blocks, current.expected_blocks,
-                "received unexpected number of blocks for request {id}"
-            );
-            tracing::info!("retrieved {} blocks", current.received_blocks);
+            assert!(current.remaining_points.is_empty(), "missing blocks for request {id}");
             advance_after_fetch(&mut state, current.handler, &eff).await;
         }
     }
@@ -276,7 +268,7 @@ pub(super) async fn test_chainsync_stage(
                     StoreFetchedBlocksMessage::FetchBatch(FetchBatch {
                         from,
                         through,
-                        expected_blocks,
+                        expected_points: state.blocks_to_fetch.iter().copied().collect(),
                         handler: msg.handler.clone(),
                     }),
                 )
