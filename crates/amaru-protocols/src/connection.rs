@@ -22,8 +22,7 @@ use tracing::Instrument;
 
 use crate::{
     blockfetch::{
-        self, BlockFetchMessage, Blocks, Blocks2, StreamBlocks, register_blockfetch_initiator,
-        register_blockfetch_responder,
+        self, BlockFetchMessage, Blocks, StreamBlocks, register_blockfetch_initiator, register_blockfetch_responder,
     },
     chainsync::{self, ChainSyncInitiatorMsg, register_chainsync_initiator, register_chainsync_responder},
     handshake,
@@ -113,9 +112,8 @@ pub enum ConnectionMessage {
     Initialize,
     Disconnect,
     Handshake(HandshakeResult),
-    FetchBlocks { from: Point, through: Point, cr: StageRef<Blocks> },
+    FetchBlocks { from: Point, through: Point, id: u64, cr: StageRef<Blocks> },
     NewTip(Tip),
-    FetchBlocks2 { from: Point, through: Point, id: u64, cr: StageRef<Blocks2> },
     // LATER: make full duplex, etc.
 }
 
@@ -127,7 +125,6 @@ impl ConnectionMessage {
             ConnectionMessage::Handshake(_) => "Handshake",
             ConnectionMessage::FetchBlocks { .. } => "FetchBlocks",
             ConnectionMessage::NewTip(_) => "NewTip",
-            ConnectionMessage::FetchBlocks2 { .. } => "FetchBlocks2",
         }
     }
 }
@@ -149,8 +146,8 @@ pub async fn stage(
             (State::Handshake { muxer, handshake }, ConnectionMessage::Handshake(handshake_result)) => {
                 do_handshake(&params, muxer, params.pipeline.clone(), handshake, handshake_result, eff).await
             }
-            (State::Initiator(s), ConnectionMessage::FetchBlocks { from, through, cr }) => {
-                eff.send(&s.blockfetch_initiator, BlockFetchMessage::RequestRange { from, through, cr }).await;
+            (State::Initiator(s), ConnectionMessage::FetchBlocks { from, through, id, cr }) => {
+                eff.send(&s.blockfetch_initiator, BlockFetchMessage::RequestRange { from, through, id, cr }).await;
                 State::Initiator(s)
             }
             (State::Responder(s), ConnectionMessage::NewTip(tip)) => {
@@ -161,14 +158,7 @@ pub async fn stage(
                 // don't propagate new tip messages when using the initiator side of a connection.
                 State::Initiator(s)
             }
-            (State::Initiator(s), ConnectionMessage::FetchBlocks2 { from, through, id, cr }) => {
-                eff.send(&s.blockfetch_initiator, BlockFetchMessage::RequestRange2 { from, through, id, cr }).await;
-                State::Initiator(s)
-            }
-            (
-                state @ (State::Initial | State::Handshake { .. }),
-                msg @ (ConnectionMessage::FetchBlocks { .. } | ConnectionMessage::FetchBlocks2 { .. }),
-            ) => {
+            (state @ (State::Initial | State::Handshake { .. }), msg @ ConnectionMessage::FetchBlocks { .. }) => {
                 // The peer might be still connecting. In that case we reschedule the message
                 // If the peer eventually can't be fully initialized, the caller timeout will trigger.
                 // We schedule after the reconnect delay (2s by default) which is shorter than the call
@@ -360,7 +350,7 @@ mod tests {
     fn fetch_blocks_in_disconnected_state_reschedules(connection_state: State) {
         assert_message_reschedules_in_disconnected_state(connection_state, |network| {
             let (blocks_output, _rx) = network.output::<Blocks>("blocks_output", 10);
-            ConnectionMessage::FetchBlocks { from: Point::Origin, through: Point::Origin, cr: blocks_output }
+            ConnectionMessage::FetchBlocks { from: Point::Origin, through: Point::Origin, id: 0, cr: blocks_output }
         });
     }
 

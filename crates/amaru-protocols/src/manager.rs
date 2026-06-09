@@ -22,7 +22,7 @@ use tracing::Instrument;
 
 use crate::{
     accept::{self, PullAccept},
-    blockfetch::{Blocks, Blocks2},
+    blockfetch::Blocks,
     chainsync::ChainSyncInitiatorMsg,
     connection::{self, ConnectionMessage},
     network_effects::{ConnectError, Network, NetworkOps},
@@ -70,20 +70,8 @@ pub enum ManagerMessage {
     Disconnect(Peer, ConnectionId),
     /// Start listening for incoming connections on the given socket address.
     Listen(SocketAddr),
-    // TODO: remove, then rename FetchBlocks2 to FetchBlocks
-    FetchBlocks {
-        peer: Peer,
-        from: Point,
-        through: Point,
-        cr: StageRef<Blocks>,
-    },
     /// Fetch all blocks on the given chain fragment
-    FetchBlocks2 {
-        from: Point,
-        through: Point,
-        cr: StageRef<Blocks2>,
-        id: u64,
-    },
+    FetchBlocks { from: Point, through: Point, cr: StageRef<Blocks>, id: u64 },
     /// Advertise this new tip to all downstream peers.
     NewTip(Tip),
     /// INTERNAL message sent by the connect handler stage after attempting a connection.
@@ -116,7 +104,6 @@ impl ManagerMessage {
             ManagerMessage::Disconnect(..) => "Disconnect",
             ManagerMessage::Listen(_) => "Listen",
             ManagerMessage::FetchBlocks { .. } => "FetchBlocks",
-            ManagerMessage::FetchBlocks2 { .. } => "FetchBlocks2",
             ManagerMessage::NewTip(_) => "NewTip",
             ManagerMessage::ConnectionResult(..) => "ConnectionResult",
             ManagerMessage::ConnectionDied(..) => "ConnectionDied",
@@ -581,7 +568,7 @@ impl Manager {
         &mut self,
         from: Point,
         through: Point,
-        cr: StageRef<Blocks2>,
+        cr: StageRef<Blocks>,
         id: u64,
         eff: &Effects<ManagerMessage>,
     ) {
@@ -591,12 +578,12 @@ impl Manager {
             if !conn.may_initiate {
                 continue;
             }
-            eff.send(&conn.stage, ConnectionMessage::FetchBlocks2 { from, through, cr: cr.clone(), id }).await;
+            eff.send(&conn.stage, ConnectionMessage::FetchBlocks { from, through, cr: cr.clone(), id }).await;
             sent += 1;
         }
         if sent == 0 {
             tracing::info!("no connections available to fetch blocks, returning empty result");
-            eff.send(&cr, Blocks2::NoBlocks(id)).await;
+            eff.send(&cr, Blocks::NoBlocks(id)).await;
         } else {
             tracing::debug!(%id, sent, "fetch blocks request sent to connections");
         }
@@ -654,29 +641,6 @@ pub async fn stage(mut manager: Manager, msg: ManagerMessage, eff: Effects<Manag
             ManagerMessage::HandshakeComplete { peer, stage, conn_id, role, full_duplex_capable, full_duplex } => {
                 manager.handshake_complete(peer, stage, conn_id, role, full_duplex_capable, full_duplex, &eff).await;
             }
-            ManagerMessage::FetchBlocks { peer, from, through, cr } => {
-                tracing::trace!(?from, ?through, %peer, "fetching blocks");
-                if let Some(peer_state) = manager.peers.get(&peer) {
-                    if let Some(conn_id) = peer_state.inbound
-                        && let Some(connection) = manager.connections.get(&conn_id)
-                        && connection.may_initiate
-                    {
-                        tracing::trace!(%peer, %conn_id, "fetching blocks on inbound connection");
-                        eff.send(&connection.stage, ConnectionMessage::FetchBlocks { from, through, cr: cr.clone() })
-                            .await;
-                    }
-                    if let OutboundState::Connected { conn_id } = peer_state.outbound
-                        && let Some(connection) = manager.connections.get(&conn_id)
-                        && connection.may_initiate
-                    {
-                        tracing::trace!(%peer, %conn_id, "fetching blocks on outbound connection");
-                        eff.send(&connection.stage, ConnectionMessage::FetchBlocks { from, through, cr }).await;
-                    }
-                } else {
-                    tracing::error!(%peer, "peer not found");
-                    eff.send(&cr, Blocks::default()).await;
-                }
-            }
             ManagerMessage::Listen(listen_addr) => {
                 manager.listen(listen_addr, &eff).await;
             }
@@ -685,7 +649,7 @@ pub async fn stage(mut manager: Manager, msg: ManagerMessage, eff: Effects<Manag
                     eff.send(&conn.stage, ConnectionMessage::NewTip(tip)).await;
                 }
             }
-            ManagerMessage::FetchBlocks2 { from, through, cr, id } => {
+            ManagerMessage::FetchBlocks { from, through, cr, id } => {
                 manager.fetch_blocks(from, through, cr, id, &eff).await;
             }
             ManagerMessage::ConnectionResult(peer, conn_id) => {

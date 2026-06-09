@@ -19,6 +19,8 @@ following type:
 
 ### Removed
 
+- amaru-protocols: remove the interim batch block-fetch API and keep the streaming `FetchBlocks` API (#778)
+
 ### Fixed
 
 - amaru-ouroboros: properly wipe KES key material in unused method `SecretKey::from_bytes` (#881)
