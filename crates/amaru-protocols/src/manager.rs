@@ -573,12 +573,19 @@ impl Manager {
         eff: &Effects<ManagerMessage>,
     ) {
         tracing::debug!(?from, ?through, "fetching blocks");
-        if let Some(conn) = self.connections.values().find(|conn| conn.may_initiate) {
-            eff.send(&conn.stage, ConnectionMessage::FetchBlocks { from, through, cr, id }).await;
-            tracing::debug!(%id, peer = %conn.peer, "fetch blocks request sent to connection");
-        } else {
+        let mut sent = 0;
+        for conn in self.connections.values() {
+            if !conn.may_initiate {
+                continue;
+            }
+            eff.send(&conn.stage, ConnectionMessage::FetchBlocks { from, through, cr: cr.clone(), id }).await;
+            sent += 1;
+        }
+        if sent == 0 {
             tracing::info!("no connections available to fetch blocks, returning empty result");
             eff.send(&cr, Blocks::NoBlocks(id)).await;
+        } else {
+            tracing::debug!(%id, sent, "fetch blocks request sent to connections");
         }
     }
 }
