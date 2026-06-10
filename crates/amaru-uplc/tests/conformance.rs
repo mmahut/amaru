@@ -15,11 +15,15 @@
 use amaru_uplc::{arena::Arena, machine::PlutusVersion, syn::parse_program};
 
 fn run_conformance(file_contents: &str, expected_output: &str, expected_budget: &str) {
+    let file_contents = &file_contents.replace("\r\n", "\n");
+    let expected_output = &expected_output.replace("\r\n", "\n");
+    let expected_budget = &expected_budget.replace("\r\n", "\n");
+
     let arena = Arena::new();
 
     let Ok(program) = parse_program(&arena, file_contents).into_result() else {
-        pretty_assertions::assert_eq!("parse error", expected_output);
-        pretty_assertions::assert_eq!("parse error", expected_budget);
+        pretty_assertions::assert_eq!("parse error", expected_output.as_str());
+        pretty_assertions::assert_eq!("parse error", expected_budget.as_str());
 
         return;
     };
@@ -29,8 +33,8 @@ fn run_conformance(file_contents: &str, expected_output: &str, expected_budget: 
     let info = result.info;
 
     let Ok(term) = result.term else {
-        pretty_assertions::assert_eq!("evaluation failure", expected_output);
-        pretty_assertions::assert_eq!("evaluation failure", expected_budget);
+        pretty_assertions::assert_eq!("evaluation failure", expected_output.as_str());
+        pretty_assertions::assert_eq!("evaluation failure", expected_budget.as_str());
 
         return;
     };
@@ -41,7 +45,7 @@ fn run_conformance(file_contents: &str, expected_output: &str, expected_budget: 
 
     let consumed_budget = format!("({{cpu: {}\n| mem: {}}})", info.consumed_budget.cpu, info.consumed_budget.mem);
 
-    pretty_assertions::assert_eq!(consumed_budget, expected_budget);
+    pretty_assertions::assert_eq!(consumed_budget, expected_budget.as_str());
 }
 
 include!(concat!(env!("OUT_DIR"), "/generated_tests.rs"));

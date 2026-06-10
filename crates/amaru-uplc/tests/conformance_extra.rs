@@ -37,6 +37,10 @@ const EXTRA_V3_COSTS: &[i64] = &[
 ];
 
 fn run_conformance_with_params(file_contents: &str, expected_output: &str, expected_budget: &str) {
+    let file_contents = &file_contents.replace("\r\n", "\n");
+    let expected_output = &expected_output.replace("\r\n", "\n");
+    let expected_budget = &expected_budget.replace("\r\n", "\n");
+
     let arena = Arena::new();
 
     let Ok(program) = parse_program(&arena, file_contents).into_result() else {
