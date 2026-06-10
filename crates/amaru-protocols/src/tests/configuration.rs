@@ -19,7 +19,7 @@ use amaru_kernel::{
     cardano::network_block::make_network_block, make_header, utils::tests::run_strategy,
 };
 use amaru_mempool::InMemoryMempool;
-use amaru_ouroboros_traits::{ChainStore, in_memory_consensus_store::InMemConsensusStore};
+use amaru_ouroboros_traits::{ChainStore, in_memory_chain_store::InMemoryChainStore};
 
 use crate::tx_submission::{create_transactions, create_transactions_in_mempool};
 
@@ -30,7 +30,7 @@ use crate::tx_submission::{create_transactions, create_transactions_in_mempool};
 ///  - They can have different timeouts and processing waits to simulate slow peers.
 #[derive(Clone)]
 pub(super) struct Configuration {
-    pub(super) chain_store: Arc<dyn ChainStore<BlockHeader>>,
+    pub(super) chain_store: Arc<InMemoryChainStore>,
     pub(super) mempool: Arc<InMemoryMempool<Transaction>>,
     pub(super) addr: SocketAddr,
     pub(super) reconnect_delay: Duration,
@@ -42,7 +42,7 @@ pub(super) struct Configuration {
 impl Configuration {
     pub(super) fn initiator() -> Self {
         let initiator = Self {
-            chain_store: Arc::new(InMemConsensusStore::default()),
+            chain_store: Arc::new(InMemoryChainStore::default()),
             chain_length: 0,
             mempool: Arc::new(InMemoryMempool::default()),
             addr: SocketAddr::from(([127, 0, 0, 1], 3000)),
@@ -55,7 +55,7 @@ impl Configuration {
 
     pub(super) fn responder() -> Self {
         let responder = Self {
-            chain_store: Arc::new(InMemConsensusStore::default()),
+            chain_store: Arc::new(InMemoryChainStore::default()),
             chain_length: 0,
             mempool: Arc::new(InMemoryMempool::default()),
             addr: SocketAddr::from(([127, 0, 0, 1], 0)),
@@ -103,7 +103,7 @@ pub const INITIATOR_BLOCKS_NB: usize = 4;
 
 /// Initialize the chain store with a chain of headers.
 /// The responder chain is longer than the initiator chain to force the initiator to catch up.
-fn initialize_chain_store(chain_length: usize, chain_store: &dyn ChainStore<BlockHeader>) -> anyhow::Result<()> {
+fn initialize_chain_store(chain_length: usize, chain_store: &dyn ChainStore) -> anyhow::Result<()> {
     // Use the same root header for both initiator and responder
     let origin_hash: HeaderHash =
         amaru_kernel::Hash::from_str("4df4505d862586f9e2c533c5fbb659f04402664db1b095aba969728abfb77301")?;

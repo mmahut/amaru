@@ -17,31 +17,34 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use amaru_kernel::{HeaderHash, IsHeader, NULL_HASH32, ORIGIN_HASH, Point, RawBlock};
+use amaru_kernel::{BlockHeader, HeaderHash, IsHeader, NULL_HASH32, ORIGIN_HASH, Point, RawBlock};
 
-use crate::{ChainStore, Nonces, ReadOnlyChainStore, StoreError};
+use crate::{
+    DiagnosticChainStore, FullChainStore, Nonces, StoreError,
+    stores::chain_store::{BaseReadChainStore, ReadChainStore, WriteChainStore},
+};
 
 /// An in-memory implementation of a ChainStore used by the consensus stages.
 #[derive(Clone)]
-pub struct InMemConsensusStore<H> {
-    inner: Arc<Mutex<InMemConsensusStoreInner<H>>>,
+pub struct InMemoryChainStore {
+    inner: Arc<Mutex<InMemoryChainStoreInner>>,
 }
 
-impl<H> Default for InMemConsensusStore<H> {
+impl Default for InMemoryChainStore {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<H> InMemConsensusStore<H> {
-    pub fn new() -> InMemConsensusStore<H> {
-        InMemConsensusStore { inner: Arc::new(Mutex::new(InMemConsensusStoreInner::new())) }
+impl InMemoryChainStore {
+    pub fn new() -> InMemoryChainStore {
+        InMemoryChainStore { inner: Arc::new(Mutex::new(InMemoryChainStoreInner::new())) }
     }
 }
 
-struct InMemConsensusStoreInner<H> {
+struct InMemoryChainStoreInner {
     nonces: BTreeMap<HeaderHash, Nonces>,
-    headers: BTreeMap<HeaderHash, H>,
+    headers: BTreeMap<HeaderHash, BlockHeader>,
     parent_child_relationship: BTreeMap<HeaderHash, Vec<HeaderHash>>,
     anchor: HeaderHash,
     best_chain: HeaderHash,
@@ -51,15 +54,15 @@ struct InMemConsensusStoreInner<H> {
     block_validity: BTreeMap<HeaderHash, bool>,
 }
 
-impl<H> Default for InMemConsensusStoreInner<H> {
+impl Default for InMemoryChainStoreInner {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<H> InMemConsensusStoreInner<H> {
-    fn new() -> InMemConsensusStoreInner<H> {
-        InMemConsensusStoreInner {
+impl InMemoryChainStoreInner {
+    fn new() -> InMemoryChainStoreInner {
+        InMemoryChainStoreInner {
             nonces: BTreeMap::new(),
             headers: BTreeMap::new(),
             parent_child_relationship: BTreeMap::new(),
@@ -72,15 +75,15 @@ impl<H> InMemConsensusStoreInner<H> {
     }
 }
 
-impl<H: IsHeader + Clone + Send + Sync + 'static> ReadOnlyChainStore<H> for InMemConsensusStore<H> {
+impl BaseReadChainStore for InMemoryChainStore {
     #[expect(clippy::unwrap_used)]
-    fn load_header(&self, hash: &HeaderHash) -> Option<H> {
+    fn load_header(&self, hash: &HeaderHash) -> Option<BlockHeader> {
         let inner = self.inner.lock().unwrap();
         inner.headers.get(hash).cloned()
     }
 
     #[expect(clippy::unwrap_used)]
-    fn load_header_with_validity(&self, hash: &HeaderHash) -> Option<(H, Option<bool>)> {
+    fn load_header_with_validity(&self, hash: &HeaderHash) -> Option<(BlockHeader, Option<bool>)> {
         let inner = self.inner.lock().unwrap();
         let header = inner.headers.get(hash).cloned();
         let validity = inner.block_validity.get(hash).copied();
@@ -142,9 +145,9 @@ impl<H: IsHeader + Clone + Send + Sync + 'static> ReadOnlyChainStore<H> for InMe
     }
 }
 
-impl<H: IsHeader + Send + Sync + Clone + 'static> ChainStore<H> for InMemConsensusStore<H> {
+impl ReadChainStore for InMemoryChainStore {
     #[expect(clippy::unwrap_used)]
-    fn snapshot(&self) -> Box<dyn ReadOnlyChainStore<H> + '_> {
+    fn snapshot(&self) -> Box<dyn BaseReadChainStore + '_> {
         let inner = self.inner.lock().unwrap();
         Box::new(InMemConsensusSnapshot {
             nonces: inner.nonces.clone(),
@@ -157,9 +160,11 @@ impl<H: IsHeader + Send + Sync + Clone + 'static> ChainStore<H> for InMemConsens
             block_validity: inner.block_validity.clone(),
         })
     }
+}
 
+impl WriteChainStore for InMemoryChainStore {
     #[expect(clippy::unwrap_used)]
-    fn store_header(&self, header: &H) -> Result<(), StoreError> {
+    fn store_header(&self, header: &BlockHeader) -> Result<(), StoreError> {
         let hash = header.hash();
         let mut inner = self.inner.lock().unwrap();
         inner.headers.insert(hash, header.clone());
@@ -236,9 +241,9 @@ impl<H: IsHeader + Send + Sync + Clone + 'static> ChainStore<H> for InMemConsens
 /// Snapshot of the current in-memory consensus store.
 /// It is used to navigate data that is guaranteed to be immutable.
 #[derive(Clone)]
-struct InMemConsensusSnapshot<H> {
+struct InMemConsensusSnapshot {
     nonces: BTreeMap<HeaderHash, Nonces>,
-    headers: BTreeMap<HeaderHash, H>,
+    headers: BTreeMap<HeaderHash, BlockHeader>,
     parent_child_relationship: BTreeMap<HeaderHash, Vec<HeaderHash>>,
     anchor: HeaderHash,
     best_chain: HeaderHash,
@@ -247,12 +252,12 @@ struct InMemConsensusSnapshot<H> {
     block_validity: BTreeMap<HeaderHash, bool>,
 }
 
-impl<H: IsHeader + Clone + Send + Sync + 'static> ReadOnlyChainStore<H> for InMemConsensusSnapshot<H> {
-    fn load_header(&self, hash: &HeaderHash) -> Option<H> {
+impl BaseReadChainStore for InMemConsensusSnapshot {
+    fn load_header(&self, hash: &HeaderHash) -> Option<BlockHeader> {
         self.headers.get(hash).cloned()
     }
 
-    fn load_header_with_validity(&self, hash: &HeaderHash) -> Option<(H, Option<bool>)> {
+    fn load_header_with_validity(&self, hash: &HeaderHash) -> Option<(BlockHeader, Option<bool>)> {
         let header = self.headers.get(hash).cloned();
         let validity = self.block_validity.get(hash).copied();
         header.map(|h| (h, validity))
@@ -304,3 +309,31 @@ fn get_next_best_chain(chain: &[Point], point: &Point) -> Option<Point> {
         })
         .copied()
 }
+
+impl DiagnosticChainStore for InMemoryChainStore {
+    #[expect(clippy::unwrap_used)]
+    fn load_headers(&self) -> Box<dyn Iterator<Item = BlockHeader> + '_> {
+        let inner = self.inner.lock().unwrap();
+        Box::new(inner.headers.values().cloned().collect::<Vec<_>>().into_iter())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn load_nonces(&self) -> Box<dyn Iterator<Item = (HeaderHash, Nonces)> + '_> {
+        let inner = self.inner.lock().unwrap();
+        Box::new(inner.nonces.clone().into_iter())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn load_blocks(&self) -> Box<dyn Iterator<Item = (HeaderHash, RawBlock)> + '_> {
+        let inner = self.inner.lock().unwrap();
+        Box::new(inner.blocks.clone().into_iter())
+    }
+
+    #[expect(clippy::unwrap_used)]
+    fn load_parents_children(&self) -> Box<dyn Iterator<Item = (HeaderHash, Vec<HeaderHash>)> + '_> {
+        let inner = self.inner.lock().unwrap();
+        Box::new(inner.parent_child_relationship.clone().into_iter())
+    }
+}
+
+impl FullChainStore for InMemoryChainStore {}
