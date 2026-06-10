@@ -1,14 +1,32 @@
-This directory contains development related docker informations.
+## For Users
 
-## TL;DR
+Docker images are available on our [Github registry](https://github.com/pragma-org/amaru/pkgs/container/amaru):
+
+```console
+docker pull ghcr.io/pragma-org/amaru:latest
+```
+
+New images are published on every change to the `main` branch; with the tag
+`:latest`. Those pertaining to releases are tagged accordingly.
+
+> [!TIP]
+> Images are multi-arch (amd64 / arm64) by default. So they should work on any _reasonable_ 64-bit system.
+
+## For Developers/Maintainers
+
+The following instructions contains detail on how to build a Docker image by
+yourself and/or, how to setup a small development cluster of Amaru and Haskell
+nodes. The described setup is mostly meant for development and toying around.
+
+### TL;DR
 
 ```bash
 cd docker/cluster
-echo AMARU_NETWORK=preprod >.env
-docker compose up --build
+echo AMARU_NETWORK=preprod > .env
+docker compose up
 ```
 
-## Building a development optimized image
+### Building a development optimized image
 
 `Dockerfile.amaru` helps create a docker image of Amaru. Do not use in production.
 
@@ -33,7 +51,7 @@ To build the image, from the project's root directory:
 docker build . -f docker/Dockerfile.amaru -t dev_amaru
 ```
 
-## Starting a development cluster
+### Starting a development cluster
 
 The `cluster/docker-compose.yml` file defines a development cluster. It is composed of:
 
@@ -57,7 +75,7 @@ account:
 docker compose up -d --build amaru
 ```
 
-## Limitations
+### Limitations
 
 At this time, changing the network once you've started the cluster could be problematic.
 The amaru (or cardano) node relies on a docker volume and stores its data in a single

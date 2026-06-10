@@ -20,6 +20,7 @@ use kes_summed_ed25519::{
     traits::{KesSig, KesSk},
 };
 use thiserror::Error;
+use zeroize::{Zeroize, Zeroizing};
 
 // ------------------------------------------------------------------- SecretKey
 
@@ -29,9 +30,15 @@ pub struct SecretKey<'a>(Sum6Kes<'a>);
 impl SecretKey<'_> {
     /// Create a new KES secret key
     pub fn from_bytes(sk_bytes: &mut Vec<u8>) -> Result<SecretKey<'_>, Error> {
-        // FIXME: Avoid leaking KES secret keys
-        // extend() could potentially re-allocate memory to a new location and copy the sk_bytes.
-        // This would leave the original memory containing the secret key without being wiped.
+        // NOTE: we need to ensure that there is enough capacity to append the period (4 bytes) to the secret key bytes.
+        // Just using `.extend()` to add the period bytes may cause a re-allocation of the `Vec<u8>`, which would leave
+        // the original memory containing the secret key without being wiped.
+        if sk_bytes.capacity() - sk_bytes.len() < 4 {
+            let stash = Zeroizing::new(sk_bytes.as_slice().to_vec());
+            sk_bytes.zeroize();
+            sk_bytes.reserve(4);
+            sk_bytes.copy_from_slice(&stash);
+        }
         sk_bytes.extend([0u8; 4]); // default to period = 0
         let sum_6_kes = Sum6Kes::from_bytes(sk_bytes.as_mut_slice())?;
         Ok(SecretKey(sum_6_kes))

@@ -13,16 +13,12 @@ following type:
 - Security: in case of vulnerabilities.
 -->
 
-## [Unreleased]
+## [Unreleased; planned for 2026-06-11]
 
 ### Added
 
-- Basic networking capabilities, pulling blocks from a (trusted) remote peer.
-- Rudimentary command-line interface to start Amaru as a background Daemon.
-- Preliminary "ledger" keeping track of UTxO in-memory and performing phase-2
-  validations.
-
 ### Removed
 
-- Removed the standalone `import-headers` and `import-nonces` CLI commands in
-  favour of the unified bootstrap flow.
+### Fixed
+
+- amaru-ouroboros: properly wipe KES key material in unused method `SecretKey::from_bytes` (#881)

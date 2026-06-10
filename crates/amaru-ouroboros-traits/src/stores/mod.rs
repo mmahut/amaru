@@ -12,5 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod consensus;
-pub use consensus::{missing_blocks::*, *};
+pub mod chain_store;
+pub use chain_store::*;

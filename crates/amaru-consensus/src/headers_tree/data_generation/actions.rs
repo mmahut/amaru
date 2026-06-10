@@ -31,7 +31,7 @@ use amaru_kernel::{
     size::HEADER,
     utils::string::{ListToString, ListsToString},
 };
-use amaru_ouroboros_traits::{ChainStore, in_memory_consensus_store::InMemConsensusStore};
+use amaru_ouroboros_traits::{ChainStore, in_memory_chain_store::InMemoryChainStore};
 use hex::FromHexError;
 use proptest::prelude::Strategy;
 use rand::{Rng, SeedableRng, prelude::SmallRng};
@@ -237,8 +237,8 @@ fn deserialize_point<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Resul
 /// This data type helps collecting the output of the execution of a list of actions
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SelectionResult {
-    Forward(ForwardChainSelection<BlockHeader>),
-    Back(RollbackChainSelection<BlockHeader>),
+    Forward(ForwardChainSelection),
+    Back(RollbackChainSelection),
 }
 
 impl Display for SelectionResult {
@@ -544,7 +544,7 @@ pub fn execute_actions(
     actions: &[Action],
     print: bool,
 ) -> Result<Vec<SelectionResult>, ConsensusError> {
-    let store = Arc::new(InMemConsensusStore::new());
+    let store = Arc::new(InMemoryChainStore::new());
     let mut tree = HeadersTree::new(store.clone(), max_length);
     execute_actions_on_tree(store, &mut tree, actions, print)
 }
@@ -557,8 +557,8 @@ pub fn execute_actions(
 /// the execution with before / after state when debugging.
 ///
 pub fn execute_actions_on_tree(
-    store: Arc<dyn ChainStore<BlockHeader>>,
-    tree: &mut HeadersTree<BlockHeader>,
+    store: Arc<dyn ChainStore>,
+    tree: &mut HeadersTree,
     actions: &[Action],
     print: bool,
 ) -> Result<Vec<SelectionResult>, ConsensusError> {
@@ -604,7 +604,7 @@ pub fn execute_actions_on_tree(
 fn print_diagnostics(
     print: bool,
     actions: &[Action],
-    diagnostics: &BTreeMap<(usize, Action), (SelectionResult, HeadersTreeDisplay<BlockHeader>)>,
+    diagnostics: &BTreeMap<(usize, Action), (SelectionResult, HeadersTreeDisplay)>,
 ) {
     if print {
         for ((action_nb, action), (result, after)) in diagnostics {

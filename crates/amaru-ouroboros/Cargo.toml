@@ -2,7 +2,7 @@ lints.workspace = true
 
 [package]
 name = "amaru-ouroboros"
-version.workspace = true
+version = "0.1.2"
 edition.workspace = true
 description = "Ouroboros consensus protocol primitives for the Amaru Cardano node"
 license.workspace = true
@@ -27,6 +27,7 @@ pure-stage.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 vrf_dalek.workspace = true
+zeroize.workspace = true
 
 # Internal dependencies ───────────────────────────────────────────────────────┐
 amaru-kernel.workspace = true

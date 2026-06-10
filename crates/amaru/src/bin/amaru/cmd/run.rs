@@ -19,8 +19,8 @@ use std::{
 };
 
 use amaru::{
-    DEFAULT_DOWNSTREAM_PEERS, DEFAULT_LISTEN_ADDRESS, DEFAULT_NETWORK, DEFAULT_PEER_ADDRESS, DEFAULT_UPSTREAM_PEERS,
-    default_chain_dir, default_ledger_dir,
+    DEFAULT_DOWNSTREAM_PEERS, DEFAULT_LISTEN_ADDRESS, DEFAULT_NETWORK, DEFAULT_UPSTREAM_PEERS, default_chain_dir,
+    default_ledger_dir, default_peer_for_network,
     metrics::track_system_metrics,
     stages::{
         build_node::build_and_run_node,
@@ -138,12 +138,11 @@ pub struct Args {
     ///
     /// This option can be specified multiple times to connect to multiple peers.
     ///
-    /// At least one peer address must be specified.
+    /// If not specified, defaults to the network-specific bootstrap peer.
     #[arg(
         long,
         value_name = amaru::value_names::ENDPOINT,
         env = amaru::env_vars::PEER_ADDRESS,
-        default_value = DEFAULT_PEER_ADDRESS,
         action = ArgAction::Append,
         value_delimiter = ',',
         num_args(0..),
@@ -299,6 +298,13 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
 
     let chain_dir = args.chain_dir.unwrap_or_else(|| default_chain_dir(network).into());
 
+    // Use network-specific default peer if no peer-address was provided
+    let peer_address = if args.peer_address.is_empty() {
+        vec![default_peer_for_network(network).to_string()]
+    } else {
+        args.peer_address
+    };
+
     let (trace_buffer_min_entries, trace_buffer_max_size) = match args.trace_buffer.as_deref() {
         None => (0usize, 0usize),
         Some(s) => parse_trace_buffer_limits(s)?,
@@ -317,7 +323,7 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         max_extra_ledger_snapshots = %args.max_extra_ledger_snapshots,
         migrate_chain_db = args.migrate_chain_db,
         network = %args.network,
-        peer_address = %args.peer_address.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
+        peer_address = %peer_address.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
         pid_file = %args.pid_file.unwrap_or_default().to_string_lossy(),
         submit_api_address = %args.submit_api_address.as_deref().unwrap_or("disabled"),
         trace_buffer_min_entries,
@@ -335,7 +341,7 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
     Ok(Config {
         ledger_store: RocksDbConfig::new(ledger_dir).with_shared_env(),
         chain_store: StoreType::RocksDb(RocksDbConfig::new(chain_dir).with_shared_env()),
-        upstream_peers: args.peer_address,
+        upstream_peers: peer_address,
         target_upstream_peers: args.upstream_peers,
         target_downstream_peers: args.downstream_peers,
         network: args.network,

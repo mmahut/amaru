@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use amaru_kernel::{BlockHeader, HeaderHash, IsHeader, ORIGIN_HASH};
-use amaru_ouroboros::ReadOnlyChainStore;
+use amaru_kernel::{HeaderHash, IsHeader, ORIGIN_HASH};
+use amaru_ouroboros::ReadChainStore;
 use amaru_protocols::store_effects::ResourceHeaderStore;
 use pure_stage::{BoxFuture, ExternalEffect, ExternalEffectAPI, Resources, SendData};
 
@@ -35,15 +35,16 @@ impl ExternalEffect for FindBestCandidate {
     }
 }
 
-pub fn find_best_candidate(store: &dyn ReadOnlyChainStore<BlockHeader>) -> Result<HeaderHash, ConsensusError> {
-    let anchor_hash = store.get_anchor_hash();
+pub fn find_best_candidate(store: &dyn ReadChainStore) -> Result<HeaderHash, ConsensusError> {
+    let snapshot = store.snapshot();
+    let anchor_hash = snapshot.get_anchor_hash();
     let mut best_candidate = None;
 
     // ORIGIN_HASH cannot have a block, so we start from its direct children
     let mut to_visit = if anchor_hash == ORIGIN_HASH {
-        store.get_children(&anchor_hash).into_iter().collect()
+        snapshot.get_children(&anchor_hash).into_iter().collect()
     } else {
-        best_candidate = store.load_header(&anchor_hash);
+        best_candidate = snapshot.load_header(&anchor_hash);
         if best_candidate.is_none() {
             return Err(ConsensusError::UnknownPoint(anchor_hash));
         }
@@ -52,14 +53,14 @@ pub fn find_best_candidate(store: &dyn ReadOnlyChainStore<BlockHeader>) -> Resul
     tracing::debug!(?to_visit, ?best_candidate, "starting best_tip_from_store");
 
     while let Some(hash) = to_visit.pop() {
-        let (header, validity) = store.load_header_with_validity(&hash).ok_or(ConsensusError::UnknownPoint(hash))?;
+        let (header, validity) = snapshot.load_header_with_validity(&hash).ok_or(ConsensusError::UnknownPoint(hash))?;
 
         if validity == Some(false) {
             tracing::debug!(%hash, "skipping invalid");
             continue;
         };
 
-        let children = store.get_children(&hash);
+        let children = snapshot.get_children(&hash);
 
         if cmp_tip(Some(&header), best_candidate.as_ref()).is_gt() {
             best_candidate = Some(header);
