@@ -87,7 +87,7 @@ jobs:
       command: +$RUST_NIGHTLY_TOOLCHAIN -Zbuild-std=std,panic_abort build -p amaru-ledger
       cache-mode: READ
       setup: |
-        # When targetting RISC-V, the uplc-turbo crate fails to compile.
+        # When targetting RISC-V, the amaru-uplc crate fails to compile.
         # Providing the specific RISC-V gnu clang compiler to Rust allows it to build
         rustup component add rust-src --toolchain "$RUST_NIGHTLY_TOOLCHAIN"
         curl -L -o riscv32-glibc-llvm.tar.xz \
