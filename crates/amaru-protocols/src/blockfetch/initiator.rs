@@ -139,8 +139,7 @@ impl StageState<State, Initiator> for BlockFetchInitiator {
                         }
                         *remaining_blocks -= 1;
                         let id = *id;
-                        let cr = cr.clone();
-                        eff.send(&cr, Blocks::Block(id, self.peer.clone(), network_block)).await;
+                        eff.send(cr, Blocks::Block(id, self.peer.clone(), network_block)).await;
                     } else {
                         tracing::warn!("received block without a pending request; terminating the connection");
                         return eff.terminate().await;
