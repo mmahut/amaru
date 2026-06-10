@@ -14,9 +14,12 @@ a public R2 bucket and listed in
    `epoch + 2`).
 3. The run opens a pull request updating `snapshots.json`. Review and merge.
 
-The PR is created with `GITHUB_TOKEN`, which cannot trigger `pull_request`
-workflows, so the workflow dispatches CI on the branch itself. To re-run CI,
-close and reopen the PR.
+The PR is created with `GITHUB_TOKEN`. This needs a one-time repository
+setting: Settings → Actions → General → Workflow permissions → enable "Allow
+GitHub Actions to create and approve pull requests".
+
+`GITHUB_TOKEN` cannot trigger `pull_request` workflows, so the workflow
+dispatches CI on the branch itself. To re-run CI, close and reopen the PR.
 
 ## What the workflow does
 
