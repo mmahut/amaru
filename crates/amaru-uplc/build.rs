@@ -69,7 +69,7 @@ fn generate_flat_tests(dir_path: &PathBuf, skip_tests: &[&str]) -> String {
 
         let ignore = if skip_tests.contains(&test_name.as_str()) { "\n#[ignore]" } else { "" };
 
-        let file_path = path.display();
+        let file_path = path.to_str().unwrap().replace('\\', "/");
 
         tests.push_str(&format!(
             r#"
@@ -107,9 +107,9 @@ fn generate_textual_tests(dir_path: &PathBuf, skip_tests: &[&str]) -> String {
 
         let ignore = if skip_tests.contains(&test_name.as_str()) { "\n#[ignore]" } else { "" };
 
-        let file_path = path.display();
-        let expected_path = path.with_extension("uplc.expected");
-        let budget_path = path.with_extension("uplc.budget.expected");
+        let file_path = path.to_str().unwrap().replace('\\', "/");
+        let expected_path = path.with_extension("uplc.expected").to_str().unwrap().replace('\\', "/");
+        let budget_path = path.with_extension("uplc.budget.expected").to_str().unwrap().replace('\\', "/");
 
         tests.push_str(&format!(
             r#"
@@ -123,8 +123,6 @@ fn {test_name}() {{
     );
 }}
 "#,
-            expected_path = expected_path.display(),
-            budget_path = budget_path.display(),
         ));
     }
 
