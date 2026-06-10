@@ -537,12 +537,22 @@ jobs:
             artifact_args+=(--artifact "$artifact")
           done < <(find dist/downloads -maxdepth 1 -type f | sort)
 
+          latest_release_args=()
+          if [[ -n "$latest_release_tag" && -n "$latest_release_url" ]]; then
+            latest_release_args+=(
+              --latest-release-tag "$latest_release_tag"
+              --latest-release-url "$latest_release_url"
+            )
+
+            if [[ -n "$latest_release_checksums_url" ]]; then
+              latest_release_args+=(--latest-release-checksums-url "$latest_release_checksums_url")
+            fi
+          fi
+
           chmod +x scripts/render-nightly-downloads-page
           ./scripts/render-nightly-downloads-page \
             --version "$version" \
-            --latest-release-tag "$latest_release_tag" \
-            --latest-release-url "$latest_release_url" \
-            --latest-release-checksums-url "$latest_release_checksums_url" \
+            "${latest_release_args[@]}" \
             "${artifact_args[@]}" \
             --output dist/index.html
 
