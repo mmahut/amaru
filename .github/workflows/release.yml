@@ -451,7 +451,7 @@ jobs:
       artifact_source: workflow-artifact
       artifact_version: ${{ needs.build-metadata.outputs.version }}
       checkout_ref: ${{ github.sha }}
-      image_name: ghcr.io/ktorz/amaru
+      image_name: ghcr.io/pragma-org/amaru
       tag_latest: true
     secrets: inherit
 

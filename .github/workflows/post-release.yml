@@ -170,6 +170,6 @@ jobs:
       artifact_version: ${{ needs.release-metadata.outputs.version }}
       release_tag: ${{ needs.release-metadata.outputs.release_tag }}
       checkout_ref: ${{ needs.release-metadata.outputs.target_commitish }}
-      image_name: ghcr.io/ktorz/amaru
+      image_name: ghcr.io/pragma-org/amaru
       tag_version: ${{ needs.release-metadata.outputs.release_tag }}
     secrets: inherit
