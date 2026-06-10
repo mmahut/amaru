@@ -9,7 +9,7 @@ processors:
 
 exporters:
   jaeger_storage_exporter:
-    trace_storage: some_trace_storage
+    trace_storage: traces
   prometheus:
     endpoint: "0.0.0.0:8889"
 
@@ -19,15 +19,15 @@ connectors:
 extensions:
   jaeger_query:
     storage:
-      traces: some_trace_storage
-      metrics: some_metrics_storage
+      traces: traces
+      metrics: metrics
   jaeger_storage:
     backends:
-      some_trace_storage:
+      traces:
         memory:
           max_traces: 100000
     metric_backends:
-      some_metrics_storage:
+      metrics:
         prometheus:
           endpoint: "http://prometheus:9090"
           normalize_calls: true
@@ -45,7 +45,7 @@ service:
       exporters: [prometheus]
   telemetry:
     resource:
-      service.name: amaru
+      service.name: jaeger
     metrics:
       level: detailed
       address: "0.0.0.0:8888"
