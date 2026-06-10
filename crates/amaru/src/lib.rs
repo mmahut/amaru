@@ -44,6 +44,15 @@ pub const DEFAULT_NETWORK: NetworkName = NetworkName::Preprod;
 
 pub const DEFAULT_PEER_ADDRESS: &str = "127.0.0.1:3001";
 
+/// Default public bootstrap peer for mainnet.
+pub const MAINNET_DEFAULT_PEER_ADDRESS: &str = "backbone.cardano.iog.io:3001";
+
+/// Default public bootstrap peer for preprod.
+pub const PREPROD_DEFAULT_PEER_ADDRESS: &str = "preprod-node.play.dev.cardano.org:3001";
+
+/// Default public bootstrap peer for preview.
+pub const PREVIEW_DEFAULT_PEER_ADDRESS: &str = "preview-node.play.dev.cardano.org:3001";
+
 /// Default address to listen on for incoming connections.
 pub const DEFAULT_LISTEN_ADDRESS: &str = "0.0.0.0:3000";
 
@@ -138,6 +147,16 @@ pub mod value_names {
 
     /// A non-negative integer value, or the keyword 'all'
     pub const UINT_ALL: &str = "UINT|all";
+}
+
+/// Get the default peer address for a given network.
+pub fn default_peer_for_network(network: NetworkName) -> &'static str {
+    match network {
+        NetworkName::Mainnet => MAINNET_DEFAULT_PEER_ADDRESS,
+        NetworkName::Preprod => PREPROD_DEFAULT_PEER_ADDRESS,
+        NetworkName::Preview => PREVIEW_DEFAULT_PEER_ADDRESS,
+        NetworkName::Testnet(_) => DEFAULT_PEER_ADDRESS, // localhost for custom networks
+    }
 }
 
 /// Environment variables used across command-line options.
