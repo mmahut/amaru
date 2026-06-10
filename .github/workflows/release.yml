@@ -378,7 +378,6 @@ jobs:
           docker_registry_url="https://github.com/${GITHUB_REPOSITORY}/pkgs/container/${DOCKER_IMAGE##*/}"
 
           {
-            printf 'Checksums manifest: [%s](%s)\n\n' "$checksum_manifest" "$(asset_url_for "$checksum_manifest")"
             printf '## Linux\n\n'
             printf '| Type | File Extension | Download Links |\n'
             printf '| --- | --- | --- |\n'
@@ -395,6 +394,8 @@ jobs:
             printf '| Image | Registry |\n'
             printf '| --- | --- |\n'
             printf '| `%s:%s` | [%s](%s) |\n' "$DOCKER_IMAGE" "$RELEASE_TAG" "$docker_registry_url" "$docker_registry_url"
+            printf '\n## Checksum manifest\n\n'
+            printf '[%s](%s)\n' "$checksum_manifest" "$(asset_url_for "$checksum_manifest")"
           } > release-body.md
 
           ls -lh release-assets
