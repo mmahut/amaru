@@ -1,5 +1,4 @@
 [workspace.package]
-version = "0.1.2"
 edition = "2024"
 description = "A Cardano blockchain node implementation"
 license = "Apache-2.0"
@@ -31,6 +30,8 @@ bytes = "1.10.1"
 cbor-data = "0.8.19"
 cbor4ii = { version = "1.1.1", features = ["serde1", "use_std"] }
 clap = { version = "4.5.48", features = ["derive", "env"] }
+clap_complete = "4.5.59"
+clap_mangen = "0.3.0"
 either = "1.15"
 erased-serde = "0.4.9"
 flate2 = "1.1.2"
@@ -98,7 +99,7 @@ typetag = "0.2.21"
 zeroize = "1.8.2"
 
 # Internal dependencies
-amaru = { path = "crates/amaru", version = "0.1.2" }
+amaru = { path = "crates/amaru" }
 amaru-consensus = { path = "crates/amaru-consensus", version = "0.1.2" }
 amaru-fixture-builder = { path = "crates/amaru-fixture-builder", version = "0.1.2" }
 amaru-iter-borrow = { path = "crates/amaru-iter-borrow", version = "0.1.2" }

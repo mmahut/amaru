@@ -25,27 +25,28 @@
 
 ### Installing
 
-#### Pre-compiled executables
-
-We regularly push pre-compiled (statically linked) executables to [Github
-Pages](https://pragma-org.github.io/amaru/) for the following platforms:
-
-| Platform | Arch      |
-| ---      | ---       |
-| Linux    | `x86_64`  |
-| Linux    | `aarch64` |
-| MacOS    | `aarch64` |
-
-We also _in theory_ support Windows (64-bit) as well as WASM and RISC-V for
-certain components (e.g. amaru-ledger, amaru-consensus, ...). The support there
-is preliminary and mostly experimental.
-
-
-#### Docker Images (arm64 / amd64)
+<!-- BEGIN GENERATED INSTALLATION -->
+#### Docker Image
 
 ```console
 docker pull ghcr.io/pragma-org/amaru:latest
 ```
+
+> [!IMPORTANT]
+> The tag `:latest` refers to the latest _nightly build_; not the latest release.
+<!-- END GENERATED INSTALLATION -->
+
+#### Manual installation: pre-compiled executables
+
+You can install Amaru "manually" by downloading an archive with pre-compiled
+(statically linked) executables for all usual platforms (Linux, macOS &
+Windows). The archives come with shell completions scripts.
+
+See either:
+
+- [latest releases](https://github.com/pragma-org/amaru/releases);
+- [nightly builds](https://pragma-org.github.io/amaru/).
+
 
 #### Building from sources
 

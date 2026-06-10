@@ -26,6 +26,7 @@ pub(crate) mod remove_chain;
 pub(crate) mod remove_validation_status;
 pub(crate) mod reset_to_epoch;
 pub(crate) mod run;
+pub(crate) mod shell_completions;
 
 #[derive(Debug, Clone)]
 struct PointOrHash(HeaderHash);
