@@ -25,13 +25,16 @@ require_env() {
 }
 
 if [ -z "$epoch" ]; then
-  latest_epoch="$(find "$metadata_dir" -maxdepth 1 -name '*.json' | sed 's|.*/||; s|\.json$||' | grep -E '^[0-9]+$' | sort -n | tail -1)"
-  if [ -z "$latest_epoch" ]; then
+  # The metadata directory holds one file per epoch and a snapshot set spans
+  # three consecutive epochs, so the start of the latest set is the
+  # third-highest epoch.
+  start_epoch="$(find "$metadata_dir" -maxdepth 1 -name '*.json' | sed 's|.*/||; s|\.json$||' | grep -E '^[0-9]+$' | sort -n | tail -3 | head -1)"
+  if [ -z "$start_epoch" ]; then
     echo "Error: no epoch metadata files found in '$metadata_dir'; pass an epoch as the first argument." >&2
     exit 1
   fi
-  epoch="$latest_epoch"
-  echo "No epoch specified; using latest available epoch: $epoch"
+  epoch="$start_epoch"
+  echo "No epoch specified; using start epoch of the latest snapshot set: $epoch"
 fi
 
 require_command aws
