@@ -42,12 +42,18 @@ jobs:
         id: meta
         shell: bash
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQUESTED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release && 'true' || 'false' }}
         run: |
           set -euo pipefail
 
           read_amaru_version() {
             grep -m 1 '^version = "' crates/amaru/Cargo.toml | sed -E 's/^version = "(.*)"$/\1/'
+          }
+
+          count_previous_published_releases() {
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              | jq -s 'map(.[]) | map(select(.draft | not) | select(.published_at != null)) | length'
           }
 
           if [[ "$REQUESTED_RELEASE" == "true" ]]; then
@@ -60,8 +66,8 @@ jobs:
 
             release_patch="$(date -u +%Y%m%d)"
             version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${release_patch}"
-            msi_build="${release_patch:3}"
-            msi_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${msi_build}"
+            msi_patch="$(count_previous_published_releases)"
+            msi_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${msi_patch}.${release_patch}"
 
             echo "is_release=true" >> "$GITHUB_OUTPUT"
             echo "version=$version" >> "$GITHUB_OUTPUT"
