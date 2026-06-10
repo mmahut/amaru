@@ -129,7 +129,16 @@ jobs:
             rm -rf "$tmp"
           fi
 
-          "$tool_dir/bin/db-analyser" --version
+          # db-analyser has no --version flag; it exits non-zero printing its
+          # usage. Only exec-level failures (126/127, dyld aborts) are fatal.
+          set +e
+          "$tool_dir/bin/db-analyser" --version >/dev/null 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -ge 126 ]; then
+            echo "::error::db-analyser failed to execute (exit code $rc)" >&2
+            exit 1
+          fi
           echo "$tool_dir/bin" >> "$GITHUB_PATH"
 
       - name: Build amaru
