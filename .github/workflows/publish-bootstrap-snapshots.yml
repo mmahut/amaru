@@ -42,6 +42,9 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUSTUP_LOG: error
+  # cardano-node release providing the db-analyser binary; 11.0.1 is the
+  # known-working version (see docs/BOOTSTRAP.md).
+  CARDANO_NODE_VERSION: "11.0.1"
 
 jobs:
   publish:
@@ -68,7 +71,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for tool in cargo db-analyser aws jq curl gh git; do
+          for tool in cargo aws jq curl gh git; do
             if ! command -v "$tool" >/dev/null 2>&1; then
               echo "::error::required tool '$tool' is not installed on this runner (see docs/PUBLISHING_SNAPSHOTS.md)" >&2
               exit 1
@@ -88,8 +91,46 @@ jobs:
             CACHE_ROOT="$HOME/amaru-snapshots"
           fi
           mkdir -p "$CACHE_ROOT/$AMARU_NETWORK"
+          echo "CACHE_ROOT=$CACHE_ROOT" >> "$GITHUB_ENV"
           echo "AMARU_DIST_DIR=$CACHE_ROOT/$AMARU_NETWORK/dist" >> "$GITHUB_ENV"
           echo "AMARU_SNAPSHOTS_DIR=$CACHE_ROOT/$AMARU_NETWORK/snapshots" >> "$GITHUB_ENV"
+
+      - name: Install db-analyser if missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v db-analyser >/dev/null 2>&1; then
+            echo "using db-analyser already on PATH: $(command -v db-analyser)"
+            exit 0
+          fi
+
+          case "$(uname -s)" in
+            Linux) os=linux ;;
+            Darwin) os=macos ;;
+            *) echo "::error::unsupported operating system: $(uname -s)" >&2; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64 | amd64) arch=amd64 ;;
+            arm64 | aarch64) arch=arm64 ;;
+            *) echo "::error::unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+
+          tool_dir="$CACHE_ROOT/tools/cardano-node-$CARDANO_NODE_VERSION-$os-$arch"
+          if [ ! -x "$tool_dir/bin/db-analyser" ]; then
+            asset="cardano-node-$CARDANO_NODE_VERSION-$os-$arch.tar.gz"
+            base_url="https://github.com/IntersectMBO/cardano-node/releases/download/$CARDANO_NODE_VERSION"
+            tmp="$(mktemp -d)"
+            echo "downloading $base_url/$asset"
+            curl -fsSL -o "$tmp/$asset" "$base_url/$asset"
+            curl -fsSL -o "$tmp/sums.txt" "$base_url/cardano-node-$CARDANO_NODE_VERSION-sha256sums.txt"
+            (cd "$tmp" && grep " $asset\$" sums.txt | (sha256sum -c - 2>/dev/null || shasum -a 256 -c -))
+            mkdir -p "$tool_dir"
+            tar -xzf "$tmp/$asset" -C "$tool_dir" --strip-components 1
+            rm -rf "$tmp"
+          fi
+
+          "$tool_dir/bin/db-analyser" --version
+          echo "$tool_dir/bin" >> "$GITHUB_PATH"
 
       - name: Build amaru
         shell: bash
