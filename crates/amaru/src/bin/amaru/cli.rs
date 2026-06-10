@@ -62,7 +62,7 @@ pub(crate) enum Command {
     CreateSnapshots(cmd::create_snapshots::Args),
 
     #[command(name = "shell-completions", hide = true)]
-    ShellCompletions(cmd::distr::Args),
+    ShellCompletions(cmd::shell_completions::Args),
 
     /// Migrate the chain database to the current version.
     ///

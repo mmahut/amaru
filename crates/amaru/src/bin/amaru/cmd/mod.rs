@@ -18,7 +18,6 @@ use amaru_kernel::{HeaderHash, Point};
 
 pub(crate) mod bootstrap;
 pub(crate) mod create_snapshots;
-pub(crate) mod distr;
 pub(crate) mod dump_chain_db;
 pub(crate) mod dump_schemas;
 pub(crate) mod fetch_chain_headers;
@@ -27,6 +26,7 @@ pub(crate) mod remove_chain;
 pub(crate) mod remove_validation_status;
 pub(crate) mod reset_to_epoch;
 pub(crate) mod run;
+pub(crate) mod shell_completions;
 
 #[derive(Debug, Clone)]
 struct PointOrHash(HeaderHash);
