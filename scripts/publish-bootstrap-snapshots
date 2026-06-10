@@ -66,6 +66,11 @@ manifest_public_url_base() {
 candidate_public_url_bases() {
   local manifest_base
 
+  if [ -n "${PUBLIC_URL_BASE:-}" ]; then
+    printf '%s\n' "${PUBLIC_URL_BASE%/}"
+    return 0
+  fi
+
   manifest_base="$(manifest_public_url_base || true)"
   if [ -z "$manifest_base" ]; then
     echo "Error: could not determine public URL base from '$manifest_path'." >&2
