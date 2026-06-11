@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub use pallas_primitives::conway::RedeemerTag as ScriptPurpose;
+pub use pallas_primitives::conway::RedeemerTag;
 
 // TODO: replace with IntoString instance
-pub fn script_purpose_to_string(purpose: &ScriptPurpose) -> String {
+pub fn redeemer_tag_to_string(purpose: &RedeemerTag) -> String {
     match purpose {
-        ScriptPurpose::Spend => "Spend".to_string(),
-        ScriptPurpose::Mint => "Mint".to_string(),
-        ScriptPurpose::Cert => "Cert".to_string(),
-        ScriptPurpose::Reward => "Reward".to_string(),
-        ScriptPurpose::Vote => "Vote".to_string(),
-        ScriptPurpose::Propose => "Propose".to_string(),
+        RedeemerTag::Spend => "Spend".to_string(),
+        RedeemerTag::Mint => "Mint".to_string(),
+        RedeemerTag::Cert => "Cert".to_string(),
+        RedeemerTag::Reward => "Reward".to_string(),
+        RedeemerTag::Vote => "Vote".to_string(),
+        RedeemerTag::Propose => "Propose".to_string(),
     }
 }

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use amaru_kernel::{
-    AssetName, Hash, MemoizedDatum, NonEmptyKeyValuePairs, NonZeroInt, RequiredScript, ScriptPurpose, size::SCRIPT,
+    AssetName, Hash, MemoizedDatum, NonEmptyKeyValuePairs, NonZeroInt, RedeemerTag, RequiredScript, size::SCRIPT,
 };
 
 use crate::context::{UtxoSlice, WitnessSlice};
@@ -33,7 +33,7 @@ pub fn execute<C>(
             context.require_script_witness(RequiredScript {
                 hash: policy,
                 index: mint_index as u32,
-                purpose: ScriptPurpose::Mint,
+                purpose: RedeemerTag::Mint,
                 datum: MemoizedDatum::None,
             })
         }

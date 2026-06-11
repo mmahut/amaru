@@ -12,4 +12,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::BTreeMap;
+
 pub use pallas_primitives::conway::VotingProcedure;
+
+use crate::{ComparableProposalId, NonEmptyKeyValuePairs, ProposalId, Vote, Voter};
+
+/// The governance votes cast by a transaction.
+///
+/// A nested map from [`Voter`] to the [`Vote`] (yes/no/abstain) it casts on each
+/// governance action, keyed by [`ComparableProposalId`]. Only the decision is kept,
+/// the on-chain [`VotingProcedure`]'s anchor is dropped, since scripts never see it.
+#[derive(Debug, Default)]
+pub struct PlutusVotes<'a>(pub BTreeMap<&'a Voter, BTreeMap<ComparableProposalId, &'a Vote>>);
+
+impl<'a> From<&'a NonEmptyKeyValuePairs<Voter, NonEmptyKeyValuePairs<ProposalId, VotingProcedure>>>
+    for PlutusVotes<'a>
+{
+    fn from(
+        voting_procedures: &'a NonEmptyKeyValuePairs<Voter, NonEmptyKeyValuePairs<ProposalId, VotingProcedure>>,
+    ) -> Self {
+        Self(
+            voting_procedures
+                .iter()
+                .map(|(voter, votes)| {
+                    (
+                        voter,
+                        votes
+                            .iter()
+                            .map(|(proposal, procedure)| {
+                                (ComparableProposalId::from(proposal.clone()), &procedure.vote)
+                            })
+                            .collect(),
+                    )
+                })
+                .collect(),
+        )
+    }
+}

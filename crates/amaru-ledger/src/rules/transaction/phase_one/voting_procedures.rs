@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 
 use amaru_kernel::{
-    HasOwnership, MemoizedDatum, NonEmptyKeyValuePairs, ProposalId, RequiredScript, ScriptPurpose, StakeCredential,
+    HasOwnership, MemoizedDatum, NonEmptyKeyValuePairs, ProposalId, RedeemerTag, RequiredScript, StakeCredential,
     Voter, VotingProcedure,
 };
 
@@ -35,7 +35,7 @@ pub(crate) fn execute<C>(
                         context.require_script_witness(RequiredScript {
                             hash,
                             index: index as u32,
-                            purpose: ScriptPurpose::Vote,
+                            purpose: RedeemerTag::Vote,
                             datum: MemoizedDatum::None,
                         });
                     }

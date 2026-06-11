@@ -14,13 +14,13 @@
 
 use std::cmp::Ordering;
 
-use crate::{AsIndex, Hash, MemoizedDatum, RedeemerKey, ScriptPurpose, size::SCRIPT};
+use crate::{AsIndex, Hash, MemoizedDatum, RedeemerKey, RedeemerTag, size::SCRIPT};
 
 #[derive(Clone, Eq, PartialEq, Debug, serde::Deserialize)]
 pub struct RequiredScript {
     pub hash: Hash<SCRIPT>,
     pub index: u32,
-    pub purpose: ScriptPurpose,
+    pub purpose: RedeemerTag,
     pub datum: MemoizedDatum,
 }
 

@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::ops::Deref;
+use std::{collections::BTreeMap, ops::Deref};
 
 pub use pallas_primitives::conway::PlutusData;
 
-use crate::{Bytes, MemoizedPlutusData, NonEmptyVec, cbor, empty_bytes};
+use crate::{Bytes, Hash, MemoizedPlutusData, NonEmptyVec, cbor, empty_bytes, size::DATUM};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
@@ -54,5 +54,25 @@ impl Deref for PlutusDataSet {
 
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+/// The datums supplied as witnesses in a transaction, keyed by hash.
+///
+/// A lookup table from a datum [`struct@Hash`] to the [`PlutusData`] it commits to. This is what
+/// resolves a hash-only datum ([`MemoizedDatum::Hash`](crate::MemoizedDatum)) on a spent output back to the actual datum value;
+/// inline datums carry their value already and need no entry here.
+#[derive(Debug, Default)]
+pub struct PlutusDatums<'a>(pub BTreeMap<Hash<DATUM>, &'a PlutusData>);
+
+impl<'a> From<&'a NonEmptyVec<MemoizedPlutusData>> for PlutusDatums<'a> {
+    fn from(plutus_data: &'a NonEmptyVec<MemoizedPlutusData>) -> Self {
+        Self(plutus_data.iter().map(|data| (data.hash(), data.as_ref())).collect())
+    }
+}
+
+impl<'a> From<&'a PlutusDataSet> for PlutusDatums<'a> {
+    fn from(plutus_data: &'a PlutusDataSet) -> Self {
+        Self::from(&**plutus_data)
     }
 }

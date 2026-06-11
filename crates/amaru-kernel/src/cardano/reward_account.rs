@@ -12,10 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::BTreeMap;
+
 pub use pallas_primitives::conway::RewardAccount;
+use thiserror::Error;
 
 use crate::{
-    Address, Hash, Network, ShelleyAddress, ShelleyDelegationPart, ShelleyPaymentPart, StakeAddress, StakeCredential,
+    Address, AddressError, Hash, Lovelace, Network, NonEmptyKeyValuePairs as PallasNonEmptyKeyValuePairs,
+    PlutusStakeAddress, ShelleyAddress, ShelleyDelegationPart, ShelleyPaymentPart, StakeAddress, StakeCredential,
     StakePayload,
 };
 
@@ -53,6 +57,58 @@ pub fn new_stake_address(network: Network, payload: StakePayload) -> StakeAddres
     };
     StakeAddress::try_from(ShelleyAddress::new(network, fake_payment_part, delegation_part))
         .expect("has non-empty delegation part")
+}
+
+/// The reward withdrawals requested by a transaction.
+///
+/// A map from the [`PlutusStakeAddress`] being withdrawn from to the amount of [`Lovelace`]
+/// taken. The [`PlutusStakeAddress`] key supplies the Plutus-canonical ordering, so this
+/// `BTreeMap` iterates, and serializes, in the order a script expects; this is the type
+/// that wrapper exists to serve.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+pub struct PlutusWithdrawals(BTreeMap<PlutusStakeAddress, Lovelace>);
+
+impl PlutusWithdrawals {
+    /// Iterate over each withdrawal as a `(stake address, amount)` pair, in canonical order.
+    pub fn iter(&self) -> impl Iterator<Item = (&PlutusStakeAddress, &Lovelace)> {
+        self.0.iter()
+    }
+
+    /// Iterate over the stake addresses being withdrawn from, in canonical order.
+    pub fn keys(&self) -> impl Iterator<Item = &PlutusStakeAddress> {
+        self.0.keys()
+    }
+}
+
+#[doc(hidden)]
+#[derive(Debug, Error)]
+pub enum WithdrawalError {
+    #[error("invalid reward account: {0}")]
+    InvalidRewardAccount(#[from] AddressError),
+    #[error("invalid address type: {0}")]
+    InvalidAddressType(Address),
+}
+
+impl TryFrom<&PallasNonEmptyKeyValuePairs<RewardAccount, Lovelace>> for PlutusWithdrawals {
+    type Error = WithdrawalError;
+
+    fn try_from(value: &PallasNonEmptyKeyValuePairs<RewardAccount, Lovelace>) -> Result<Self, Self::Error> {
+        let withdrawals = value
+            .iter()
+            .map(|(reward_account, coin)| {
+                let address = Address::from_bytes(reward_account)?;
+
+                if let Address::Stake(reward_account) = address {
+                    Ok((PlutusStakeAddress::from(reward_account), *coin))
+                } else {
+                    Err(WithdrawalError::InvalidAddressType(address))
+                }
+            })
+            .collect::<Result<BTreeMap<_, _>, WithdrawalError>>()?;
+
+        Ok(Self(withdrawals))
+    }
 }
 
 #[cfg(any(test, feature = "test-utils"))]

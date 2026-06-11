@@ -14,8 +14,8 @@
 
 use amaru_kernel::{
     Address, Epoch, EraHistory, GovernanceAction, Hash, Lovelace, MemoizedDatum, Network, Nullable, Proposal,
-    ProposalId, ProposalPointer, ProtocolParamUpdate, ProtocolParameters, ProtocolVersion, RequiredScript,
-    ScriptPurpose, TransactionId, TransactionPointer, size::SCRIPT,
+    ProposalId, ProposalPointer, ProtocolParamUpdate, ProtocolParameters, ProtocolVersion, RedeemerTag, RequiredScript,
+    TransactionId, TransactionPointer, size::SCRIPT,
 };
 use thiserror::Error;
 
@@ -72,7 +72,7 @@ where
             context.require_script_witness(RequiredScript {
                 hash: script_hash,
                 index: proposal_index as u32,
-                purpose: ScriptPurpose::Propose,
+                purpose: RedeemerTag::Propose,
                 datum: MemoizedDatum::None,
             });
         }
