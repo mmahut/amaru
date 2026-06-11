@@ -15,6 +15,7 @@
 use std::{
     fmt,
     ops::{Add, Sub},
+    str::FromStr,
 };
 
 use minicbor::{Decode, Decoder, Encode};
@@ -26,6 +27,13 @@ pub struct Slot(u64);
 impl fmt::Display for Slot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for Slot {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from(u64::from_str(s).map_err(|e| e.to_string())?))
     }
 }
 

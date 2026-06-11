@@ -95,6 +95,7 @@ dependencies = [
  "indoc",
  "insta",
  "minicbor",
+ "num",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",

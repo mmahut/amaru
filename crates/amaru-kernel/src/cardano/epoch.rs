@@ -19,7 +19,7 @@ use std::{
 };
 
 use minicbor::{Decode, Decoder, Encode};
-use num::CheckedSub;
+use num::{CheckedAdd, CheckedSub};
 #[cfg(any(test, feature = "test-utils"))]
 use proptest::prelude::{Arbitrary, BoxedStrategy, Strategy};
 
@@ -30,6 +30,7 @@ pub struct Epoch(u64);
 impl Epoch {
     pub const ONE: &'static Self = &Self(1);
     pub const TWO: &'static Self = &Self(2);
+    pub const THREE: &'static Self = &Self(3);
 
     pub fn new(epoch: u64) -> Self {
         Self(epoch)
@@ -92,11 +93,31 @@ impl<'b, C> Decode<'b, C> for Epoch {
     }
 }
 
+impl Epoch {
+    pub fn saturating_sub(self, rhs: u64) -> Self {
+        Self(self.0.saturating_sub(rhs))
+    }
+}
+
 impl Add<u64> for Epoch {
     type Output = Self;
 
     fn add(self, rhs: u64) -> Self::Output {
-        Epoch(self.0 + rhs)
+        Self(self.0 + rhs)
+    }
+}
+
+impl Add<Epoch> for Epoch {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl CheckedAdd for Epoch {
+    fn checked_add(&self, rhs: &Self) -> Option<Self> {
+        self.0.checked_add(rhs.0).map(Self::from)
     }
 }
 
@@ -104,13 +125,7 @@ impl Sub<u64> for Epoch {
     type Output = Self;
 
     fn sub(self, rhs: u64) -> Self::Output {
-        Epoch(self.0 - rhs)
-    }
-}
-
-impl Epoch {
-    pub fn saturating_sub(self, rhs: u64) -> Self {
-        Self(self.0.saturating_sub(rhs))
+        Self(self.0 - rhs)
     }
 }
 

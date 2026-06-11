@@ -142,6 +142,9 @@ pub mod value_names {
     /// A blockchain point, formatted as slot.hash
     pub const POINT_OR_HASH: &str = "SLOT.HEADER_HASH or HEADER_HASH";
 
+    /// A snapshot point identifying the last point of an epoch and its parent.
+    pub const SNAPSHOT: &str = "SLOT.HEADER_HASH::PARENT_SLOT.PARENT_HEADER_HASH";
+
     /// A non-negative integer value.
     pub const UINT: &str = "UINT";
 
@@ -167,8 +170,8 @@ pub mod env_vars {
     /// --cardano-node-config-dir
     pub const CARDANO_NODE_CONFIG_DIR: &str = "AMARU_CARDANO_NODE_CONFIG_DIR";
 
-    /// --cardano-node-db-dir
-    pub const CARDANO_NODE_DB_DIR: &str = "AMARU_CARDANO_NODE_DB_DIR";
+    /// --cardano-node-db
+    pub const CARDANO_NODE_DB: &str = "AMARU_CARDANO_NODE_DB";
 
     /// --chain-dir
     pub const CHAIN_DIR: &str = "AMARU_CHAIN_DIR";

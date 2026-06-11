@@ -31,9 +31,11 @@ use amaru_network::chain_sync_client::ChainSyncClient;
 use amaru_ouroboros::{ChainStore, Nonces, WriteChainStore};
 use amaru_progress_bar::{ProgressBar, TerminalProgressBar};
 use amaru_stores::rocksdb::{RocksDB, RocksDbConfig, consensus::RocksDBStore};
+use anyhow::anyhow;
 use async_compression::tokio::bufread::GzipDecoder as AsyncGzipDecoder;
 use flate2::read::GzDecoder;
 use futures_util::TryStreamExt;
+use num::CheckedSub;
 use pallas_network::{facades::PeerClient, miniprotocols::chainsync::NextResponse};
 use reqwest::StatusCode;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -106,9 +108,9 @@ pub enum BootstrapError {
     NoBootstrapSnapshots,
 
     #[error(
-        "bootstrap requested epoch {requested_first_epoch}, but snapshots.json must contain epochs {required_epochs}. Available epochs: {available_epochs}"
+        "bootstrap target epoch {target_epoch}, but snapshots.json must contain epochs {required_epochs}. Available epochs: {available_epochs}"
     )]
-    SnapshotSelectionRequestedEpoch { requested_first_epoch: Epoch, required_epochs: String, available_epochs: String },
+    SnapshotSelectionRequestedEpoch { target_epoch: Epoch, required_epochs: String, available_epochs: String },
 
     #[error(
         "bootstrap needs the latest 3 consecutive snapshot epochs ending at {latest_epoch}, but snapshots.json only provides epochs {available_epochs}. Required epochs: {required_epochs}"
@@ -208,11 +210,18 @@ fn format_epoch_list(epochs: &[Epoch]) -> String {
 
 fn select_bootstrap_snapshots(
     snapshots: &[Snapshot],
-    requested_first_epoch: Option<Epoch>,
+    target_epoch: Option<Epoch>,
 ) -> Result<[&Snapshot; 3], Box<dyn Error>> {
     let snapshots_by_epoch = snapshots.iter().map(|snapshot| (snapshot.epoch, snapshot)).collect::<BTreeMap<_, _>>();
     let latest_epoch = snapshots_by_epoch.keys().next_back().copied().ok_or(BootstrapError::NoBootstrapSnapshots)?;
-    let first_epoch = requested_first_epoch.unwrap_or_else(|| latest_epoch.saturating_sub(2));
+    let first_epoch = target_epoch
+        .map(|target| {
+            target
+                .checked_sub(Epoch::THREE)
+                .ok_or_else(|| anyhow!("target epoch is too young; Amaru needs at least 3 past epochs to bootstrap."))
+        })
+        .transpose()?
+        .unwrap_or_else(|| latest_epoch.saturating_sub(2));
     let required_epochs = [first_epoch, first_epoch + 1, first_epoch + 2];
 
     match required_epochs.map(|epoch| snapshots_by_epoch.get(&epoch).copied()) {
@@ -224,9 +233,9 @@ fn select_bootstrap_snapshots(
             let available_epochs = format_epoch_list(&available_epochs);
             let required_epochs = format_epoch_list(&required_epochs);
 
-            match requested_first_epoch {
-                Some(requested_first_epoch) => Err(BootstrapError::SnapshotSelectionRequestedEpoch {
-                    requested_first_epoch,
+            match target_epoch {
+                Some(target_epoch) => Err(BootstrapError::SnapshotSelectionRequestedEpoch {
+                    target_epoch,
                     required_epochs,
                     available_epochs,
                 }
@@ -543,11 +552,10 @@ pub async fn bootstrap(
     network: NetworkName,
     ledger_dir: PathBuf,
     chain_dir: PathBuf,
-    requested_first_epoch: Option<Epoch>,
+    target_epoch: Option<Epoch>,
 ) -> Result<(), Box<dyn Error>> {
     let (snapshots_dir, snapshots) = bootstrap_snapshots(network)?;
-    let [first_snapshot, second_snapshot, third_snapshot] =
-        select_bootstrap_snapshots(&snapshots, requested_first_epoch)?;
+    let [first_snapshot, second_snapshot, third_snapshot] = select_bootstrap_snapshots(&snapshots, target_epoch)?;
 
     download_snapshots(&[first_snapshot, second_snapshot, third_snapshot], &snapshots_dir).await?;
 
@@ -1117,7 +1125,7 @@ mod tests {
         ];
 
         let [first_snapshot, second_snapshot, third_snapshot] =
-            select_bootstrap_snapshots(&snapshots, Some(Epoch::from(164_u64))).unwrap();
+            select_bootstrap_snapshots(&snapshots, Some(Epoch::from(167_u64))).unwrap();
 
         assert_eq!(first_snapshot.epoch, Epoch::from(164_u64));
         assert_eq!(second_snapshot.epoch, Epoch::from(165_u64));
@@ -1143,12 +1151,24 @@ mod tests {
             },
         ];
 
-        let err = select_bootstrap_snapshots(&snapshots, Some(Epoch::from(163_u64))).unwrap_err();
+        let err = select_bootstrap_snapshots(&snapshots, Some(Epoch::from(166_u64))).unwrap_err();
         let err = err.to_string();
 
-        assert!(err.contains("requested epoch 163"));
+        assert!(err.contains("target epoch 166"));
         assert!(err.contains("must contain epochs 163, 164, 165"));
         assert!(err.contains("Available epochs: 163, 165"));
+    }
+
+    #[test]
+    fn select_bootstrap_snapshots_reports_too_young_epoch() {
+        let snapshots = vec![Snapshot {
+            epoch: Epoch::from(1_u64),
+            point: "69206375.hash1".to_string(),
+            url: "https://example.com/1.tar.gz".to_string(),
+            parent_point: None,
+        }];
+        let err = select_bootstrap_snapshots(&snapshots, Some(Epoch::from(2_u64))).unwrap_err();
+        assert!(dbg!(err.to_string()).contains("target epoch is too young"));
     }
 
     #[test]

@@ -50,16 +50,16 @@ pub struct Args {
     )]
     ledger_dir: Option<PathBuf>,
 
-    /// Bootstrap start epoch from snapshots.json.
+    /// The target bootstrap epoch; this is the epoch Amaru will start from.
     ///
-    /// Bootstrap requires this epoch and the next two consecutive epochs.
-    /// Defaults to the latest available epoch in snapshots.json when unspecified.
+    /// At least 3 past epochs must exist. When omitted, this defaults the latest available epoch
+    /// from known snapshots.
     #[arg(
         long = "epoch",
         value_name = amaru::value_names::UINT,
         env = amaru::env_vars::EPOCH,
     )]
-    epoch: Option<u64>,
+    epoch: Option<Epoch>,
 
     /// Network to bootstrap the node for.
     #[arg(
@@ -84,7 +84,9 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
         force = %args.force,
         ledger_dir = %ledger_dir.to_string_lossy(),
         network = %network,
-        requested_epoch = ?args.epoch,
+        epoch = args.epoch
+            .map(|e| Box::new(e.to_string()) as Box<dyn tracing::Value>)
+            .unwrap_or_else(|| Box::new(tracing::field::Empty)),
         "running",
     );
 
@@ -114,5 +116,5 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    bootstrap(network, ledger_dir, chain_dir, args.epoch.map(Epoch::from)).await
+    bootstrap(network, ledger_dir, chain_dir, args.epoch).await
 }

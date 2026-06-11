@@ -18,6 +18,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use amaru_kernel::Epoch;
 use flate2::{Compression, GzBuilder};
 use tar::{Builder, Header};
 
@@ -39,7 +40,7 @@ pub(super) fn existing_archive_paths(snapshot_root: &Path, targets: &[EpochTarge
     targets.iter().map(|target| archive_path_for_target(snapshot_root, target)).filter(|path| path.is_file()).collect()
 }
 
-fn metadata_path_for_epoch(metadata_dir: &Path, epoch: u64) -> PathBuf {
+fn metadata_path_for_epoch(metadata_dir: &Path, epoch: Epoch) -> PathBuf {
     metadata_dir.join(format!("{epoch}.json"))
 }
 
