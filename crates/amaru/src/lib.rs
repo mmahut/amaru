@@ -164,11 +164,11 @@ pub mod env_vars {
     /// Runtime bootstrap config directory override.
     pub const BOOTSTRAP_CONFIG_DIR: &str = "AMARU_BOOTSTRAP_CONFIG_DIR";
 
-    /// --cardano-db-dir
-    pub const CARDANO_DB_DIR: &str = "AMARU_CARDANO_DB_DIR";
-
     /// --cardano-node-config-dir
     pub const CARDANO_NODE_CONFIG_DIR: &str = "AMARU_CARDANO_NODE_CONFIG_DIR";
+
+    /// --cardano-node-db-dir
+    pub const CARDANO_NODE_DB_DIR: &str = "AMARU_CARDANO_NODE_DB_DIR";
 
     /// --chain-dir
     pub const CHAIN_DIR: &str = "AMARU_CHAIN_DIR";

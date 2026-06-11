@@ -108,15 +108,15 @@ pub struct Args {
     /// Use an existing local cardano-node database instead of downloading via Mithril.
     ///
     /// The directory must contain the cardano-node `immutable/` chunks covering all
-    /// target slots (the standard chain-db layout). Required for custom testnets,
+    /// target slots (the standard chain-db layout). Required for custom networks,
     /// which have no Mithril aggregator; when the local chunks already cover the
     /// requested slots the Mithril download is skipped entirely.
     #[arg(
         long,
         value_name = amaru::value_names::DIRECTORY,
-        env = amaru::env_vars::CARDANO_DB_DIR,
+        env = amaru::env_vars::CARDANO_NODE_DB_DIR,
     )]
-    cardano_db_dir: Option<PathBuf>,
+    cardano_node_db_dir: Option<PathBuf>,
 
     /// Path to a JSON file of explicit epoch targets, bypassing Koios.
     ///
@@ -167,22 +167,29 @@ fn default_snapshot_output_dir(network: NetworkName) -> PathBuf {
 }
 
 pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    let Args { network, epoch, dist_dir, snapshot_dir, force, cardano_node_config_dir, cardano_db_dir, targets_file } =
-        args;
+    let Args {
+        network,
+        epoch,
+        dist_dir,
+        snapshot_dir,
+        force,
+        cardano_node_config_dir,
+        cardano_node_db_dir,
+        targets_file,
+    } = args;
+
     let client = reqwest::Client::new();
     let requested_epoch = epoch;
     let dist_dir = dist_dir.unwrap_or_else(|| default_dist_dir(network));
     let metadata_dir = dist_dir.join("epochs");
     let snapshot_output_dir = snapshot_dir.unwrap_or_else(|| default_snapshot_output_dir(network));
     let work_dir = dist_dir.join("work");
-    // Use the operator-supplied cardano-db when given (custom testnets), otherwise the
-    // Mithril-managed work directory (public networks).
-    let cardano_db_dir = cardano_db_dir.unwrap_or_else(|| work_dir.join("cardano-db"));
-    let ledger_snapshot_dir = cardano_db_dir.join("ledger");
+    let cardano_node_db_dir = cardano_node_db_dir.unwrap_or_else(|| work_dir.join("cardano-db"));
+    let ledger_snapshot_dir = cardano_node_db_dir.join("ledger");
 
     fs::create_dir_all(&metadata_dir)?;
     fs::create_dir_all(&snapshot_output_dir)?;
-    fs::create_dir_all(cardano_db_dir.join("immutable"))?;
+    fs::create_dir_all(cardano_node_db_dir.join("immutable"))?;
     fs::create_dir_all(&ledger_snapshot_dir)?;
 
     let config_dir = resolve_config_dir(&client, cardano_node_config_dir, network, &work_dir).await?;
@@ -225,7 +232,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         _command = "create-snapshots",
         snapshot_output_dir = %snapshot_output_dir.display(),
         config_dir = %config_dir.display(),
-        cardano_db_dir = %cardano_db_dir.display(),
+        cardano_node_db_dir = %cardano_node_db_dir.display(),
         network = %network,
         dist_dir = %dist_dir.display(),
         force,
@@ -255,24 +262,24 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         write_epoch_metadata(&metadata_dir, target)?;
     }
 
-    let from_chunk = first_missing_immutable_chunk(&cardano_db_dir.join("immutable"))?;
+    let from_chunk = first_missing_immutable_chunk(&cardano_node_db_dir.join("immutable"))?;
     let required_chunk = targets.last().map(|t| chunk_for_slot(t.slot)).unwrap_or(0);
     if from_chunk > required_chunk {
-        info!(from_chunk, required_chunk, target_dir = %cardano_db_dir.display(), "local cardano-db already covers all target slots; skipping Mithril download");
+        info!(from_chunk, required_chunk, target_dir = %cardano_node_db_dir.display(), "local cardano-db already covers all target slots; skipping Mithril download");
     } else {
-        info!(from_chunk, target_dir = %cardano_db_dir.display(), "synchronizing cardano-db from Mithril");
-        download_from_mithril(network, cardano_db_dir.clone(), from_chunk).await?;
+        info!(from_chunk, target_dir = %cardano_node_db_dir.display(), "synchronizing cardano-db from Mithril");
+        download_from_mithril(network, cardano_node_db_dir.clone(), from_chunk).await?;
     }
 
     let db_analyser_binary = ensure_db_analyser_binary()?;
-    let immutable_dir = cardano_db_dir.join("immutable");
+    let immutable_dir = cardano_node_db_dir.join("immutable");
     let context = SnapshotBuildContext {
         snapshot_output_dir: &snapshot_output_dir,
         immutable_dir: &immutable_dir,
         ledger_snapshot_dir: &ledger_snapshot_dir,
         metadata_dir: &metadata_dir,
         config_dir: &config_dir,
-        cardano_db_dir: &cardano_db_dir,
+        cardano_node_db_dir: &cardano_node_db_dir,
         db_analyser_binary: &db_analyser_binary,
     };
 
@@ -289,7 +296,7 @@ struct SnapshotBuildContext<'a> {
     ledger_snapshot_dir: &'a Path,
     metadata_dir: &'a Path,
     config_dir: &'a Path,
-    cardano_db_dir: &'a Path,
+    cardano_node_db_dir: &'a Path,
     db_analyser_binary: &'a str,
 }
 
@@ -332,7 +339,13 @@ fn resolve_or_create_snapshot_dir(
 
     let analyse_from = select_analyse_from_slot(ledger_snapshot_dir, target.slot, previous_snapshot_slot)?;
     info!(epoch = target.epoch, slot = target.slot, analyse_from, "creating ledger snapshot with db-analyser");
-    run_db_analyser(context.db_analyser_binary, context.config_dir, context.cardano_db_dir, target.slot, analyse_from)?;
+    run_db_analyser(
+        context.db_analyser_binary,
+        context.config_dir,
+        context.cardano_node_db_dir,
+        target.slot,
+        analyse_from,
+    )?;
 
     exact_snapshot_dir(ledger_snapshot_dir, target.slot)
         .ok_or_else(|| format!("db-analyser did not create snapshot directory for slot {}", target.slot).into())
