@@ -30,8 +30,9 @@ use amaru_metrics::ledger::LedgerMetrics;
 use amaru_observability::{info_span, trace_span};
 use amaru_ouroboros_traits::{HasStakeDistribution, PoolSummary, has_stake_distribution::GetPoolError};
 use amaru_plutus::arena_pool::ArenaPool;
+use num::CheckedSub;
 use thiserror::Error;
-use tracing::{Span, debug, info, trace};
+use tracing::{Span, info, trace, warn};
 
 use crate::{
     context::{DefaultPreparationContext, DefaultValidationContext},
@@ -215,11 +216,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
     /// Obtain a view of the stake distribution, to allow decoupling the ledger from other
     /// components that require access to it.
     pub fn view_stake_distribution(&self) -> impl HasStakeDistribution + use<S, HS> {
-        StakeDistributionObserver {
-            view: self.stake_distributions.clone(),
-            era_history: self.era_history.clone(),
-            allow_future_epoch_forecast: matches!(self.network, NetworkName::Testnet(_)),
-        }
+        StakeDistributionObserver { view: self.stake_distributions.clone(), era_history: self.era_history.clone() }
     }
 
     pub fn network(&self) -> NetworkName {
@@ -869,44 +866,28 @@ pub fn initial_stake_distributions(
     snapshots: &impl HistoricalStores,
     era_history: &EraHistory,
 ) -> Result<VecDeque<StakeDistribution>, StoreError> {
-    let latest_epoch = snapshots.most_recent_snapshot();
-
     let mut stake_distributions = VecDeque::new();
 
-    let epoch_for_rewards = latest_epoch.saturating_sub(2);
-    let epoch_for_leader_schedule = latest_epoch.saturating_sub(1);
+    let latest_epoch = snapshots.most_recent_snapshot();
+    let epoch_for_leader_schedule = latest_epoch.checked_sub(Epoch::ONE);
+    let epoch_for_rewards = latest_epoch.checked_sub(Epoch::TWO);
 
-    for epoch in [epoch_for_rewards, epoch_for_leader_schedule, latest_epoch] {
-        let snapshot = snapshots.for_epoch(epoch)?;
-
-        stake_distributions.push_front(
-            compute_stake_distribution(&snapshot, era_history).map_err(|err| StoreError::Internal(err.into()))?,
-        );
+    for (ix, epoch) in [epoch_for_rewards, epoch_for_leader_schedule, Some(latest_epoch)].into_iter().enumerate() {
+        if let Some(epoch) = epoch {
+            let snapshot = snapshots.for_epoch(epoch)?;
+            stake_distributions.push_front(
+                compute_stake_distribution(&snapshot, era_history).map_err(|err| StoreError::Internal(err.into()))?,
+            );
+        } else {
+            warn!(
+                "ignoring initial stake distribution for epoch 'e - {}', where e = {}; not available",
+                2 - ix,
+                latest_epoch
+            );
+        }
     }
 
     Ok(stake_distributions)
-}
-
-/// Resolve the stake distribution to use for a pool access at `epoch`.
-///
-/// Normally this is an exact match. Generated private testnets, however, can
-/// serve block headers from the next leader schedule before the stable ledger
-/// has materialized that epoch's snapshot; for those (`allow_future_epoch_forecast`)
-/// we fall back to the latest cached distribution when the requested epoch is
-/// strictly newer. Public networks keep exact lookups only.
-fn stake_distribution_for_pool_access(
-    stake_distributions: &VecDeque<StakeDistribution>,
-    epoch: Epoch,
-    allow_future_epoch_forecast: bool,
-) -> Option<&StakeDistribution> {
-    stake_distributions.iter().find(|distribution| distribution.epoch == epoch).or_else(|| {
-        if !allow_future_epoch_forecast {
-            return None;
-        }
-
-        let latest = stake_distributions.iter().max_by_key(|distribution| distribution.epoch)?;
-        (epoch > latest.epoch).then_some(latest)
-    })
 }
 
 pub fn compute_stake_distribution(
@@ -961,9 +942,6 @@ impl<'a> Deref for StakeDistributionView<'a> {
 pub struct StakeDistributionObserver {
     view: Arc<Mutex<VecDeque<StakeDistribution>>>,
     era_history: Arc<EraHistory>,
-    // Generated private testnets can fetch headers from the next leader schedule before the stable
-    // ledger has materialized that epoch's snapshot. Public networks keep exact lookups only.
-    allow_future_epoch_forecast: bool,
 }
 
 impl HasStakeDistribution for StakeDistributionObserver {
@@ -979,18 +957,14 @@ impl HasStakeDistribution for StakeDistributionObserver {
             // Either way, we do know at this point how to forecast this slot.
             .slot_to_epoch_unchecked_horizon(slot)
             .map_err(GetPoolError::SlotToEpochConversionFailure)?
-            .saturating_sub(2);
-        let view = self.view.lock().unwrap();
-        let stake_distribution = stake_distribution_for_pool_access(&view, epoch, self.allow_future_epoch_forecast)
-            .ok_or(GetPoolError::StakeDistributionNotAvailable(slot, epoch))?;
+            .checked_sub(Epoch::TWO);
 
-        if stake_distribution.epoch != epoch {
-            debug!(
-                requested_epoch = u64::from(epoch),
-                forecast_epoch = u64::from(stake_distribution.epoch),
-                "stake_distribution.forecast_from_latest"
-            );
-        }
+        let view = self.view.lock().unwrap();
+
+        let stake_distribution = view
+            .iter()
+            .find(|s| Some(s.epoch) == epoch)
+            .ok_or(GetPoolError::StakeDistributionNotAvailable(slot, epoch))?;
 
         Ok(stake_distribution.pools.get(pool).map(|st| PoolSummary {
             vrf: st.parameters.vrf,

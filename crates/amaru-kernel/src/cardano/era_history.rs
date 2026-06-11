@@ -591,7 +591,7 @@ impl EraHistory {
             if era.contains_epoch_unchecked_horizon(&epoch) {
                 let epochs_elapsed = epoch - era.start.epoch;
                 let offset = era.start.slot;
-                let slots_elapsed = epochs_elapsed * era.params.epoch_size_slots;
+                let slots_elapsed = u64::from(epochs_elapsed) * era.params.epoch_size_slots;
                 let start = offset.offset_by(slots_elapsed);
                 let end = offset.offset_by(era.params.epoch_size_slots + slots_elapsed);
                 return Ok(EpochEraBounds { start, end: era.end.as_ref().map(|_| end) });

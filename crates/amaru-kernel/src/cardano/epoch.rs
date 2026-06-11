@@ -19,6 +19,7 @@ use std::{
 };
 
 use minicbor::{Decode, Decoder, Encode};
+use num::CheckedSub;
 #[cfg(any(test, feature = "test-utils"))]
 use proptest::prelude::{Arbitrary, BoxedStrategy, Strategy};
 
@@ -27,6 +28,9 @@ use proptest::prelude::{Arbitrary, BoxedStrategy, Strategy};
 pub struct Epoch(u64);
 
 impl Epoch {
+    pub const ONE: &'static Self = &Self(1);
+    pub const TWO: &'static Self = &Self(2);
+
     pub fn new(epoch: u64) -> Self {
         Self(epoch)
     }
@@ -111,10 +115,16 @@ impl Epoch {
 }
 
 impl Sub<Epoch> for Epoch {
-    type Output = u64;
+    type Output = Epoch;
 
     fn sub(self, rhs: Epoch) -> Self::Output {
-        self.0 - rhs.0
+        Self(self.0 - rhs.0)
+    }
+}
+
+impl CheckedSub for Epoch {
+    fn checked_sub(&self, rhs: &Self) -> Option<Self> {
+        self.0.checked_sub(rhs.0).map(Self::from)
     }
 }
 
