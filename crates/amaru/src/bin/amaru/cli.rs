@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use amaru::observability::{Color, ObservabilityHints};
+use amaru_kernel::GlobalParameters;
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 use crate::cmd;
@@ -78,6 +79,19 @@ pub(crate) enum Command {
     Run(cmd::run::Args),
 }
 
+impl Command {
+    pub(crate) fn show_alternative_help(&self) -> Result<bool, Box<dyn std::error::Error>> {
+        if let Command::Run(args) = self
+            && args.help_global_parameters
+        {
+            GlobalParameters::show_help()?;
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+}
+
 impl ObservabilityHints for Command {
     fn listen_address(&self) -> Option<&str> {
         #[allow(clippy::wildcard_enum_match_arm)]
@@ -115,6 +129,12 @@ pub(crate) fn command(version: &'static str) -> clap::Command {
 }
 
 pub(crate) fn parse(version: &'static str) -> Result<Cli, clap::Error> {
-    let matches = command(version).get_matches();
-    <Cli as FromArgMatches>::from_arg_matches(&matches)
+    let matches = <Cli as CommandFactory>::command()
+        .mut_subcommand("run", |run| GlobalParameters::hide_options(run))
+        .version(version)
+        .get_matches();
+
+    let cli = <Cli as FromArgMatches>::from_arg_matches(&matches)?;
+
+    Ok(cli)
 }

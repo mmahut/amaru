@@ -40,8 +40,6 @@ pub mod version;
 
 pub const SNAPSHOTS_DIR: &str = "snapshots";
 
-pub const DEFAULT_NETWORK: NetworkName = NetworkName::Preprod;
-
 pub const DEFAULT_PEER_ADDRESS: &str = "127.0.0.1:3001";
 
 /// Default public bootstrap peer for mainnet.

@@ -17,6 +17,7 @@ use amaru::{
     panic::panic_handler,
     version,
 };
+use cli::Command;
 use tracing::info;
 
 mod cli;
@@ -31,41 +32,44 @@ mod pid;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     panic_handler();
 
-    let args = cli::parse(version::display_version())?;
+    let cli = cli::parse(version::display_version())?;
+    if cli.command.show_alternative_help()? {
+        return Ok(());
+    }
 
-    let skip_logging =
-        args.quiet || matches!(args.command, cli::Command::DumpTracesSchema(_) | cli::Command::ShellCompletions(_));
+    // Skip observability setup for dump-traces-schema to avoid polluting stderr
+    let skip_logging = cli.quiet || matches!(cli.command, Command::DumpTracesSchema(_) | Command::ShellCompletions(_));
 
     let (metrics, teardown) = if skip_logging {
         (None, Box::new(|| Ok(())) as Box<dyn FnOnce() -> Result<(), Box<dyn std::error::Error>>>)
     } else {
         let (m, t) = setup_observability(
-            args.with_open_telemetry,
-            args.with_json_traces,
-            Color::is_enabled(args.color),
-            &args.command,
+            cli.with_open_telemetry,
+            cli.with_json_traces,
+            Color::is_enabled(cli.color),
+            &cli.command,
         );
         (Some(m), t)
     };
 
     info!(
-        with_open_telemetry = args.with_open_telemetry,
-        with_json_traces = args.with_json_traces,
+        with_open_telemetry = cli.with_open_telemetry,
+        with_json_traces = cli.with_json_traces,
         "Started with global arguments"
     );
 
-    let result = match args.command {
-        cli::Command::Run(args) => cmd::run::run(args, metrics.unwrap()).await,
-        cli::Command::Bootstrap(args) => cmd::bootstrap::run(args).await,
-        cli::Command::FetchChainHeaders(args) => cmd::fetch_chain_headers::run(args).await,
-        cli::Command::CreateSnapshots(args) => cmd::create_snapshots::run(args).await,
-        cli::Command::ShellCompletions(args) => cmd::shell_completions::run(args).await,
-        cli::Command::DumpChainDB(args) => cmd::dump_chain_db::run(args).await,
-        cli::Command::RemoveValidationStatus(args) => cmd::remove_validation_status::run(args).await,
-        cli::Command::RemoveChain(args) => cmd::remove_chain::run(args).await,
-        cli::Command::DumpTracesSchema(args) => cmd::dump_schemas::run(args).await,
-        cli::Command::MigrateChainDB(args) => cmd::migrate_chain_db::run(args).await,
-        cli::Command::ResetToEpoch(args) => cmd::reset_to_epoch::run(args).await,
+    let result = match cli.command {
+        Command::Run(args) => cmd::run::run(args, metrics.unwrap()).await,
+        Command::Bootstrap(args) => cmd::bootstrap::run(args).await,
+        Command::FetchChainHeaders(args) => cmd::fetch_chain_headers::run(args).await,
+        Command::CreateSnapshots(args) => cmd::create_snapshots::run(args).await,
+        Command::ShellCompletions(args) => cmd::shell_completions::run(args).await,
+        Command::DumpChainDB(args) => cmd::dump_chain_db::run(args).await,
+        Command::RemoveValidationStatus(args) => cmd::remove_validation_status::run(args).await,
+        Command::RemoveChain(args) => cmd::remove_chain::run(args).await,
+        Command::DumpTracesSchema(args) => cmd::dump_schemas::run(args).await,
+        Command::MigrateChainDB(args) => cmd::migrate_chain_db::run(args).await,
+        Command::ResetToEpoch(args) => cmd::reset_to_epoch::run(args).await,
     };
 
     // TODO: we might also want to integrate this into a graceful shutdown system, and into a panic hook

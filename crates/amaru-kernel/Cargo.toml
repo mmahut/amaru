@@ -19,11 +19,13 @@ categories.workspace = true
 default = []
 test-utils = ["dep:proptest", "dep:rand"]
 tracing = ["amaru-minicbor-extra/tracing"]
+clap = ["dep:clap"]
 
 [dependencies]
 # External dependencies ───────────────────────────────────────────────────────┐
 bech32.workspace = true
 bytes = { workspace = true, features = ["serde"] }
+clap = { workspace = true, optional = true }
 hex.workspace = true
 itertools.workspace = true
 minicbor.workspace = true

@@ -502,40 +502,136 @@ impl<C> cbor::encode::Encode<C> for ProtocolParameters {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "clap", command(next_help_heading = "Global Network Parameters"))]
 pub struct GlobalParameters {
     /// The maximum depth of a rollback, also known as the security parameter 'k'.
+    ///
     /// This translates down to the length of our volatile storage, containing states of the ledger
     /// which aren't yet considered final.
+    #[cfg_attr(feature = "clap", arg(
+        long,
+        value_name = "UINT",
+        env = "AMARU_GLOBAL_CONSENSUS_SECURITY_PARAM",
+        hide_short_help = true,
+        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).consensus_security_param,
+    ))]
     pub consensus_security_param: usize,
 
-    /// Multiplier applied to the CONSENSUS_SECURITY_PARAM to determine the epoch length.
+    /// Multiplier applied to the `consensus_security_param` to determine the epoch length.
+    #[cfg_attr(feature = "clap", arg(
+        long,
+        value_name = "UINT",
+        env = "AMARU_GLOBAL_EPOCH_LENGTH_SCALE_FACTOR",
+        hide_short_help = true,
+        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).epoch_length_scale_factor,
+    ))]
     pub epoch_length_scale_factor: usize,
 
     /// Inverse of the active slot coefficient (i.e. 1/f);
+    #[cfg_attr(feature = "clap", arg(
+        long,
+        value_name = "UINT",
+        env = "AMARU_GLOBAL_ACTIVE_SLOT_COEFF_INVERSE",
+        hide_short_help = true,
+        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).active_slot_coeff_inverse,
+    ))]
     pub active_slot_coeff_inverse: usize,
 
     /// Maximum supply of Ada, in lovelace (1 Ada = 1,000,000 Lovelace)
+    #[cfg_attr(feature = "clap", arg(
+        long,
+        value_name = "LOVELACE",
+        env = "AMARU_GLOBAL_MAX_LOVELACE_SUPPLY",
+        hide_short_help = true,
+        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).max_lovelace_supply,
+    ))]
     pub max_lovelace_supply: Lovelace,
 
     /// Number of slots for a single KES validity period.
+    #[cfg_attr(feature = "clap", arg(
+        long,
+        value_name = "UINT",
+        env = "AMARU_GLOBAL_SLOTS_PER_KES_PERIOD",
+        hide_short_help = true,
+        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).slots_per_kes_period,
+    ))]
     pub slots_per_kes_period: u64,
 
     /// Maximum number of KES key evolution. Combined with SLOTS_PER_KES_PERIOD, these values
     /// indicates the validity period of a KES key before a new one is required.
+    #[cfg_attr(feature = "clap", arg(
+        long,
+        value_name = "U8",
+        env = "AMARU_GLOBAL_MAX_KES_EVOLUTION",
+        hide_short_help = true,
+        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).max_kes_evolution,
+    ))]
     pub max_kes_evolution: u8,
 
     /// Number of slots in an epoch
+    #[cfg_attr(feature = "clap", arg(
+        long,
+        value_name = "UINT",
+        env = "AMARU_GLOBAL_EPOCH_LENGTH",
+        hide_short_help = true,
+        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).epoch_length,
+    ))]
     pub epoch_length: usize,
 
     /// Relative slot from which data of the previous epoch can be considered stable.
+    #[cfg_attr(feature = "clap", arg(
+        long,
+        value_name = "SLOT",
+        env = "AMARU_GLOBAL_STABILITY_WINDOW",
+        hide_short_help = true,
+        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).stability_window,
+    ))]
     pub stability_window: Slot,
 
     /// Number of slots at the end of each epoch which do NOT contribute randomness to the candidate
     /// nonce of the following epoch.
+    #[cfg_attr(feature = "clap", arg(
+        long,
+        value_name = "UINT",
+        env = "AMARU_GLOBAL_RANDOMNESS_STABILIZATION_WINDOW",
+        hide_short_help = true,
+        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).randomness_stabilization_window,
+    ))]
     pub randomness_stabilization_window: u64,
 
     /// POSIX time (milliseconds) of the System Start.
+    #[cfg_attr(feature = "clap", arg(
+        long,
+        value_name = "MILLIS",
+        env = "AMARU_GLOBAL_SYSTEM_START",
+        hide_short_help = true,
+        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).system_start,
+    ))]
     pub system_start: u64,
+}
+
+#[cfg(feature = "clap")]
+impl GlobalParameters {
+    /// Hide the global parameters options from the given command; to only show them on-demand.
+    pub fn hide_options(mut cmd: clap::Command) -> clap::Command {
+        use clap::Args as _;
+
+        for arg in GlobalParameters::augment_args(clap::Command::new("global-parameters")).get_arguments() {
+            cmd = cmd.mut_arg(arg.get_id(), |arg| arg.hide(true));
+        }
+
+        cmd
+    }
+
+    pub fn show_help() -> Result<(), std::io::Error> {
+        use clap::Args as _;
+
+        let cmd = clap::Command::new("amaru run --help-global-parameters")
+            .about("The following options are hidden by default, but available on the 'run' command.");
+
+        Self::augment_args(cmd).disable_help_flag(true).disable_help_subcommand(true).print_long_help()
+    }
 }
 
 /// This data type encapsulates the parameters needed by the consensus layer to operate.

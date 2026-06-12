@@ -21,7 +21,7 @@ use std::{
     time::Instant,
 };
 
-use amaru::{DEFAULT_NETWORK, default_chain_dir, default_data_dir, default_ledger_dir};
+use amaru::{default_chain_dir, default_data_dir, default_ledger_dir};
 use amaru_consensus::store::PraosChainStore;
 use amaru_kernel::{
     BlockHeader, ConsensusParameters, EraHistory, GlobalParameters, Hash, NetworkName, Point, RawBlock,
@@ -44,13 +44,7 @@ pub struct Args {
     ///
     /// Should be one of 'mainnet', 'preprod', 'preview' or `testnet:<magic>` where
     /// `magic` is a 32-bits unsigned value denoting a particular testnet.
-    #[arg(
-        long,
-        value_name = "NETWORK",
-        env = "AMARU_NETWORK",
-        default_value_t = DEFAULT_NETWORK,
-        verbatim_doc_comment
-    )]
+    #[arg(long, value_name = "NETWORK", env = "AMARU_NETWORK", verbatim_doc_comment)]
     network: NetworkName,
 
     /// Path of the ledger on-disk storage.

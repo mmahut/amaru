@@ -19,9 +19,10 @@ use crate::{
     TESTNET_ERA_HISTORY, TESTNET_GLOBAL_PARAMETERS,
 };
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub enum NetworkName {
     Mainnet,
+    #[default]
     Preprod,
     Preview,
     Testnet(u32),

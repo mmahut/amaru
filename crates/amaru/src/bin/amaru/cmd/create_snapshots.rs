@@ -20,7 +20,7 @@ use std::{
     str::FromStr,
 };
 
-use amaru::{DEFAULT_NETWORK, default_data_dir, default_snapshots_dir};
+use amaru::{default_data_dir, default_snapshots_dir};
 use amaru_kernel::{Epoch, HeaderHash, NetworkName, Point, Slot, utils};
 use amaru_mithril::{
     chunk_for_slot, download_from_mithril, extract_block_header_cbor, first_missing_immutable_chunk,
@@ -54,7 +54,6 @@ pub struct Args {
         long,
         value_name = amaru::value_names::NETWORK,
         env = amaru::env_vars::NETWORK,
-        default_value_t = DEFAULT_NETWORK,
     )]
     network: NetworkName,
 

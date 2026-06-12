@@ -14,7 +14,7 @@
 
 use std::{fs, io, path::PathBuf};
 
-use amaru::{DEFAULT_NETWORK, default_ledger_dir};
+use amaru::default_ledger_dir;
 use amaru_kernel::NetworkName;
 use amaru_ledger::state::MIN_LEDGER_SNAPSHOTS;
 use clap::Parser;
@@ -42,7 +42,6 @@ pub struct Args {
         long,
         value_name = amaru::value_names::NETWORK,
         env = amaru::env_vars::NETWORK,
-        default_value_t = DEFAULT_NETWORK,
     )]
     network: NetworkName,
 }

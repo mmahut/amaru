@@ -14,7 +14,7 @@
 
 use std::{error::Error, fs::remove_dir_all, path::PathBuf};
 
-use amaru::{DEFAULT_NETWORK, bootstrap::bootstrap, default_chain_dir, default_ledger_dir};
+use amaru::{bootstrap::bootstrap, default_chain_dir, default_ledger_dir};
 use amaru_kernel::{Epoch, NetworkName};
 use clap::{ArgAction, Parser};
 use tracing::{info, warn};
@@ -66,7 +66,6 @@ pub struct Args {
         long,
         value_name = amaru::value_names::NETWORK,
         env = amaru::env_vars::NETWORK,
-        default_value_t = DEFAULT_NETWORK,
     )]
     network: NetworkName,
 }

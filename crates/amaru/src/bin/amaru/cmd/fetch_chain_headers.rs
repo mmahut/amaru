@@ -21,7 +21,7 @@ use std::{
 };
 
 use amaru::{
-    DEFAULT_NETWORK, DEFAULT_PEER_ADDRESS,
+    DEFAULT_PEER_ADDRESS,
     bootstrap::{BOOTSTRAP_HEADERS_PER_POINT, default_bootstrap_parent_points, fetch_headers_from_points},
 };
 use amaru_kernel::{BlockHeader, IsHeader, NetworkName, Point, from_cbor};
@@ -44,7 +44,6 @@ pub struct Args {
         long,
         value_name = amaru::value_names::NETWORK,
         env = amaru::env_vars::NETWORK,
-        default_value_t = DEFAULT_NETWORK,
     )]
     network: NetworkName,
 

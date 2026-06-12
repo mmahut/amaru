@@ -19,8 +19,8 @@ use std::{
 };
 
 use amaru::{
-    DEFAULT_DOWNSTREAM_PEERS, DEFAULT_LISTEN_ADDRESS, DEFAULT_NETWORK, DEFAULT_UPSTREAM_PEERS, default_chain_dir,
-    default_ledger_dir, default_peer_for_network,
+    DEFAULT_DOWNSTREAM_PEERS, DEFAULT_LISTEN_ADDRESS, DEFAULT_UPSTREAM_PEERS, default_chain_dir, default_ledger_dir,
+    default_peer_for_network,
     metrics::track_system_metrics,
     stages::{
         build_node::build_and_run_node,
@@ -33,7 +33,7 @@ use amaru_ouroboros::MempoolMsg;
 use amaru_protocols::tx_submission::ResponderParams;
 use amaru_pure_stage::{Sender, trace_buffer::TraceBuffer};
 use amaru_stores::rocksdb::RocksDbConfig;
-use clap::{ArgAction, Parser};
+use clap::{self, ArgAction, Parser};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use parking_lot::Mutex;
 use thiserror::Error;
@@ -120,7 +120,6 @@ pub struct Args {
         long,
         value_name = amaru::value_names::NETWORK,
         env = amaru::env_vars::NETWORK,
-        default_value_t = DEFAULT_NETWORK,
     )]
     network: NetworkName,
 
@@ -134,17 +133,6 @@ pub struct Args {
         env = amaru::env_vars::ERA_HISTORY_FILE,
     )]
     era_history_file: Option<PathBuf>,
-
-    /// Path to a JSON global-parameters file overriding the network default.
-    ///
-    /// This is required for generated testnets whose consensus parameters
-    /// differ from Amaru's built-in network profile.
-    #[arg(
-        long,
-        value_name = amaru::value_names::FILEPATH,
-        env = amaru::env_vars::GLOBAL_PARAMETERS_FILE,
-    )]
-    global_parameters_file: Option<PathBuf>,
 
     /// Address for the HTTP transaction submit API.
     ///
@@ -205,8 +193,17 @@ pub struct Args {
         long,
         value_name = amaru::value_names::FILEPATH,
         env = amaru::env_vars::DUMP_TRACE_BUFFER,
+        display_order = 1,
     )]
     dump_trace_buffer: Option<PathBuf>,
+
+    /// Override network's global parameters for custom testnets.
+    #[command(flatten)]
+    global_parameters: GlobalParameters,
+
+    /// Show global network parameter overrides, for custom testnets.
+    #[arg(long)]
+    pub(crate) help_global_parameters: bool,
 }
 
 impl Args {
@@ -313,10 +310,16 @@ fn parse_trace_buffer_limits(s: &str) -> Result<(usize, usize), String> {
     Ok((min_entries, max_size))
 }
 
+#[allow(clippy::expect_used)]
 fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
     let network = args.network;
     let era_history = load_era_history(args.era_history_file.as_deref(), network)?;
-    let global_parameters = load_global_parameters(args.global_parameters_file.as_deref(), network)?;
+
+    let global_parameters = if matches!(network, NetworkName::Testnet(..)) {
+        args.global_parameters
+    } else {
+        <&GlobalParameters>::from(network).clone()
+    };
 
     let ledger_dir = args.ledger_dir.unwrap_or_else(|| default_ledger_dir(network).into());
 
@@ -347,8 +350,14 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         max_extra_ledger_snapshots = %args.max_extra_ledger_snapshots,
         migrate_chain_db = args.migrate_chain_db,
         network = %args.network,
-        era_history_file = %args.era_history_file.as_deref().map(|p| p.display().to_string()).unwrap_or_else(|| "network default".to_string()),
-        global_parameters_file = %args.global_parameters_file.as_deref().map(|p| p.display().to_string()).unwrap_or_else(|| "network default".to_string()),
+        era_history_file = args.era_history_file
+            .map(|file| Box::new(file.display().to_string()) as Box<dyn tracing::Value>)
+            .unwrap_or_else(|| Box::new(tracing::field::Empty)),
+        global_parameters = if matches!(network, NetworkName::Testnet(..)) {
+            Box::new(serde_json::to_string(&global_parameters).expect("failed to serialise GlobalParameters to string?")) as Box<dyn tracing::Value>
+        } else {
+            Box::new(tracing::field::Empty)
+        },
         peer_address = %peer_address.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
         pid_file = %args.pid_file.unwrap_or_default().to_string_lossy(),
         submit_api_address = %args.submit_api_address.as_deref().unwrap_or("disabled"),
@@ -392,16 +401,6 @@ fn load_era_history(path: Option<&Path>, network: NetworkName) -> Result<EraHist
     match path {
         Some(path) => Ok(serde_json::from_slice(&std::fs::read(path)?)?),
         None => Ok(<&EraHistory>::from(network).clone()),
-    }
-}
-
-fn load_global_parameters(
-    path: Option<&Path>,
-    network: NetworkName,
-) -> Result<GlobalParameters, Box<dyn std::error::Error>> {
-    match path {
-        Some(path) => Ok(serde_json::from_slice(&std::fs::read(path)?)?),
-        None => Ok(<&GlobalParameters>::from(network).clone()),
     }
 }
 
