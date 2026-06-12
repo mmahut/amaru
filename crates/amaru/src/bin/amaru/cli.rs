@@ -130,7 +130,11 @@ pub(crate) fn command(version: &'static str) -> clap::Command {
 
 pub(crate) fn parse(version: &'static str) -> Result<Cli, clap::Error> {
     let matches = <Cli as CommandFactory>::command()
-        .mut_subcommand("run", |run| GlobalParameters::hide_options(run))
+        // NOTE: Hiding GlobalParameters options at 'runtime'
+        //
+        // Those options aren't declared hidden because it makes constructing the dedicated help a
+        // lot harder. So we instead declare them visible and only hide them here.
+        .mut_subcommand("run", GlobalParameters::hide_options)
         .version(version)
         .get_matches();
 

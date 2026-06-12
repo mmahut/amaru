@@ -189,11 +189,8 @@ pub mod env_vars {
     /// --ledger-dir
     pub const LEDGER_DIR: &str = "AMARU_LEDGER_DIR";
 
-    /// --era-history-file
-    pub const ERA_HISTORY_FILE: &str = "AMARU_ERA_HISTORY_FILE";
-
-    /// --global-parameters-file
-    pub const GLOBAL_PARAMETERS_FILE: &str = "AMARU_GLOBAL_PARAMETERS_FILE";
+    /// --era-history
+    pub const ERA_HISTORY: &str = "AMARU_ERA_HISTORY";
 
     /// --listen-address
     pub const LISTEN_ADDRESS: &str = "AMARU_LISTEN_ADDRESS";
@@ -236,9 +233,6 @@ pub mod env_vars {
 
     /// --submit-api-address
     pub const SUBMIT_API_ADDRESS: &str = "AMARU_SUBMIT_API_ADDRESS";
-
-    /// --targets-file
-    pub const TARGETS_FILE: &str = "AMARU_TARGETS_FILE";
 
     /// --trace-buffer
     pub const TRACE_BUFFER: &str = "AMARU_TRACE_BUFFER";

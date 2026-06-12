@@ -742,8 +742,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        Epoch, MAINNET_ERA_HISTORY, PREPROD_ERA_HISTORY, PREVIEW_ERA_HISTORY, Slot, any_era_params,
-        any_network_name, from_cbor_no_leftovers_with, load_era_history_from_file, to_cbor,
+        Epoch, MAINNET_ERA_HISTORY, PREPROD_ERA_HISTORY, PREVIEW_ERA_HISTORY, Slot, any_era_params, any_network_name,
+        from_cbor_no_leftovers_with, load_era_history_from_file, to_cbor,
     };
 
     prop_compose! {
