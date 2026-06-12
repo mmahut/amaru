@@ -25,7 +25,7 @@ use amaru_protocols::store_effects::{
     LoadFromBestChainEffect, LoadHeaderEffect, NextBestChainEffect, ResourceHeaderStore, RollForwardChainEffect,
     SetAnchorHashEffect, SwitchToForkEffect,
 };
-use pure_stage::{
+use amaru_pure_stage::{
     DeserializerGuards, Effect, Name, StageGraph, StageRef, TerminationReason,
     simulation::{SimulationBuilder, SimulationRunning},
     trace_buffer::{TraceBuffer, TraceEntry},
@@ -131,27 +131,27 @@ impl TestPrep {
 
 pub fn register_guards() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<AdoptChain>().boxed(),
-        pure_stage::register_data_deserializer::<Tip>().boxed(),
-        pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
-        pure_stage::register_data_deserializer::<MempoolMsg>().boxed(),
-        pure_stage::register_data_deserializer::<AdoptChainMsg>().boxed(),
-        pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
-        pure_stage::register_data_deserializer::<Option<BlockHeader>>().boxed(),
-        pure_stage::register_data_deserializer::<Option<Point>>().boxed(),
-        pure_stage::register_data_deserializer::<Result<(), StoreError>>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetAnchorHashEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetBestChainHashEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<SwitchToForkEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<RollForwardChainEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<SetAnchorHashEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadFromBestChainEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<NextBestChainEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<FindAncestorOnBestChainEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<FindAnchorAtHeightEffect>().boxed(),
-        pure_stage::register_data_deserializer::<Option<(Point, NonEmptyVec<Point>)>>().boxed(),
-        pure_stage::register_data_deserializer::<Option<HeaderHash>>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<AdoptChain>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Tip>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<MempoolMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<AdoptChainMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Option<BlockHeader>>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Option<Point>>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Result<(), StoreError>>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetAnchorHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetBestChainHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<SwitchToForkEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<RollForwardChainEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<SetAnchorHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadFromBestChainEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<NextBestChainEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<FindAncestorOnBestChainEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<FindAnchorAtHeightEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Option<(Point, NonEmptyVec<Point>)>>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Option<HeaderHash>>().boxed(),
     ]
 }
 
@@ -219,12 +219,12 @@ pub fn te_find_anchor_at_height(at_stage: &str, target_height: BlockHeight) -> T
     TraceEntry::suspend(Effect::external(at_stage, Box::new(FindAnchorAtHeightEffect::new(target_height))))
 }
 
-pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl pure_stage::SendData) -> TraceEntry {
-    TraceEntry::suspend(pure_stage::Effect::send(from, to, Box::new(msg)))
+pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl amaru_pure_stage::SendData) -> TraceEntry {
+    TraceEntry::suspend(amaru_pure_stage::Effect::send(from, to, Box::new(msg)))
 }
 
 pub fn te_clock(at_stage: &str) -> TraceEntry {
-    TraceEntry::suspend(pure_stage::Effect::clock(at_stage))
+    TraceEntry::suspend(amaru_pure_stage::Effect::clock(at_stage))
 }
 
 pub fn te_terminate(at_stage: impl AsRef<str>) -> TraceEntry {

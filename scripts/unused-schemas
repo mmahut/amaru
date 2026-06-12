@@ -21,7 +21,7 @@ unused=0
 # Single pass: extract all multi-segment ::path::CONSTANT references from source.
 # Exclude amaru-observability itself (schema definitions and macro doc comments
 # would trivially match their own paths and produce false "used" results).
-used=$(find crates simulation -name "*.rs" \
+used=$(find crates -name "*.rs" \
     -not -path "*/target/*" \
     -not -path "*/amaru-observability/*" \
     | xargs grep -ohE '([a-z_]+::)+[A-Z][A-Z0-9_]+' 2>/dev/null \

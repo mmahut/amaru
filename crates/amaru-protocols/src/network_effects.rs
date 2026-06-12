@@ -22,16 +22,16 @@ use std::{
 
 use amaru_kernel::{NonEmptyBytes, Peer};
 use amaru_ouroboros::{ConnectionId, ConnectionsResource, ToSocketAddrs};
-use pure_stage::{BoxFuture, Effects, ExternalEffect, ExternalEffectAPI, Resources, SendData};
+use amaru_pure_stage::{BoxFuture, Effects, ExternalEffect, ExternalEffectAPI, Resources, SendData};
 
-pub fn register_deserializers() -> pure_stage::DeserializerGuards {
+pub fn register_deserializers() -> amaru_pure_stage::DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<ListenEffect>().boxed(),
-        pure_stage::register_data_deserializer::<AcceptEffect>().boxed(),
-        pure_stage::register_data_deserializer::<ConnectEffect>().boxed(),
-        pure_stage::register_data_deserializer::<SendEffect>().boxed(),
-        pure_stage::register_data_deserializer::<RecvEffect>().boxed(),
-        pure_stage::register_data_deserializer::<CloseEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ListenEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<AcceptEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ConnectEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<SendEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<RecvEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<CloseEffect>().boxed(),
     ]
 }
 

@@ -31,11 +31,11 @@ use amaru_kernel::NetworkName;
 use amaru_mempool::MempoolConfig;
 use amaru_ouroboros::MempoolMsg;
 use amaru_protocols::tx_submission::ResponderParams;
+use amaru_pure_stage::{Sender, trace_buffer::TraceBuffer};
 use amaru_stores::rocksdb::RocksDbConfig;
 use clap::{ArgAction, Parser};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use parking_lot::Mutex;
-use pure_stage::{Sender, trace_buffer::TraceBuffer};
 use thiserror::Error;
 use tracing::{error, info, warn};
 

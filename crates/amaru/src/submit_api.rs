@@ -17,6 +17,7 @@ use std::net::SocketAddr;
 use amaru_kernel::Transaction;
 use amaru_ouroboros::{MempoolMsg, TxInsertResult, TxOrigin, TxRejectReason};
 use amaru_protocols::tx_submission::DEFAULT_MEMPOOL_INSERT_TIMEOUT;
+use amaru_pure_stage::{CallError, Sender};
 use anyhow::Context;
 use axum::{
     Json, Router,
@@ -26,7 +27,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
-use pure_stage::{CallError, Sender};
 use tokio::{net::TcpListener, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -136,14 +136,14 @@ mod tests {
         MockCanValidateBlocks, MockCanValidateTxs, TransactionValidationError, TxSubmissionMempool,
     };
     use amaru_protocols::store_effects::ResourceParameters;
+    use amaru_pure_stage::{
+        Sender, StageGraph,
+        tokio::{TokioBuilder, TokioRunning},
+    };
     use axum::{
         body::{Bytes, to_bytes},
         extract::State,
         http::HeaderMap,
-    };
-    use pure_stage::{
-        Sender, StageGraph,
-        tokio::{TokioBuilder, TokioRunning},
     };
     use reqwest::{Response, header::CONTENT_TYPE};
     use tokio::runtime::Handle;

@@ -14,8 +14,8 @@
 
 use std::collections::BTreeSet;
 
+use amaru_pure_stage::{Resources, simulation::RandStdRng};
 use anyhow::anyhow;
-use pure_stage::{Resources, simulation::RandStdRng};
 
 use crate::tests::node::Node;
 

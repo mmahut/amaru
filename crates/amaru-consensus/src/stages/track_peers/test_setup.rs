@@ -25,13 +25,13 @@ use amaru_protocols::{
     manager::ManagerMessage,
     store_effects::{HasHeaderEffect, LoadHeaderEffect, LoadTipEffect, ResourceHeaderStore, StoreHeaderEffect},
 };
-use anyhow::anyhow;
-use opentelemetry::Context;
-use pure_stage::{
+use amaru_pure_stage::{
     DeserializerGuards, Effect, StageGraph, StageRef, TraceMatch,
     simulation::{SimulationRunning, running::OverrideResult},
     trace_buffer::TraceEntry,
 };
+use anyhow::anyhow;
+use opentelemetry::Context;
 use tokio::runtime::{Builder, Handle, Runtime};
 
 use super::*;
@@ -125,25 +125,25 @@ pub fn tm_store_header(at_stage: &str) -> TraceMatch<'_> {
 
 fn register_guards() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<TrackPeers>().boxed(),
-        pure_stage::register_data_deserializer::<TrackPeersMsg>().boxed(),
-        pure_stage::register_data_deserializer::<InitiatorMessage>().boxed(),
-        pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
-        pure_stage::register_data_deserializer::<chainsync::InitiatorResult>().boxed(),
-        pure_stage::register_data_deserializer::<chainsync::InitiatorMessage>().boxed(),
-        pure_stage::register_data_deserializer::<chainsync::HeaderContent>().boxed(),
-        pure_stage::register_data_deserializer::<PeerSelectionMsg>().boxed(),
-        pure_stage::register_data_deserializer::<Tip>().boxed(),
-        pure_stage::register_data_deserializer::<(Tip, Point)>().boxed(),
-        pure_stage::register_data_deserializer::<DeferReqNext>().boxed(),
-        pure_stage::register_data_deserializer::<DeferReqNextMsg>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadTipEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<HasHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<StoreHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<ValidateHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<TipEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<VolatileTipEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<TrackPeers>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<TrackPeersMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<InitiatorMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<chainsync::InitiatorResult>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<chainsync::InitiatorMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<chainsync::HeaderContent>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<PeerSelectionMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Tip>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(Tip, Point)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<DeferReqNext>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<DeferReqNextMsg>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadTipEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<HasHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<StoreHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<ValidateHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<TipEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<VolatileTipEffect>().boxed(),
     ]
 }
 

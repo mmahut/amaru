@@ -75,16 +75,16 @@ amaru-consensus = { workspace = true, features = ["test-utils"] }
 amaru-kernel = { workspace = true, features = ["tracing"] }
 amaru-ledger.workspace = true
 amaru-mempool.workspace = true
-amaru-mithril = { workspace = true, optional = true }
 amaru-metrics.workspace = true
+amaru-mithril = { workspace = true, optional = true }
 amaru-network.workspace = true
 amaru-observability.workspace = true
 amaru-ouroboros.workspace = true
 amaru-plutus.workspace = true
 amaru-progress-bar = { workspace = true, features = ["terminal"] }
 amaru-protocols.workspace = true
+amaru-pure-stage.workspace = true
 amaru-stores.workspace = true
-pure-stage.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.10.2"
@@ -95,11 +95,13 @@ mithril = ["dep:amaru-mithril"]
 
 [dev-dependencies]
 # External dependencies ───────────────────────────────────────────────────────┐
+assert_cmd.workspace = true
 insta = { workspace = true, features = ["json"] }
 test-case.workspace = true
 rocksdb.workspace = true
 quote.workspace = true
 syn.workspace = true
+tempfile.workspace = true
 
 # Internal dependencies ───────────────────────────────────────────────────────┐
 amaru-iter-borrow.workspace = true

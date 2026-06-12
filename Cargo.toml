@@ -11,7 +11,7 @@ categories = ["cryptography::cryptocurrencies"]
 rust-version = "1.97" # Find versions here: https://rust-lang.github.io/rustup-components-history
 
 [workspace]
-members = ["crates/*", "crates/amaru-observability/macros/", "crates/vendor/*", "simulation/*"]
+members = ["crates/*", "crates/amaru-observability/macros/", "crates/vendor/*"]
 exclude = ["crates/vendor"]
 default-members = ["crates/*"]
 resolver = "2"
@@ -115,9 +115,9 @@ amaru-iter-borrow = { path = "crates/amaru-iter-borrow", version = "0.1.2" }
 amaru-kernel = { path = "crates/amaru-kernel", version = "0.1.2" }
 amaru-ledger = { path = "crates/amaru-ledger", version = "0.1.2" }
 amaru-mempool = { path = "crates/amaru-mempool", version = "0.1.2" }
-amaru-mithril = { path = "crates/amaru-mithril", version = "0.1.2" }
 amaru-metrics = { path = "crates/amaru-metrics", version = "0.1.2" }
 amaru-minicbor-extra = { path = "crates/amaru-minicbor-extra", version = "0.1.2" }
+amaru-mithril = { path = "crates/amaru-mithril", version = "0.1.2" }
 amaru-network = { path = "crates/amaru-network", version = "0.1.2" }
 amaru-observability = { path = "crates/amaru-observability", version = "0.1.2" }
 amaru-observability-macros = { path = "crates/amaru-observability/macros", version = "0.1.2" }
@@ -126,11 +126,11 @@ amaru-ouroboros-traits = { path = "crates/amaru-ouroboros-traits", version = "0.
 amaru-plutus = { path = "crates/amaru-plutus", version = "0.1.2" }
 amaru-progress-bar = { path = "crates/amaru-progress-bar", version = "0.1.2" }
 amaru-protocols = { path = "crates/amaru-protocols", version = "0.1.2" }
+amaru-pure-stage = { path = "crates/amaru-pure-stage", version = "0.1.2" }
 amaru-sim = { path = "crates/amaru-sim", version = "0.1.2" }
 amaru-stores = { path = "crates/amaru-stores", version = "0.1.2" }
 amaru-tracing-json = { path = "crates/amaru-tracing-json", version = "0.1.2" }
 amaru-uplc = { path = "crates/amaru-uplc", version = "0.4.0" }
-pure-stage = { path = "crates/pure-stage", version = "0.1.2" }
 
 # The vrf crate has not been fully tested in production environments and still has several upstream issues that are open PRs but not merged yet.
 vrf_dalek = { package = "amaru-vrf-dalek", path = "crates/vendor/amaru-vrf-dalek", version = "0.1.0" }
@@ -139,6 +139,7 @@ kes-summed-ed25519 = { package = "amaru-kes-summed-ed25519", path = "crates/vend
 amaru-curve25519-dalek = { package = "amaru-curve25519-dalek", path = "crates/vendor/amaru-curve25519-dalek", version = "3.2.0" }
 
 # dev-dependencies
+assert_cmd = "2.2.2"
 assertables = "9.8.2"
 criterion = "0.7.0"
 divan = "0.1.21"

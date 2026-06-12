@@ -30,16 +30,16 @@ use amaru_protocols::{
     manager::ManagerMessage,
     store_effects::{ResourceHeaderStore, ResourceParameters},
 };
+use amaru_pure_stage::{
+    BoxFuture, Sender, StageGraph, StageGraphRunning,
+    tokio::{TokioBuilder, TokioRunning},
+    trace_buffer::TraceBuffer,
+};
 use amaru_stores::rocksdb::consensus::RocksDBStore;
 use anyhow::{Context, anyhow};
 use opentelemetry::metrics::MeterProvider;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use parking_lot::Mutex;
-use pure_stage::{
-    BoxFuture, Sender, StageGraph, StageGraphRunning,
-    tokio::{TokioBuilder, TokioRunning},
-    trace_buffer::TraceBuffer,
-};
 use tokio::runtime::Handle;
 
 use crate::stages::{

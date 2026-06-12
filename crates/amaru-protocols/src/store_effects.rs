@@ -19,11 +19,11 @@ use amaru_ouroboros_traits::{
     ChainStore, FindAncestorOnBestChainResult, FindCommonAncestorResult, MissingBlocksResult, NextBestChainHeader,
     Nonces, SampleAncestorPointsResult, StoreError,
 };
-use pure_stage::{
+use amaru_pure_stage::{
     BoxFuture, DeserializerGuards, Effects, ExternalEffect, ExternalEffectAPI, Resources, SendData, Void,
 };
 
-/// Implementation of ChainStore using pure_stage::Effects.
+/// Implementation of ChainStore using amaru_pure_stage::Effects.
 #[derive(Clone, Debug)]
 pub struct Store {
     effects: Effects<Void>,
@@ -176,35 +176,35 @@ pub type ResourceParameters = GlobalParameters;
 
 pub fn register_deserializers() -> DeserializerGuards {
     vec![
-        pure_stage::register_effect_deserializer::<StoreHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<StoreBlockEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<SetAnchorHashEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<SetBestChainHashEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<PutNoncesEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<HasHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadFromBestChainEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<NextBestChainEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<NextBestChainHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadTipEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadHeaderWithValidityEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<SetBlockValidEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetChildrenEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetAnchorHashEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetBestChainHashEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetBestChainTipEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadBlockEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<HasBlockEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetNoncesEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<SwitchToForkEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<RollForwardChainEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<UnvalidatedAncestorHashesEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<FindAncestorOnBestChainEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<FindAnchorAtHeightEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<FindCommonAncestorEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<FindIntersectPointEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<SampleAncestorPointsEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<FindMissingBlocksEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<StoreHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<StoreBlockEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<SetAnchorHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<SetBestChainHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<PutNoncesEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<HasHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadFromBestChainEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<NextBestChainEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<NextBestChainHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadTipEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderWithValidityEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<SetBlockValidEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetChildrenEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetAnchorHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetBestChainHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetBestChainTipEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadBlockEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<HasBlockEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetNoncesEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<SwitchToForkEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<RollForwardChainEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<UnvalidatedAncestorHashesEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<FindAncestorOnBestChainEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<FindAnchorAtHeightEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<FindCommonAncestorEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<FindIntersectPointEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<SampleAncestorPointsEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<FindMissingBlocksEffect>().boxed(),
     ]
 }
 

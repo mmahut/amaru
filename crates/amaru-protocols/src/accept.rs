@@ -14,7 +14,7 @@
 
 use std::net::SocketAddr;
 
-use pure_stage::{Effects, StageRef};
+use amaru_pure_stage::{Effects, StageRef};
 
 use crate::{
     manager::{ManagerConfig, ManagerMessage},
@@ -59,6 +59,6 @@ impl AcceptState {
     }
 }
 
-pub fn register_deserializers() -> pure_stage::DeserializerGuards {
-    vec![pure_stage::register_data_deserializer::<AcceptState>().boxed()]
+pub fn register_deserializers() -> amaru_pure_stage::DeserializerGuards {
+    vec![amaru_pure_stage::register_data_deserializer::<AcceptState>().boxed()]
 }

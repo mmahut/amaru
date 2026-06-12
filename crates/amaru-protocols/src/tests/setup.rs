@@ -29,7 +29,7 @@ use amaru_ouroboros_traits::{
     DiagnosticChainStore, HasStakePools, Mempool, MockCanValidateBlocks, MockCanValidateHeaders, MockCanValidateTxs,
     ResourceMempool, ToSocketAddrs, in_memory_chain_store::InMemoryChainStore,
 };
-use pure_stage::{BoxFuture, StageGraph, tokio::TokioBuilder};
+use amaru_pure_stage::{BoxFuture, StageGraph, tokio::TokioBuilder};
 use socket2::{Domain, Protocol, Socket, Type};
 use tracing_subscriber::EnvFilter;
 

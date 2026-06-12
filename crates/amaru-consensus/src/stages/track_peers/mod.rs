@@ -24,8 +24,8 @@ use amaru_protocols::{
     chainsync::{self, ChainSyncInitiatorMsg, HeaderContent},
     store_effects::Store,
 };
+use amaru_pure_stage::{Effects, Instant, StageRef};
 pub use defer_req_next::DeferReqNextMsg;
-use pure_stage::{Effects, Instant, StageRef};
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -36,7 +36,7 @@ use crate::{
 };
 
 /// Block height of the furthest ledger-applied state: volatile tip if present, otherwise stable tip.
-pub(super) async fn ledger_applied_block_height<T: pure_stage::SendData + Sync>(eff: &Effects<T>) -> BlockHeight {
+pub(super) async fn ledger_applied_block_height<T: amaru_pure_stage::SendData + Sync>(eff: &Effects<T>) -> BlockHeight {
     let ledger = Ledger::new(eff.clone());
     ledger.volatile_tip().await.block_height()
 }
@@ -49,7 +49,7 @@ pub(super) async fn ledger_applied_block_height<T: pure_stage::SendData + Sync>(
 /// `downstream` stage. The `peer_selection` stage removes misbehaving peers and applies cooldown policy.
 ///
 /// The stage is driven exclusively by `TrackPeersMsg::FromUpstream` (the only variant). All
-/// external interaction occurs via `pure_stage::Effects` (sends, dynamic child `stage`/`wire_up`,
+/// external interaction occurs via `amaru_pure_stage::Effects` (sends, dynamic child `stage`/`wire_up`,
 /// `clock`, and `schedule_after`) plus the `Ledger` and `Store` effect abstractions (for
 /// `volatile_tip`/`validate_header` and `load_tip`/`has_header`/`store_header`).
 ///
@@ -156,7 +156,7 @@ pub struct TrackPeers {
     peer_selection: StageRef<PeerSelectionMsg>,
     downstream: StageRef<(Tip, Point)>,
     consensus_security_parameter: u64,
-    /// Lazily populated via [`Effects::stage`](pure_stage::Effects::stage) on first deferred `RequestNext`.
+    /// Lazily populated via [`Effects::stage`](amaru_pure_stage::Effects::stage) on first deferred `RequestNext`.
     defer_req_next: StageRef<DeferReqNextMsg>,
     defer_req_next_poll_ms: u64,
     ledger_applied_block_height: BlockHeight,

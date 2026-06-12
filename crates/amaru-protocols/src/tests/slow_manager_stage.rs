@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use pure_stage::Effects;
+use amaru_pure_stage::Effects;
 
 use crate::{
     manager,

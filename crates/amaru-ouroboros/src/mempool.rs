@@ -14,7 +14,7 @@
 
 use amaru_kernel::{Tip, Transaction, TransactionId};
 use amaru_ouroboros_traits::{MempoolSeqNo, TxInsertResult, TxOrigin, TxRejectReason};
-use pure_stage::StageRef;
+use amaru_pure_stage::StageRef;
 
 /// Messages accepted by the mempool stage.
 ///

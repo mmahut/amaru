@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use amaru_kernel::BlockHeight;
 use amaru_protocols::chainsync::InitiatorMessage;
-use pure_stage::{Effects, StageRef};
+use amaru_pure_stage::{Effects, StageRef};
 
 use super::ledger_applied_block_height;
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

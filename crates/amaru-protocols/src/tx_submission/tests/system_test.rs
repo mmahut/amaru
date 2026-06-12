@@ -19,7 +19,7 @@ use amaru_mempool::InMemoryMempool;
 use amaru_network::connection::TokioConnections;
 use amaru_ouroboros::{ConnectionsResource, in_memory_chain_store::InMemoryChainStore};
 use amaru_ouroboros_traits::{DiagnosticChainStore, ResourceMempool};
-use pure_stage::{StageGraph, StageRef, tokio::TokioBuilder};
+use amaru_pure_stage::{StageGraph, StageRef, tokio::TokioBuilder};
 use tokio::{runtime::Handle, time::timeout};
 use tracing::info;
 use tracing_subscriber::EnvFilter;

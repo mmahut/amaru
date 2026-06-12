@@ -73,7 +73,7 @@ jobs:
     with:
       runner: ubuntu-24.04
       target: wasm32-unknown-unknown
-      command: build -p amaru-consensus -p amaru-ledger -p pure-stage
+      command: build -p amaru-consensus -p amaru-ledger -p amaru-pure-stage
       cache-mode: READ
       setup: rustup target add wasm32-unknown-unknown
 
@@ -117,7 +117,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: failed-simulation-data
-          path: simulation/amaru-sim/test-data
+          path: amaru-sim/test-data
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
@@ -152,25 +152,6 @@ jobs:
       - name: benches headers_tree
         shell: bash
         run: cargo bench --bench headers_tree --features="test-utils profiling"
-
-  cli:
-    name: Test Command-line
-    needs: [build-linux-x86_64]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/cache
-      - name: Install bash_unit
-        shell: bash
-        run: curl -s https://raw.githubusercontent.com/bash-unit/bash_unit/master/install.sh | bash
-      - name: Install expect
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y expect
-      - name: Run bash_unit
-        shell: bash
-        run: FORCE_COLOR=true ./bash_unit cli-tests/test_*
 
   trace-schemas:
     name: Test trace schemas & documentation

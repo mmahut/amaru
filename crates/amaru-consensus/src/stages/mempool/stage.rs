@@ -17,14 +17,14 @@ use std::time::Instant;
 use amaru_kernel::{Tip, Transaction};
 use amaru_ouroboros::{MempoolMsg, MempoolSeqNo, TxInsertResult, TxOrigin, TxRejectReason};
 use amaru_protocols::mempool_effects::MemoryPool;
-use pure_stage::{Effects, StageRef};
+use amaru_pure_stage::{Effects, StageRef};
 
 use crate::{
     effects::{Ledger, LedgerOps, Metrics},
     stages::mempool::traces::{RevalidationOutcome, emit_tx_received, record_insert, record_revalidation},
 };
 
-/// The Mempool stage is a pure_stage actor that coordinates validation and insertion of
+/// The Mempool stage is a amaru_pure_stage actor that coordinates validation and insertion of
 /// transactions into the shared mempool via effects, while managing asynchronous waiter
 /// notifications for sequence number readiness and mempool capacity events.
 ///

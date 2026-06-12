@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use pure_stage::DeserializerGuards;
+use amaru_pure_stage::DeserializerGuards;
 
 use crate::{
     accept, blockfetch, chainsync, connection, handshake, keepalive, manager, mux, network_effects, store_effects,

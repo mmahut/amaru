@@ -26,12 +26,12 @@ use amaru_protocols::store_effects::{
     GetAnchorHashEffect, LoadBlockEffect, LoadFromBestChainEffect, LoadHeaderEffect, LoadHeaderWithValidityEffect,
     ResourceHeaderStore,
 };
-use async_trait::async_trait;
-use parking_lot::Mutex;
-use pure_stage::{
+use amaru_pure_stage::{
     DeserializerGuards, Effect, Name, StageGraph, StageRef, TerminationReason, simulation::SimulationRunning,
     trace_buffer::TraceEntry,
 };
+use async_trait::async_trait;
+use parking_lot::Mutex;
 use tokio::runtime::{Builder, Runtime};
 
 use super::*;
@@ -257,25 +257,25 @@ impl TestPrep {
 
 pub fn register_guards() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<ValidateBlock>().boxed(),
-        pure_stage::register_data_deserializer::<ValidateBlockMsg>().boxed(),
-        pure_stage::register_data_deserializer::<SelectChainMsg>().boxed(),
-        pure_stage::register_data_deserializer::<AdoptChainMsg>().boxed(),
-        pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
-        pure_stage::register_data_deserializer::<Tip>().boxed(),
-        pure_stage::register_data_deserializer::<amaru_kernel::cardano::network_block::NetworkBlock>().boxed(),
-        pure_stage::register_data_deserializer::<Option<(BlockHeader, Option<bool>)>>().boxed(),
-        pure_stage::register_data_deserializer::<Option<HeaderHash>>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadBlockEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadHeaderWithValidityEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadFromBestChainEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetAnchorHashEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<ContainsPointEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<TipEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<RollbackBlockEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<ValidateBlockEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<RecordMetricsEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ValidateBlock>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ValidateBlockMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<SelectChainMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<AdoptChainMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Tip>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<amaru_kernel::cardano::network_block::NetworkBlock>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Option<(BlockHeader, Option<bool>)>>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Option<HeaderHash>>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadBlockEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderWithValidityEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadFromBestChainEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetAnchorHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<ContainsPointEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<TipEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<RollbackBlockEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<ValidateBlockEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<RecordMetricsEffect>().boxed(),
     ]
 }
 
@@ -335,8 +335,8 @@ pub fn te_rollback_ledger(at_stage: &str, point: &Point) -> TraceEntry {
     ))
 }
 
-pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl pure_stage::SendData) -> TraceEntry {
-    TraceEntry::suspend(pure_stage::Effect::send(from, to, Box::new(msg)))
+pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl amaru_pure_stage::SendData) -> TraceEntry {
+    TraceEntry::suspend(amaru_pure_stage::Effect::send(from, to, Box::new(msg)))
 }
 
 pub fn te_terminate(at_stage: impl AsRef<str>) -> TraceEntry {

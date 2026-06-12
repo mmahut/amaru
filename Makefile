@@ -150,8 +150,8 @@ dev: start # 'backward-compatibility'; might remove after a while.
 start: ## &build Compile and run for $BUILD_PROFILE with default options
 	cargo run --profile $(BUILD_PROFILE) -- $(COMMON_ARGS) run $(ARGS)
 
-run-until: ## &build Synchronize Amaru until a target epoch $RUN_UNTIL_TARGET_EPOCH
-		./scripts/run-until $(BUILD_PROFILE) $(RUN_UNTIL_TARGET_EPOCH)
+run-until: ## &test Synchronize Amaru until a target epoch $RUN_UNTIL_TARGET_EPOCH
+	./scripts/run-until $(BUILD_PROFILE) $(RUN_UNTIL_TARGET_EPOCH)
 
 compare-trace-contract: ## &test Compare $(TRACE_COMPARE_LOG) against $(TRACE_CONTRACT) including performance thresholds
 	@set -e; \
@@ -195,11 +195,14 @@ all-ci-checks: ## &test Run all CI checks
 fetch-data: ## &test Fetch epoch data (dreps, pools, accounts, ...) from a Haskell node
 	@npm --prefix data run fetch -- "$(AMARU_NETWORK)"
 
-update-ledger-conformance-test-vectors: ## &test Update the set of test vectors used for ledger conformance tests
-	@./scripts/update-ledger-conformance-test-vectors
+ledger-conformance-test-vectors: ## &test Download and update the set of test vectors used for ledger conformance tests
+	curl -Ls https://github.com/cardano-scaling/cardano-blueprint/raw/refs/heads/main/src/ledger/conformance-test-vectors/vectors.tar.gz | \
+	tar -xvf - -C "./crates/amaru-ledger/tests/data/rules-conformance"
 
-update-ledger-conformance-test-snapshot: ## &test Update the snapshot of results from ledger conformance tests
-	@./scripts/update-ledger-conformance-test-snapshot
+ledger-conformance-known-failures: ## &test Update the set of 'known conformance failures' from running the tests
+	@export AMARU_UPDATE_LEDGER_CONFORMANCE_SNAPSHOT_PATH=$$(mktemp); \
+	cargo test -p amaru-ledger --test evaluate_ledger_states -- --test-threads=1; \
+	mv "$$AMARU_UPDATE_LEDGER_CONFORMANCE_SNAPSHOT_PATH" "./crates/amaru-ledger/tests/data/rules-conformance.failures.toml"
 
 generate-test-snapshots: ## &test Generate test snapshots for test-e2e
 	@npm --prefix conformance-tests run generate-all -- "$(AMARU_NETWORK)"

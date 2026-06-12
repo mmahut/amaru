@@ -15,7 +15,7 @@
 use std::sync::Arc;
 
 use amaru_metrics::{Meter, MetricRecorder, MetricsEvent};
-use pure_stage::{BoxFuture, Effects, ExternalEffect, ExternalEffectAPI, Resources, SendData};
+use amaru_pure_stage::{BoxFuture, Effects, ExternalEffect, ExternalEffectAPI, Resources, SendData};
 
 /// Metrics operations available to a stage. This allows a stage to record a MetricsEvent that
 /// will be collected via OpenTelemetry.
@@ -24,7 +24,7 @@ pub trait MetricsOps: Clone + Send {
     fn record(&self, event: MetricsEvent) -> BoxFuture<'static, ()>;
 }
 
-/// Implementation of MetricsOps using pure_stage::Effects.
+/// Implementation of MetricsOps using amaru_pure_stage::Effects.
 pub struct Metrics<'a, T>(&'a Effects<T>);
 
 impl<'a, T> Clone for Metrics<'a, T> {
@@ -79,7 +79,7 @@ impl ExternalEffectAPI for RecordMetricsEffect {
 #[test]
 fn record_metrics_cbor_roundtrip() {
     use amaru_metrics::ledger::LedgerMetrics;
-    use pure_stage::serde::{from_cbor, to_cbor};
+    use amaru_pure_stage::serde::{from_cbor, to_cbor};
 
     let event = RecordMetricsEffect::new(MetricsEvent::LedgerMetrics(LedgerMetrics::default()));
     let cbor = to_cbor(&event);

@@ -19,7 +19,7 @@ use amaru_kernel::{
 };
 use amaru_ouroboros_traits::{MissingBlocks, MissingBlocksResult};
 use amaru_protocols::{blockfetch::Blocks2, manager::ManagerMessage, store_effects::Store};
-use pure_stage::{Effects, OrTerminateWith, ScheduleId, StageRef, TryInStage};
+use amaru_pure_stage::{Effects, OrTerminateWith, ScheduleId, StageRef, TryInStage};
 
 use crate::stages::{
     block_source::BlockSourceMsg,
