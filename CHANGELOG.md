@@ -37,6 +37,8 @@ Other guiding principles:
 
 ## v10.10.20260618 _[unreleased; planned for 2026-06-18]_
 
+- amaru-protocols: remove the interim batch block-fetch API and keep the streaming `FetchBlocks` API (#778)
+
 ### Fixed
 
 - amaru: fixed `--help` being displayed as a debug Rust value instead of properly formatted. ([#953](https://github.com/pragma-org/amaru/pull/953))

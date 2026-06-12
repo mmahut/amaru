@@ -160,7 +160,7 @@ fn test_new_tip_blocks_to_fetch() {
             te_send(
                 "fb-1",
                 "manager",
-                ManagerMessage::FetchBlocks2 {
+                ManagerMessage::FetchBlocks {
                     from: prep.headers.h1.point(),
                     through: prep.headers.h2.point(),
                     id: 1,

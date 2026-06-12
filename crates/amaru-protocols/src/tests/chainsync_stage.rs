@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 use amaru_kernel::{BlockHeader, Header, IsHeader, Point, cbor};
 use amaru_pure_stage::{Effects, StageRef};
@@ -20,42 +20,159 @@ use pallas_primitives::babbage::MintedHeader;
 use tokio::sync::Notify;
 
 use crate::{
-    chainsync, chainsync::ChainSyncInitiatorMsg, manager::ManagerMessage, store_effects::Store,
+    blockfetch::Blocks, chainsync, chainsync::ChainSyncInitiatorMsg, manager::ManagerMessage, store_effects::Store,
     tests::configuration::RESPONDER_BLOCKS_NB,
 };
 
 /// State for the ChainSync stage
 /// The stage batches block fetch requests to test the manager's block fetch capabilities with the Message::RequestRange variant.
 /// We accumulate the next points to fetch in this state and keep track of the total number of requested blocks.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(super) struct ChainSyncStageState {
     manager: StageRef<ManagerMessage>,
+    fetcher: StageRef<StoreFetchedBlocksMessage>,
     blocks_to_fetch: Vec<Point>,
     total_requested_blocks: usize,
     processing_wait: Option<Duration>,
-    #[serde(skip)]
-    notify: Arc<Notify>,
 }
-
-impl PartialEq for ChainSyncStageState {
-    fn eq(&self, other: &Self) -> bool {
-        self.manager == other.manager
-            && self.blocks_to_fetch == other.blocks_to_fetch
-            && self.total_requested_blocks == other.total_requested_blocks
-            && self.processing_wait == other.processing_wait
-    }
-}
-
-impl Eq for ChainSyncStageState {}
 
 impl ChainSyncStageState {
     pub(super) fn new(
         manager: StageRef<ManagerMessage>,
+        fetcher: StageRef<StoreFetchedBlocksMessage>,
         processing_wait: Option<Duration>,
-        notify: Arc<Notify>,
     ) -> Self {
-        Self { manager, blocks_to_fetch: Vec::new(), total_requested_blocks: 0, processing_wait, notify }
+        Self { manager, fetcher, blocks_to_fetch: Vec::new(), total_requested_blocks: 0, processing_wait }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) struct FetchBatch {
+    from: Point,
+    through: Point,
+    expected_points: VecDeque<Point>,
+    handler: StageRef<chainsync::InitiatorMessage>,
+}
+
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(super) enum StoreFetchedBlocksMessage {
+    FetchBatch(FetchBatch),
+    Blocks(Blocks),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct PendingFetch {
+    id: u64,
+    remaining_points: VecDeque<Point>,
+    handler: StageRef<chainsync::InitiatorMessage>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub(super) struct StoreFetchedBlocks {
+    manager: StageRef<ManagerMessage>,
+    blocks: StageRef<Blocks>,
+    next_id: u64,
+    current: Option<PendingFetch>,
+    queue: VecDeque<FetchBatch>,
+    total_requested_blocks: usize,
+    #[serde(skip)]
+    notify: Arc<Notify>,
+}
+
+impl PartialEq for StoreFetchedBlocks {
+    fn eq(&self, other: &Self) -> bool {
+        self.manager == other.manager
+            && self.blocks == other.blocks
+            && self.next_id == other.next_id
+            && self.current == other.current
+            && self.queue == other.queue
+            && self.total_requested_blocks == other.total_requested_blocks
+    }
+}
+
+impl Eq for StoreFetchedBlocks {}
+
+impl StoreFetchedBlocks {
+    pub(super) fn new(manager: StageRef<ManagerMessage>, blocks: StageRef<Blocks>, notify: Arc<Notify>) -> Self {
+        Self { manager, blocks, next_id: 0, current: None, queue: VecDeque::new(), total_requested_blocks: 0, notify }
+    }
+}
+
+async fn start_next_fetch(state: &mut StoreFetchedBlocks, eff: &Effects<StoreFetchedBlocksMessage>) {
+    if state.current.is_some() {
+        return;
+    }
+
+    let Some(batch) = state.queue.pop_front() else {
+        return;
+    };
+
+    state.next_id += 1;
+    let id = state.next_id;
+    state.total_requested_blocks += batch.expected_points.len();
+    state.current = Some(PendingFetch { id, remaining_points: batch.expected_points, handler: batch.handler });
+    eff.send(
+        &state.manager,
+        ManagerMessage::FetchBlocks { from: batch.from, through: batch.through, cr: state.blocks.clone(), id },
+    )
+    .await;
+}
+
+async fn advance_after_fetch(
+    state: &mut StoreFetchedBlocks,
+    handler: StageRef<chainsync::InitiatorMessage>,
+    eff: &Effects<StoreFetchedBlocksMessage>,
+) {
+    if state.total_requested_blocks == RESPONDER_BLOCKS_NB - 1 {
+        tracing::info!("all blocks retrieved, done");
+        state.notify.notify_waiters();
+    } else if state.queue.is_empty() {
+        eff.send(&handler, chainsync::InitiatorMessage::RequestNext).await;
+    } else {
+        start_next_fetch(state, eff).await;
+    }
+}
+
+pub(super) async fn store_fetched_blocks(
+    mut state: StoreFetchedBlocks,
+    msg: StoreFetchedBlocksMessage,
+    eff: Effects<StoreFetchedBlocksMessage>,
+) -> StoreFetchedBlocks {
+    match msg {
+        StoreFetchedBlocksMessage::FetchBatch(batch) => {
+            state.queue.push_back(batch);
+            start_next_fetch(&mut state, &eff).await;
+        }
+        StoreFetchedBlocksMessage::Blocks(Blocks::NoBlocks(id)) => {
+            if !matches!(state.current.as_ref(), Some(current) if current.id == id) {
+                return state;
+            }
+            let current = state.current.take().expect("current fetch must exist");
+            assert!(current.remaining_points.is_empty(), "expected blocks for request {id}, got no blocks");
+            advance_after_fetch(&mut state, current.handler, &eff).await;
+        }
+        StoreFetchedBlocksMessage::Blocks(Blocks::Block(id, _peer, network_block)) => {
+            if !matches!(state.current.as_ref(), Some(current) if current.id == id) {
+                return state;
+            }
+            let block_header = network_block.decode_header().expect("failed to extract header from block");
+            let current = state.current.as_mut().expect("current fetch must exist");
+            let expected_point = current.remaining_points.pop_front().expect("unexpected extra block");
+            assert_eq!(block_header.point(), expected_point, "unexpected block point for request {id}");
+            tracing::info!("storing block {:?}", block_header.point());
+            Store::new(eff.clone()).store_block(&block_header.hash(), &network_block.raw_block()).await.unwrap();
+        }
+        StoreFetchedBlocksMessage::Blocks(Blocks::Done(id)) => {
+            if !matches!(state.current.as_ref(), Some(current) if current.id == id) {
+                return state;
+            }
+            let current = state.current.take().expect("current fetch must exist");
+            assert!(current.remaining_points.is_empty(), "missing blocks for request {id}");
+            advance_after_fetch(&mut state, current.handler, &eff).await;
+        }
+    }
+
+    state
 }
 
 /// This is a simplified version of the chain sync processing
@@ -103,30 +220,19 @@ pub(super) async fn test_chainsync_stage(
             {
                 let from = *state.blocks_to_fetch.first().unwrap();
                 let through = *state.blocks_to_fetch.last().unwrap();
-                let blocks = eff
-                    .call(&state.manager, Duration::from_secs(200), move |cr| ManagerMessage::FetchBlocks {
-                        peer,
+                let expected_blocks = state.blocks_to_fetch.len();
+                state.total_requested_blocks += expected_blocks;
+                eff.send(
+                    &state.fetcher,
+                    StoreFetchedBlocksMessage::FetchBatch(FetchBatch {
                         from,
                         through,
-                        cr,
-                    })
-                    .await
-                    .unwrap_or_default();
-
-                state.total_requested_blocks += state.blocks_to_fetch.len();
-                // store the fetched blocks with their corresponding headers.
-                tracing::info!("retrieved {} blocks", blocks.blocks.len());
-                for network_block in blocks.blocks {
-                    let block_header = network_block.decode_header().expect("failed to extract header from block");
-                    tracing::info!("storing block {:?}", block_header.point());
-                    store.store_block(&block_header.hash(), &network_block.raw_block()).await.unwrap();
-                }
+                        expected_points: state.blocks_to_fetch.iter().copied().collect(),
+                        handler: msg.handler.clone(),
+                    }),
+                )
+                .await;
                 state.blocks_to_fetch.clear();
-            };
-
-            if state.total_requested_blocks == RESPONDER_BLOCKS_NB - 1 {
-                tracing::info!("all blocks retrieved, done");
-                state.notify.notify_waiters();
             } else {
                 eff.send(&msg.handler, chainsync::InitiatorMessage::RequestNext).await;
             }

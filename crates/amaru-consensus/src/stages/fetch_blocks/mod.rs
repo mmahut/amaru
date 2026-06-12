@@ -18,7 +18,7 @@ use amaru_kernel::{
     BlockHeader, BlockHeight, HeaderHash, IsHeader, ORIGIN_HASH, Peer, Point, Tip, cardano::network_block::NetworkBlock,
 };
 use amaru_ouroboros_traits::{MissingBlocks, MissingBlocksResult};
-use amaru_protocols::{blockfetch::Blocks2, manager::ManagerMessage, store_effects::Store};
+use amaru_protocols::{blockfetch::Blocks, manager::ManagerMessage, store_effects::Store};
 use amaru_pure_stage::{Effects, OrTerminateWith, ScheduleId, StageRef, TryInStage};
 
 use crate::stages::{
@@ -50,7 +50,7 @@ const MAX_MISSING_BLOCKS_PER_BATCH: usize = 25;
 /// ## Input messages and behaviour
 /// - `NewTip(tip, parent)`: Update tracked block_height, assert no outstanding missing,
 ///   delegate to `request_missing_blocks` which queries store for gaps and (if any)
-///   sends `ManagerMessage::FetchBlocks2` (with cr=child ref for replies) then schedules
+///   sends `ManagerMessage::FetchBlocks` (with cr=child ref for replies) then schedules
 ///   a `Timeout(req_id)`.
 /// - `RecoverStoredBlocks(best_hash)`: Startup recovery only. If origin, signal upstream
 ///   immediately. Otherwise replay any unvalidated-but-stored blocks downstream for
@@ -65,9 +65,9 @@ const MAX_MISSING_BLOCKS_PER_BATCH: usize = 25;
 ///   `FetchNextFrom(boundary)` upstream to retry (no direct peer penalty here).
 ///
 /// ## Child stages and their protocols
-/// - **cleanup_replies** (dynamic, `StageRef<Blocks2>`, lazily `ensure_child`'d on every
+/// - **cleanup_replies** (dynamic, `StageRef<Blocks>`, lazily `ensure_child`'d on every
 ///   message; factory creates `Cleanup` with self-ref + block_source/peer_selection):
-///   - Receives `Blocks2` replies routed by manager (because `cr` passed in FetchBlocks2).
+///   - Receives `Blocks` replies routed by manager (because `cr` passed in FetchBlocks).
 ///   - `NoBlocks(_)`: ignored (timeout will handle).
 ///   - `Block(id, peer, nb)`: decode header (adversarial on fail + return), ALWAYS
 ///     `BlockSourceMsg::BlockReceived {peer, tip}` (for stats/selection), forward as
@@ -79,7 +79,7 @@ const MAX_MISSING_BLOCKS_PER_BATCH: usize = 25;
 ///
 /// ## Key state (missing blocks, requests, timeouts)
 /// - `downstream: StageRef<(Tip, Point, BlockHeight)>`: where validated-ready blocks go (contramapped in wiring).
-/// - `req_id: u64`: monotonic, incremented on each new FetchBlocks2; used to pair timeouts and filter in child.
+/// - `req_id: u64`: monotonic, incremented on each new FetchBlocks; used to pair timeouts and filter in child.
 /// - `missing: Option<MissingBlocks>`: cursor over current batch (from `find_missing_blocks`); supports
 ///   `from_to()`, `first()`, `boundary()`, `shift_one_block()`, `is_empty()`, `nb_missing_blocks()`.
 ///   Asserted None on NewTip/Recover entry; cleared on completion, timeout, or no-work cases.
@@ -89,7 +89,7 @@ const MAX_MISSING_BLOCKS_PER_BATCH: usize = 25;
 ///
 /// ## External interactions (which stages it talks to)
 /// - **select_chain (upstream)**: receives `NewTip`/`RecoverStoredBlocks`; sends `SelectChainMsg::FetchNextFrom(point)` on batch done, no-work, timeout, or recovery complete.
-/// - **manager**: sends `ManagerMessage::FetchBlocks2 {from, through, id, cr: cleanup_replies}` to initiate block fetches (replies flow back via provided child ref).
+/// - **manager**: sends `ManagerMessage::FetchBlocks {from, through, id, cr: cleanup_replies}` to initiate block fetches (replies flow back via provided child ref).
 /// - **downstream** (typically validate_block_input via contramap in build): sends `(Tip, parent_Point, block_height)` for each block (newly fetched or recovered stored).
 /// - **block_source** (via child only): `BlockReceived {peer, tip}` for every header seen in replies (even stragglers/old).
 /// - **peer_selection**: `Adversarial(peer)` on body-hash mismatch (main) or header decode failure (child).
@@ -107,7 +107,7 @@ pub struct FetchBlocks {
     manager: StageRef<ManagerMessage>,
     block_source: StageRef<BlockSourceMsg>,
     peer_selection: StageRef<PeerSelectionMsg>,
-    cleanup_replies: StageRef<Blocks2>,
+    cleanup_replies: StageRef<Blocks>,
     timeout: Option<ScheduleId>,
     block_height: BlockHeight,
 }
@@ -142,7 +142,7 @@ impl FetchBlocks {
         manager: StageRef<ManagerMessage>,
         block_source: StageRef<BlockSourceMsg>,
         peer_selection: StageRef<PeerSelectionMsg>,
-        cleanup_replies: StageRef<Blocks2>,
+        cleanup_replies: StageRef<Blocks>,
     ) -> Self {
         Self {
             downstream,
@@ -264,7 +264,7 @@ impl FetchBlocks {
                 self.req_id += 1;
                 eff.send(
                     &self.manager,
-                    ManagerMessage::FetchBlocks2 {
+                    ManagerMessage::FetchBlocks {
                         from: *from,
                         through: *to,
                         id: self.req_id,
@@ -390,11 +390,11 @@ impl Cleanup {
 /// Ensure that straggling block replies do not clog the mailbox of the fetch stage.
 ///
 /// TODO: keep block hashes in LRU to deduplicate incoming blocks without validation or ordering assumption
-async fn cleanup_replies(mut state: Cleanup, msg: Blocks2, eff: Effects<Blocks2>) -> Cleanup {
+async fn cleanup_replies(mut state: Cleanup, msg: Blocks, eff: Effects<Blocks>) -> Cleanup {
     match msg {
         // completely ignore empty responses, fetch stage will deal with timeouts
-        Blocks2::NoBlocks(_) => {}
-        Blocks2::Block(id, peer, network_block) => {
+        Blocks::NoBlocks(_) => {}
+        Blocks::Block(id, peer, network_block) => {
             let header = match network_block.decode_header() {
                 Ok(header) => header,
                 Err(error) => {
@@ -412,7 +412,7 @@ async fn cleanup_replies(mut state: Cleanup, msg: Blocks2, eff: Effects<Blocks2>
             state.curr_id = id.max(state.curr_id);
         }
         // getting done message implies a new request will start with id+1, but Done might be old as well
-        Blocks2::Done(id) => {
+        Blocks::Done(id) => {
             state.curr_id = (id + 1).max(state.curr_id);
         }
     }

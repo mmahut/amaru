@@ -30,7 +30,10 @@ use crate::{
     tests::{
         accept_stage::{AcceptState, PullAccept, accept_stage},
         assertions::{check_state, wait_for_termination},
-        chainsync_stage::{ChainSyncStageState, test_chainsync_stage},
+        chainsync_stage::{
+            ChainSyncStageState, StoreFetchedBlocks, StoreFetchedBlocksMessage, store_fetched_blocks,
+            test_chainsync_stage,
+        },
         configuration::Configuration,
         setup::{
             FailingConnectionProvider, ephemeral_localhost_addr, set_resources, set_resources_with_connections,
@@ -209,12 +212,20 @@ async fn start_initiator_with_configuration(
     // create stages
     let initiator_stage = initiator_network.stage("initiator", manager::stage);
     let chainsync_stage = initiator_network.stage("chainsync", test_chainsync_stage);
+    let store_fetched_blocks_stage = initiator_network.stage("store_fetched_blocks", store_fetched_blocks);
+    let fetcher_ref: StageRef<StoreFetchedBlocksMessage> = store_fetched_blocks_stage.sender();
+    let blocks_ref =
+        initiator_network.contramap(&fetcher_ref, "store_fetched_blocks-blocks", StoreFetchedBlocksMessage::Blocks);
 
     // wire up stages
     let notify = Arc::new(Notify::new());
+    initiator_network.wire_up(
+        store_fetched_blocks_stage,
+        StoreFetchedBlocks::new(initiator_stage.sender(), blocks_ref, notify.clone()),
+    );
     let chainsync_stage = initiator_network.wire_up(
         chainsync_stage,
-        ChainSyncStageState::new(initiator_stage.sender(), configuration.processing_wait, notify.clone()),
+        ChainSyncStageState::new(initiator_stage.sender(), fetcher_ref, configuration.processing_wait),
     );
 
     let manager_config =
@@ -250,14 +261,22 @@ async fn start_responder_with_failing_accept(
 
     // Create the chainsync stage for tracking completion
     let chainsync_stage = responder_network.stage("chainsync", test_chainsync_stage);
+    let store_fetched_blocks_stage = responder_network.stage("store_fetched_blocks", store_fetched_blocks);
+    let fetcher_ref: StageRef<StoreFetchedBlocksMessage> = store_fetched_blocks_stage.sender();
+    let blocks_ref =
+        responder_network.contramap(&fetcher_ref, "store_fetched_blocks-blocks", StoreFetchedBlocksMessage::Blocks);
     let notify = Arc::new(Notify::new());
 
     // Create the manager stage - it will handle ManagerMessage::Listen and create the supervised accept stage
     let responder_stage = responder_network.stage("responder", manager::stage);
 
     // Wire up the chainsync stage first (manager needs its reference)
+    responder_network.wire_up(
+        store_fetched_blocks_stage,
+        StoreFetchedBlocks::new(responder_stage.sender(), blocks_ref, notify.clone()),
+    );
     let chainsync_stage = responder_network
-        .wire_up(chainsync_stage, ChainSyncStageState::new(responder_stage.sender(), None, notify.clone()));
+        .wire_up(chainsync_stage, ChainSyncStageState::new(responder_stage.sender(), fetcher_ref, None));
     let responder_manager = create_manager(ManagerConfig::default(), chainsync_stage.without_state());
 
     // Wire up the manager stage

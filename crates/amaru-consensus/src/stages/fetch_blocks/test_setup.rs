@@ -74,7 +74,7 @@ impl Default for HeaderChain {
 pub struct TestPrep {
     pub state: FetchBlocks,
     pub rt: Runtime,
-    pub cleanup_replies: StageRef<Blocks2>,
+    pub cleanup_replies: StageRef<Blocks>,
     pub headers: HeaderChain,
     pub store: Arc<InMemoryChainStore>,
 }
