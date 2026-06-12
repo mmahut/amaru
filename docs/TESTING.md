@@ -88,7 +88,7 @@ make ledger-conformance-known-failures
 
 The [amaru-sim](https://github.com/pragma-org/amaru/tree/main/crates/amaru-sim) standalone application provides a thorough deterministic simulation testing framework specifically targeted at testing the _consensus_ and _network_ components of Amaru. Deterministic simulation testing is based on a simple idea, to simulate the environment the system is interacting with, inject inputs and verifies its output conforms to expected properties.
 
-DST requires full control of the _effects_ enacted by the system, ie. everything that's not pure computation like sending or receiving data from the network, running concurrent computations, reading and writing to disk ; and we want to ensure we test the _exact same code_ that runs in production. Therefore we built [pure-stage](https://github.com/pragma-org/amaru/tree/main/crates/pure-stage) which is the machinery that allows us to isolate _effects_ and run concurrent code deterministically.
+DST requires full control of the _effects_ enacted by the system, ie. everything that's not pure computation like sending or receiving data from the network, running concurrent computations, reading and writing to disk ; and we want to ensure we test the _exact same code_ that runs in production. Therefore we built [amaru-pure-stage](https://github.com/pragma-org/amaru/tree/main/crates/amaru-pure-stage) which is the machinery that allows us to isolate _effects_ and run concurrent code deterministically.
 
 We currently run "small" simulation tests on every CI build, and "large" ones [nightly](https://github.com/pragma-org/amaru/actions/workflows/nightly-simulation.yml) on our main branch.
 

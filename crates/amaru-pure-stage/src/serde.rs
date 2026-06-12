@@ -65,7 +65,7 @@ pub fn never() -> ! {
     panic!("unreachable: never")
 }
 
-/// `#[serde(with = "pure_stage::serde::serialize_error")]` for serializing [`anyhow::Error`].
+/// `#[serde(with = "amaru_pure_stage::serde::serialize_error")]` for serializing [`anyhow::Error`].
 pub mod serialize_error {
     use super::*;
 
@@ -134,7 +134,7 @@ impl<'de> serde::de::Deserialize<'de> for Field {
     }
 }
 
-/// `#[serde(with = "pure_stage::serde::serialize_send_data")]` for serializing [`Box<dyn SendData>`](crate::SendData).
+/// `#[serde(with = "amaru_pure_stage::serde::serialize_send_data")]` for serializing [`Box<dyn SendData>`](crate::SendData).
 #[allow(clippy::disallowed_types)]
 pub mod serialize_send_data {
     use std::{any::type_name, collections::HashMap, fmt, sync::Arc};
@@ -473,7 +473,7 @@ mod test_send_data {
     }
 }
 
-/// `#[serde(with = "pure_stage::serde::serialize_external_effect")]` for serializing [`Box<dyn ExternalEffect>`](crate::ExternalEffect).
+/// `#[serde(with = "amaru_pure_stage::serde::serialize_external_effect")]` for serializing [`Box<dyn ExternalEffect>`](crate::ExternalEffect).
 #[allow(clippy::disallowed_types)]
 pub mod serialize_external_effect {
     use std::{collections::HashMap, sync::Arc};

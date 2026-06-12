@@ -16,7 +16,7 @@ use amaru_kernel::{Peer, Point, Tip};
 use amaru_observability::trace_span;
 use amaru_ouroboros::ConnectionId;
 use amaru_ouroboros_traits::SampleAncestorPointsResult;
-use pure_stage::{DeserializerGuards, Effects, StageRef, Void};
+use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void};
 use tracing::Instrument;
 
 use crate::{
@@ -34,10 +34,10 @@ use crate::{
 
 pub fn register_deserializers() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<InitiatorMessage>().boxed(),
-        pure_stage::register_data_deserializer::<(InitiatorState, ChainSyncInitiator)>().boxed(),
-        pure_stage::register_data_deserializer::<ChainSyncInitiatorMsg>().boxed(),
-        pure_stage::register_data_deserializer::<ChainSyncInitiator>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<InitiatorMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(InitiatorState, ChainSyncInitiator)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ChainSyncInitiatorMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ChainSyncInitiator>().boxed(),
     ]
 }
 

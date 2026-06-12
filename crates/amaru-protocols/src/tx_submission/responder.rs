@@ -24,7 +24,7 @@ use TerminationCause::*;
 use amaru_kernel::{EraHistory, Transaction, TransactionId, to_cbor};
 use amaru_observability::trace_span;
 use amaru_ouroboros::{MempoolInsertResult, MempoolMsg, MempoolSeqNo, TxInsertResult, TxOrigin, TxRejectReason};
-use pure_stage::{DeserializerGuards, Effects, StageRef, Void};
+use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void};
 use tracing::Instrument;
 
 use crate::{
@@ -44,8 +44,8 @@ const MAX_TX_SIZE_DISCREPANCY: u32 = 32;
 
 pub fn register_deserializers() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<TxSubmissionResponder>().boxed(),
-        pure_stage::register_data_deserializer::<(State, TxSubmissionResponder)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<TxSubmissionResponder>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(State, TxSubmissionResponder)>().boxed(),
     ]
 }
 

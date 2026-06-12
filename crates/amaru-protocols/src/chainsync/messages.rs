@@ -13,10 +13,10 @@
 // limitations under the License.
 
 use amaru_kernel::{BlockHeader, EraName, Point, Tip, cbor, to_cbor, utils::debug_bytes};
-use pure_stage::DeserializerGuards;
+use amaru_pure_stage::DeserializerGuards;
 
 pub fn register_deserializers() -> DeserializerGuards {
-    vec![pure_stage::register_data_deserializer::<Message>().boxed()]
+    vec![amaru_pure_stage::register_data_deserializer::<Message>().boxed()]
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Ord, PartialOrd)]

@@ -14,12 +14,12 @@
 
 use std::{any::type_name, collections::BTreeSet, fmt, io, sync::Arc};
 
-use parking_lot::Mutex;
-use pure_stage::{
+use amaru_pure_stage::{
     DeserializerGuards, Effect, Name, Resources, SendData, StageGraph, TerminationReason,
     simulation::{SimulationBuilder, SimulationRunning},
     trace_buffer::{TraceBuffer, TraceEntry},
 };
+use parking_lot::Mutex;
 use tokio::runtime::Handle;
 use tracing::{Level, subscriber::DefaultGuard};
 use tracing_subscriber::util::SubscriberInitExt;
@@ -162,8 +162,8 @@ pub fn te_input<T: SendData + Clone>(stage: impl AsRef<str>, msg: &T) -> TraceEn
     TraceEntry::Input { stage: Name::from(stage.as_ref()), input: Box::new(msg.clone()) }
 }
 
-pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl pure_stage::SendData) -> TraceEntry {
-    TraceEntry::suspend(pure_stage::Effect::send(from, to, Box::new(msg)))
+pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl amaru_pure_stage::SendData) -> TraceEntry {
+    TraceEntry::suspend(amaru_pure_stage::Effect::send(from, to, Box::new(msg)))
 }
 
 pub fn te_terminate(at_stage: impl AsRef<str>) -> TraceEntry {
@@ -243,5 +243,5 @@ where
     (running, guards, logs.logs())
 }
 
-// Re-export TraceMatch (the type) so stage test_setup modules can use it without reaching into pure_stage.
-pub use pure_stage::TraceMatch;
+// Re-export TraceMatch (the type) so stage test_setup modules can use it without reaching into amaru_pure_stage.
+pub use amaru_pure_stage::TraceMatch;

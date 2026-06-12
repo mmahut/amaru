@@ -14,8 +14,7 @@
 
 use std::{collections::BTreeMap, time::Duration};
 
-use pretty_assertions::Comparison;
-use pure_stage::{
+use amaru_pure_stage::{
     BLACKHOLE_NAME, Effect as Eff, Effects, Instant, Name, OutputEffect, ScheduleId, ScheduleIds, SendData, StageGraph,
     StageRef, StageResponse as Resp, UnknownExternalEffect,
     serde::SendDataValue,
@@ -23,6 +22,7 @@ use pure_stage::{
     tokio::TokioBuilder,
     trace_buffer::{TerminationReason, TraceBuffer, TraceEntry as E},
 };
+use pretty_assertions::Comparison;
 use tokio::runtime::Runtime;
 
 fn logging() {
@@ -155,7 +155,7 @@ fn call_then_terminate() {
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     struct CallMsg(u32, StageRef<u32>);
 
-    let _guard = pure_stage::register_data_deserializer::<CallMsg>();
+    let _guard = amaru_pure_stage::register_data_deserializer::<CallMsg>();
 
     logging();
     fn graph(builder: &mut impl StageGraph) {
@@ -218,7 +218,7 @@ fn clock_wait_then_terminate() {
         ]
     };
 
-    assert_equiv(run_sim(graph), &expected(*pure_stage::EPOCH));
+    assert_equiv(run_sim(graph), &expected(*amaru_pure_stage::EPOCH));
 
     let _guard = Instant::with_tolerance_for_test(dur(300));
     let actual = run_tokio(graph);
@@ -236,7 +236,7 @@ fn clock_wait_then_terminate() {
 fn scheduling() {
     logging();
     // without this the always-true comparison of ScheduleIds will fail
-    let _guard = pure_stage::register_data_deserializer::<Option<ScheduleId>>();
+    let _guard = amaru_pure_stage::register_data_deserializer::<Option<ScheduleId>>();
 
     fn graph(builder: &mut impl StageGraph) {
         let trigger = builder.stage("trigger", async |id: Option<ScheduleId>, msg: u32, eff| match msg {
@@ -457,8 +457,8 @@ fn caller_already_terminated() {
         Ref(StageRef<u32>),
     }
 
-    let _guard = pure_stage::register_data_deserializer::<Msg>();
-    let _guard = pure_stage::register_data_deserializer::<StageRef<u32>>();
+    let _guard = amaru_pure_stage::register_data_deserializer::<Msg>();
+    let _guard = amaru_pure_stage::register_data_deserializer::<StageRef<u32>>();
 
     logging();
     fn graph(builder: &mut impl StageGraph) {

@@ -619,7 +619,7 @@ mod tests {
 
         assert_eq!(
             json,
-            r#"{"Suspend":{"External":{"at_stage":"test","effect":{"typetag":"pure_stage::output::OutputEffect<u32>","value":{"name":"test","msg":42,"sender":{}}}}}}"#
+            r#"{"Suspend":{"External":{"at_stage":"test","effect":{"typetag":"amaru_pure_stage::output::OutputEffect<u32>","value":{"name":"test","msg":42,"sender":{}}}}}}"#
         );
     }
 }

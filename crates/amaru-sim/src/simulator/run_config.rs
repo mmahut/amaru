@@ -18,7 +18,7 @@ use std::{
 };
 
 use amaru_kernel::Peer;
-use pure_stage::simulation::RandStdRng;
+use amaru_pure_stage::simulation::RandStdRng;
 use rand::{Rng, SeedableRng, prelude::StdRng};
 
 use crate::simulator::Args;

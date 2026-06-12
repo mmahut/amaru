@@ -14,11 +14,11 @@
 
 use std::{fs, path::Path};
 
+use amaru_pure_stage::{Instant, serde::from_cbor, trace_buffer::TraceEntry};
 use amaru_sim::simulator::{
     RunConfig, SimulationRun, TEST_DATA_DIR, TestRun, get_args, initialize_logs, make_args, replay, run_tests,
 };
 use anyhow::anyhow;
-use pure_stage::{Instant, serde::from_cbor, trace_buffer::TraceEntry};
 
 /// Test the simulation with default parameters and replay the resulting trace.
 /// We use just 1 upstream peer.

@@ -322,7 +322,7 @@ pub trait TryInStage {
     /// # Example
     ///
     /// ```ignore
-    /// use pure_stage::{tokio::TokioBuilder, StageGraph, TryInStage};
+    /// use amaru_pure_stage::{tokio::TokioBuilder, StageGraph, TryInStage};
     ///
     /// let mut network = TokioBuilder::default();
     /// network.stage("demo", async |_state: (), msg: Result<u32, String>, eff| {

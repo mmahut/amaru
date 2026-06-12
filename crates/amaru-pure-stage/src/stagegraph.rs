@@ -56,7 +56,7 @@ impl fmt::Display for ScheduleId {
 ///
 /// Example:
 /// ```rust
-/// use pure_stage::{StageGraph, tokio::TokioBuilder};
+/// use amaru_pure_stage::{StageGraph, tokio::TokioBuilder};
 ///
 /// let mut network = TokioBuilder::default();
 ///

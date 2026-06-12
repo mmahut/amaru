@@ -31,7 +31,7 @@ use crate::{
     },
 };
 
-pub fn register_deserializers() -> pure_stage::DeserializerGuards {
+pub fn register_deserializers() -> amaru_pure_stage::DeserializerGuards {
     vec![initiator::register_deserializers(), responder::register_deserializers()].into_iter().flatten().collect()
 }
 

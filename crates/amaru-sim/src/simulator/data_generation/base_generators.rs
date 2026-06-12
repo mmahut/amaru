@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use pure_stage::Instant;
+use amaru_pure_stage::Instant;
 use rand::{Rng, prelude::StdRng};
 use rand_distr::{Distribution, LogNormal};
 
@@ -95,7 +95,7 @@ pub fn generate_arrival_times<R: Rng>(
 mod tests {
     use std::{collections::BTreeMap, time::Duration};
 
-    use pure_stage::Instant;
+    use amaru_pure_stage::Instant;
     use rand::SeedableRng;
     use rand_distr::Exp;
 

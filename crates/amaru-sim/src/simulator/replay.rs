@@ -14,7 +14,7 @@
 
 use amaru::tests::{configuration::NodeTestConfig, setup::create_node};
 use amaru_protocols::deserializers::register_deserializers;
-use pure_stage::{simulation::SimulationBuilder, trace_buffer::TraceEntry};
+use amaru_pure_stage::{simulation::SimulationBuilder, trace_buffer::TraceEntry};
 
 use crate::simulator::{Args, RunConfig, generate_actions};
 

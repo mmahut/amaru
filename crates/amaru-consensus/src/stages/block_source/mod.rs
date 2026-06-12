@@ -15,7 +15,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use amaru_kernel::{BlockHeight, Peer, Point, Tip};
-use pure_stage::{Effects, StageRef};
+use amaru_pure_stage::{Effects, StageRef};
 use tracing::field;
 
 use crate::stages::peer_selection::PeerSelectionMsg;
@@ -23,7 +23,7 @@ use crate::stages::peer_selection::PeerSelectionMsg;
 /// Tracks provenance of blocks received from the network (by `Point`) and
 /// reports peers that provided invalid blocks as adversarial.
 ///
-/// This stage is a leaf in the pure_stage graph. It receives *notifications*
+/// This stage is a leaf in the amaru_pure_stage graph. It receives *notifications*
 /// (not requests) and performs no serving of blocks/headers, no downstream
 /// block emission, and no interaction with any manager or chain-selection
 /// logic. Its only external effect is sending `PeerSelectionMsg::Adversarial`
@@ -71,7 +71,7 @@ use crate::stages::peer_selection::PeerSelectionMsg;
 /// Called after every `BlockReceived`/`Validation` and on `AdoptedTip`.
 ///
 /// Construction: `BlockSource::new(adopted_tip, max_tip_distance, invalid_peer_sink)`.
-/// The `stage()` function is the pure_stage handler.
+/// The `stage()` function is the amaru_pure_stage handler.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BlockSource {
     adopted_tip: Tip,

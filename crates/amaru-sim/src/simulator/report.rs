@@ -15,8 +15,8 @@
 use std::{fs::File, io::Write, path::Path, sync::Arc};
 
 use amaru_consensus::headers_tree::data_generation::GeneratedActions;
+use amaru_pure_stage::trace_buffer::TraceBuffer;
 use parking_lot::Mutex;
-use pure_stage::trace_buffer::TraceBuffer;
 
 use crate::simulator::Args;
 

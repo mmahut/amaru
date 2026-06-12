@@ -23,8 +23,8 @@ use amaru::tests::{
 };
 use amaru_consensus::headers_tree::data_generation::{Action, GeneratedActions, shrink};
 use amaru_kernel::{BlockHeader, Peer};
+use amaru_pure_stage::trace_buffer::TraceBuffer;
 use anyhow::anyhow;
-use pure_stage::trace_buffer::TraceBuffer;
 use rayon::prelude::*;
 
 use crate::simulator::{

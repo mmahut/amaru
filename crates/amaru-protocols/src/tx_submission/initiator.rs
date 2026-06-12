@@ -57,7 +57,7 @@ use ProtocolError::*;
 use amaru_kernel::{EraHistory, Transaction, TransactionId, utils::string::display_collection};
 use amaru_observability::trace_span;
 use amaru_ouroboros::{MempoolMsg, MempoolSeqNo};
-use pure_stage::{DeserializerGuards, Effects, StageRef, Void};
+use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void};
 use tracing::Instrument;
 
 use crate::{
@@ -74,9 +74,9 @@ use crate::{
 
 pub fn register_deserializers() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<InitiatorLocalIn>().boxed(),
-        pure_stage::register_data_deserializer::<TxSubmissionInitiator>().boxed(),
-        pure_stage::register_data_deserializer::<(State, TxSubmissionInitiator)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<InitiatorLocalIn>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<TxSubmissionInitiator>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(State, TxSubmissionInitiator)>().boxed(),
     ]
 }
 

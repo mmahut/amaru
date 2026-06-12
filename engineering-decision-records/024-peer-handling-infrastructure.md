@@ -64,7 +64,7 @@ Nodes are discovered via any viable means, including stake pool registrations in
 
 ### Peer Performance Tracking
 
-A `PeerPerformanceResource` is used to track information across all pure-stage stages.
+A `PeerPerformanceResource` is used to track information across all amaru-pure-stage stages.
 
 - the `keepalive` protocol handler injects latency measurements
 - the `blockfetch` protocol handler injects block delivery timing measurements, which together with latency allows computing bandwidth to a peer

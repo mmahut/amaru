@@ -18,8 +18,8 @@ mod responder;
 #[cfg(test)]
 mod tests;
 
+use amaru_pure_stage::{Effects, StageRef, Void};
 pub use messages::{Cookie, Message};
-use pure_stage::{Effects, StageRef, Void};
 
 use crate::{
     connection::ConnectionMessage,
@@ -27,7 +27,7 @@ use crate::{
     protocol::{Inputs, PROTO_N2N_KEEP_ALIVE, ProtocolState},
 };
 
-pub fn register_deserializers() -> pure_stage::DeserializerGuards {
+pub fn register_deserializers() -> amaru_pure_stage::DeserializerGuards {
     vec![initiator::register_deserializers(), responder::register_deserializers()].into_iter().flatten().collect()
 }
 

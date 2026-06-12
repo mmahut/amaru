@@ -17,10 +17,10 @@ use std::fmt::Debug;
 use amaru_kernel::{Transaction, TransactionId};
 use amaru_ouroboros::ResourceMempool;
 use amaru_ouroboros_traits::{MempoolSeqNo, MempoolState, TxInsertResult, TxOrigin, TxSubmissionMempool};
-use pure_stage::{BoxFuture, Effects, ExternalEffect, ExternalEffectAPI, Resources, SendData, Void};
+use amaru_pure_stage::{BoxFuture, Effects, ExternalEffect, ExternalEffectAPI, Resources, SendData, Void};
 use serde::{Deserialize, Serialize};
 
-/// Implementation of Mempool effects using pure_stage::Effects.
+/// Implementation of Mempool effects using amaru_pure_stage::Effects.
 ///
 /// It supports operations
 ///

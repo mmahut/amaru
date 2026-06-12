@@ -20,7 +20,6 @@ bytes = { workspace = true, features = ["serde"] }
 pallas-network.workspace = true
 pallas-traverse.workspace = true
 parking_lot.workspace = true
-pure-stage.workspace = true
 socket2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["net"] }
@@ -29,6 +28,7 @@ tracing.workspace = true
 amaru-kernel.workspace = true
 amaru-observability.workspace = true
 amaru-ouroboros.workspace = true
+amaru-pure-stage.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true

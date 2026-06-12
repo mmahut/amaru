@@ -17,8 +17,8 @@
 use amaru::tests::{configuration::NodeTestConfig, setup::create_nodes};
 use amaru_consensus::headers_tree::data_generation::Action;
 use amaru_kernel::{Peer, any_headers_chain, utils::tests::run_strategy};
+use amaru_pure_stage::simulation::RandStdRng;
 use amaru_tracing_json::{TraceCollectConfig, assert_spans_trees};
-use pure_stage::simulation::RandStdRng;
 use serde_json::json;
 use tracing::info_span;
 

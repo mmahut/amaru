@@ -21,7 +21,7 @@ use amaru_protocols::store_effects::{
     LoadHeaderWithValidityEffect, LoadTipEffect, ResourceHeaderStore, SetBlockValidEffect,
     UnvalidatedAncestorHashesEffect,
 };
-use pure_stage::{
+use amaru_pure_stage::{
     DeserializerGuards, Effect, StageGraph, StageRef, simulation::SimulationRunning, trace_buffer::TraceEntry,
 };
 use tokio::runtime::{Builder, Runtime};
@@ -114,21 +114,21 @@ impl TestPrep {
 
 pub fn register_guards() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<SelectChain>().boxed(),
-        pure_stage::register_data_deserializer::<SelectChainMsg>().boxed(),
-        pure_stage::register_data_deserializer::<Tip>().boxed(),
-        pure_stage::register_data_deserializer::<(Tip, Point)>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetAnchorHashEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetBestChainHashEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetChildrenEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadHeaderWithValidityEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadTipEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<SetBlockValidEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<HasHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<UnvalidatedAncestorHashesEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<FindBestCandidate>().boxed(),
-        pure_stage::register_data_deserializer::<(Vec<HeaderHash>, bool)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<SelectChain>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<SelectChainMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Tip>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(Tip, Point)>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetAnchorHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetBestChainHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetChildrenEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderWithValidityEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadTipEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<SetBlockValidEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<HasHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<UnvalidatedAncestorHashesEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<FindBestCandidate>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(Vec<HeaderHash>, bool)>().boxed(),
     ]
 }
 

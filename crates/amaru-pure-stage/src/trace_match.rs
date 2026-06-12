@@ -182,7 +182,7 @@ pub fn tm_wire_stage_state<'a, T: SendData>(parent: &'a str, child: &'a str, sta
                     && state.test_eq(&**initial_state)
                     && tombstone
                         .cast_ref::<SendDataValue>()
-                        .is_ok_and(|v| v.typetag == "pure_stage::effect::CanSupervise")
+                        .is_ok_and(|v| v.typetag == "amaru_pure_stage::effect::CanSupervise")
             } else {
                 false
             }

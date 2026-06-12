@@ -59,7 +59,7 @@ pub struct Args {
     #[arg(long, env = "AMARU_TEST_SEED")]
     pub seed: Option<u64>,
 
-    /// Persist generated data and pure-stage traces even if the test passes.
+    /// Persist generated data and amaru-pure-stage traces even if the test passes.
     #[arg(long, default_value = "false", env = "AMARU_PERSIST_ON_SUCCESS")]
     pub persist_on_success: bool,
 

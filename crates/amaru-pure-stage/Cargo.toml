@@ -1,5 +1,5 @@
 [package]
-name = "pure-stage"
+name = "amaru-pure-stage"
 version = "0.1.2"
 edition.workspace = true
 description = "A library for building and running simulations of distributed systems."
@@ -7,7 +7,7 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-documentation = "https://docs.rs/pure-stage"
+documentation = "https://docs.rs/amaru-pure-stage"
 readme = "README.md"
 rust-version.workspace = true
 keywords.workspace = true

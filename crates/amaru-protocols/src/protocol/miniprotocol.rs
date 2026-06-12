@@ -15,7 +15,7 @@
 use std::future::Future;
 
 use amaru_kernel::{NonEmptyBytes, cbor};
-use pure_stage::{BoxFuture, Effects, OrTerminateWith, SendData, StageRef, TryInStage, Void, err};
+use amaru_pure_stage::{BoxFuture, Effects, OrTerminateWith, SendData, StageRef, TryInStage, Void, err};
 
 use crate::{
     mux::{HandlerMessage, MuxMessage},

@@ -28,7 +28,7 @@ pub use responder::{ChainSyncResponder, ResponderMessage, responder};
 /// Note that this also scales the buffer size limit accordingly.
 pub const PIPELINE_DEPTH: u8 = 10;
 
-pub fn register_deserializers() -> pure_stage::DeserializerGuards {
+pub fn register_deserializers() -> amaru_pure_stage::DeserializerGuards {
     vec![messages::register_deserializers(), initiator::register_deserializers(), responder::register_deserializers()]
         .into_iter()
         .flatten()
@@ -50,7 +50,7 @@ pub use register::{register_chainsync_initiator, register_chainsync_responder};
 mod register {
     use amaru_kernel::{Peer, Tip};
     use amaru_ouroboros::ConnectionId;
-    use pure_stage::{Effects, StageRef};
+    use amaru_pure_stage::{Effects, StageRef};
 
     use super::*;
     use crate::{

@@ -23,7 +23,7 @@ use std::{
     time::Duration,
 };
 
-use pure_stage::{
+use amaru_pure_stage::{
     Effect, ExternalEffect, Instant, Name, OrTerminateWith, OutputEffect, Receiver, Resources, SendData, StageGraph,
     StageGraphRunning, StageRef, StageResponse, UnknownExternalEffect,
     serde::SendDataValue,
@@ -102,7 +102,7 @@ fn automatic() {
 
     const EXPECTED: &[&str] = &[
         "State { stage: Name(\"basic-1\"), state: SendDataValue { typetag: \"simulation::State\", value: Array([Integer(1), Map([(Text(\"name\"), Text(\"output-2\"))])]) } }",
-        "State { stage: Name(\"output-2\"), state: SendDataValue { typetag: \"pure_stage::types::MpscSender<u32>\", value: Map([]) } }",
+        "State { stage: Name(\"output-2\"), state: SendDataValue { typetag: \"amaru_pure_stage::types::MpscSender<u32>\", value: Map([]) } }",
         "Input { stage: Name(\"basic-1\"), input: SendDataValue { typetag: \"u32\", value: Integer(1) } }",
         "Resume { stage: Name(\"basic-1\"), response: Unit }",
         "Suspend(Wait { at_stage: Name(\"basic-1\"), duration: 10s })",
@@ -111,37 +111,37 @@ fn automatic() {
         "Suspend(Send { from: Name(\"basic-1\"), to: Name(\"output-2\"), msg: SendDataValue { typetag: \"u32\", value: Integer(2) } })",
         "Input { stage: Name(\"output-2\"), input: SendDataValue { typetag: \"u32\", value: Integer(2) } }",
         "Resume { stage: Name(\"output-2\"), response: Unit }",
-        "Suspend(External { at_stage: Name(\"output-2\"), effect: UnknownExternalEffect { value: SendDataValue { typetag: \"pure_stage::output::OutputEffect<u32>\", value: Map([(Text(\"name\"), Text(\"output-2\")), (Text(\"msg\"), Integer(2)), (Text(\"sender\"), Map([]))]) } } })",
+        "Suspend(External { at_stage: Name(\"output-2\"), effect: UnknownExternalEffect { value: SendDataValue { typetag: \"amaru_pure_stage::output::OutputEffect<u32>\", value: Map([(Text(\"name\"), Text(\"output-2\")), (Text(\"msg\"), Integer(2)), (Text(\"sender\"), Map([]))]) } } })",
         "Resume { stage: Name(\"basic-1\"), response: Unit }",
         "State { stage: Name(\"basic-1\"), state: SendDataValue { typetag: \"simulation::State\", value: Array([Integer(2), Map([(Text(\"name\"), Text(\"output-2\"))])]) } }",
         "Input { stage: Name(\"basic-1\"), input: SendDataValue { typetag: \"u32\", value: Integer(2) } }",
         "Resume { stage: Name(\"basic-1\"), response: Unit }",
         "Suspend(Wait { at_stage: Name(\"basic-1\"), duration: 10s })",
         "Resume { stage: Name(\"output-2\"), response: ExternalResponse(SendDataValue { typetag: \"()\", value: Array([]) }) }",
-        "State { stage: Name(\"output-2\"), state: SendDataValue { typetag: \"pure_stage::types::MpscSender<u32>\", value: Map([]) } }",
+        "State { stage: Name(\"output-2\"), state: SendDataValue { typetag: \"amaru_pure_stage::types::MpscSender<u32>\", value: Map([]) } }",
         "Clock(Instant(20s))",
         "Resume { stage: Name(\"basic-1\"), response: WaitResponse(Instant(20s)) }",
         "Suspend(Send { from: Name(\"basic-1\"), to: Name(\"output-2\"), msg: SendDataValue { typetag: \"u32\", value: Integer(4) } })",
         "Input { stage: Name(\"output-2\"), input: SendDataValue { typetag: \"u32\", value: Integer(4) } }",
         "Resume { stage: Name(\"output-2\"), response: Unit }",
-        "Suspend(External { at_stage: Name(\"output-2\"), effect: UnknownExternalEffect { value: SendDataValue { typetag: \"pure_stage::output::OutputEffect<u32>\", value: Map([(Text(\"name\"), Text(\"output-2\")), (Text(\"msg\"), Integer(4)), (Text(\"sender\"), Map([]))]) } } })",
+        "Suspend(External { at_stage: Name(\"output-2\"), effect: UnknownExternalEffect { value: SendDataValue { typetag: \"amaru_pure_stage::output::OutputEffect<u32>\", value: Map([(Text(\"name\"), Text(\"output-2\")), (Text(\"msg\"), Integer(4)), (Text(\"sender\"), Map([]))]) } } })",
         "Resume { stage: Name(\"basic-1\"), response: Unit }",
         "State { stage: Name(\"basic-1\"), state: SendDataValue { typetag: \"simulation::State\", value: Array([Integer(4), Map([(Text(\"name\"), Text(\"output-2\"))])]) } }",
         "Input { stage: Name(\"basic-1\"), input: SendDataValue { typetag: \"u32\", value: Integer(3) } }",
         "Resume { stage: Name(\"basic-1\"), response: Unit }",
         "Suspend(Wait { at_stage: Name(\"basic-1\"), duration: 10s })",
         "Resume { stage: Name(\"output-2\"), response: ExternalResponse(SendDataValue { typetag: \"()\", value: Array([]) }) }",
-        "State { stage: Name(\"output-2\"), state: SendDataValue { typetag: \"pure_stage::types::MpscSender<u32>\", value: Map([]) } }",
+        "State { stage: Name(\"output-2\"), state: SendDataValue { typetag: \"amaru_pure_stage::types::MpscSender<u32>\", value: Map([]) } }",
         "Clock(Instant(30s))",
         "Resume { stage: Name(\"basic-1\"), response: WaitResponse(Instant(30s)) }",
         "Suspend(Send { from: Name(\"basic-1\"), to: Name(\"output-2\"), msg: SendDataValue { typetag: \"u32\", value: Integer(7) } })",
         "Input { stage: Name(\"output-2\"), input: SendDataValue { typetag: \"u32\", value: Integer(7) } }",
         "Resume { stage: Name(\"output-2\"), response: Unit }",
-        "Suspend(External { at_stage: Name(\"output-2\"), effect: UnknownExternalEffect { value: SendDataValue { typetag: \"pure_stage::output::OutputEffect<u32>\", value: Map([(Text(\"name\"), Text(\"output-2\")), (Text(\"msg\"), Integer(7)), (Text(\"sender\"), Map([]))]) } } })",
+        "Suspend(External { at_stage: Name(\"output-2\"), effect: UnknownExternalEffect { value: SendDataValue { typetag: \"amaru_pure_stage::output::OutputEffect<u32>\", value: Map([(Text(\"name\"), Text(\"output-2\")), (Text(\"msg\"), Integer(7)), (Text(\"sender\"), Map([]))]) } } })",
         "Resume { stage: Name(\"basic-1\"), response: Unit }",
         "State { stage: Name(\"basic-1\"), state: SendDataValue { typetag: \"simulation::State\", value: Array([Integer(7), Map([(Text(\"name\"), Text(\"output-2\"))])]) } }",
         "Resume { stage: Name(\"output-2\"), response: ExternalResponse(SendDataValue { typetag: \"()\", value: Array([]) }) }",
-        "State { stage: Name(\"output-2\"), state: SendDataValue { typetag: \"pure_stage::types::MpscSender<u32>\", value: Map([]) } }",
+        "State { stage: Name(\"output-2\"), state: SendDataValue { typetag: \"amaru_pure_stage::types::MpscSender<u32>\", value: Map([]) } }",
     ];
 
     pretty_assertions::assert_eq!(trace.iter().map(|t| format!("{t:?}")).collect::<Vec<_>>(), EXPECTED);
@@ -194,9 +194,9 @@ fn breakpoint() {
 
 #[test]
 fn overrides() {
-    let _guard = pure_stage::register_data_deserializer::<State>();
-    let _guard = pure_stage::register_data_deserializer::<u32>();
-    let _guard = pure_stage::register_effect_deserializer::<OutputEffect<u32>>();
+    let _guard = amaru_pure_stage::register_data_deserializer::<State>();
+    let _guard = amaru_pure_stage::register_data_deserializer::<u32>();
+    let _guard = amaru_pure_stage::register_effect_deserializer::<OutputEffect<u32>>();
 
     tracing_subscriber::fmt().with_test_writer().with_env_filter(EnvFilter::from_default_env()).try_init().ok();
 
@@ -361,7 +361,7 @@ struct Msg3(u32, StageRef<u32>);
 fn call() {
     tracing_subscriber::fmt().with_test_writer().with_env_filter(EnvFilter::from_default_env()).try_init().ok();
 
-    let _guard = pure_stage::register_data_deserializer::<Msg3>();
+    let _guard = amaru_pure_stage::register_data_deserializer::<Msg3>();
     let trace_buffer = TraceBuffer::new_shared(1, 1000000);
     let guard = TraceBuffer::drop_guard(&trace_buffer);
 
@@ -411,7 +411,7 @@ fn call() {
 #[test]
 fn call_external_sender_in_simulation() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let _guard = pure_stage::register_data_deserializer::<Msg3>();
+    let _guard = amaru_pure_stage::register_data_deserializer::<Msg3>();
 
     let mut network = SimulationBuilder::default();
     let callee = network.stage("callee", async |state, msg: Msg3, eff| {
@@ -432,7 +432,7 @@ fn call_external_sender_in_simulation() {
 
 #[test]
 fn call_timeout_terminates_graph() {
-    let _guard = pure_stage::register_data_deserializer::<Msg3>();
+    let _guard = amaru_pure_stage::register_data_deserializer::<Msg3>();
     let trace_buffer = TraceBuffer::new_shared(1, 1000000);
     let guard = TraceBuffer::drop_guard(&trace_buffer);
     let mut network = SimulationBuilder::default().with_trace_buffer(trace_buffer);
@@ -569,7 +569,7 @@ fn create_stage_within_stage() {
         vec![
             TraceEntry::state(
                 "output-2",
-                SendDataValue::from_json("pure_stage::types::MpscSender<u32>", BTreeMap::<u8, u8>::new())
+                SendDataValue::from_json("amaru_pure_stage::types::MpscSender<u32>", BTreeMap::<u8, u8>::new())
             ),
             TraceEntry::state(
                 parent.name(),
@@ -618,7 +618,7 @@ fn create_stage_within_stage() {
             TraceEntry::resume(output.name(), StageResponse::ExternalResponse(SendDataValue::boxed(&()))),
             TraceEntry::state(
                 output.name(),
-                SendDataValue::from_json("pure_stage::types::MpscSender<u32>", BTreeMap::<u8, u8>::new())
+                SendDataValue::from_json("amaru_pure_stage::types::MpscSender<u32>", BTreeMap::<u8, u8>::new())
             ),
         ]
     );

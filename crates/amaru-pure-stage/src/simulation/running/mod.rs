@@ -876,7 +876,7 @@ impl SimulationRunning {
         };
         let data = data.assert_stage("which cannot terminate");
 
-        // parent state is dropped before the children, but pure-stage states are just dumb data
+        // parent state is dropped before the children, but amaru-pure-stage states are just dumb data
         // anyway, so this should usually be what we want
         data.state = StageState::Terminating;
 

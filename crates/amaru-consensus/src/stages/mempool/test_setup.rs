@@ -18,7 +18,7 @@ use amaru_kernel::{
 use amaru_metrics::{MetricsEvent, mempool::MempoolMetrics};
 use amaru_ouroboros::{MempoolMsg, MockCanValidateBlocks, ResourceMempool, TxInsertResult, TxOrigin};
 use amaru_protocols::store_effects::ResourceParameters;
-use pure_stage::{
+use amaru_pure_stage::{
     DeserializerGuards, Effect, ExternalEffect, StageGraph, UnknownExternalEffect,
     serde::SendDataValue,
     simulation::{SimulationBuilder, SimulationRunning},
@@ -51,11 +51,11 @@ struct InsertEffectPayload {
 
 pub fn register_guards() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<MempoolStageState>().boxed(),
-        pure_stage::register_data_deserializer::<MempoolMsg>().boxed(),
-        pure_stage::register_data_deserializer::<Vec<TxInsertResult>>().boxed(),
-        pure_stage::register_effect_deserializer::<ValidateTxEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<RecordMetricsEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<MempoolStageState>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<MempoolMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Vec<TxInsertResult>>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<ValidateTxEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<RecordMetricsEffect>().boxed(),
     ]
 }
 

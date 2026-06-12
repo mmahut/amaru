@@ -78,7 +78,7 @@ use crate::{
 ///
 /// Example:
 /// ```rust
-/// use pure_stage::{Resources, StageGraph, simulation::SimulationBuilder, OutputEffect, ExternalEffect};
+/// use amaru_pure_stage::{Resources, StageGraph, simulation::SimulationBuilder, OutputEffect, ExternalEffect};
 ///
 /// let mut network = SimulationBuilder::default();
 /// let stage = network.stage("basic", async |(mut state, out), msg: u32, eff| {

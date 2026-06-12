@@ -20,13 +20,13 @@ use std::{
 
 use amaru_consensus::headers_tree::data_generation::Action;
 use amaru_protocols::{manager::ManagerMessage, mux::HandlerMessage, protocol::PROTO_N2N_CHAIN_SYNC};
-use futures_util::FutureExt;
-use parking_lot::Mutex;
-use pure_stage::{
+use amaru_pure_stage::{
     Effect, Resources, StageGraphRunning,
     simulation::{Blocked, SimulationRunning},
     trace_buffer::TraceBuffer,
 };
+use futures_util::FutureExt;
+use parking_lot::Mutex;
 
 use crate::tests::{
     configuration::{NodeTestConfig, NodeType},

@@ -178,7 +178,7 @@ To help with debugging, you can:
 ### Debugging data
 
 When a simulation is run, if it fails, or if it succeeds and `AMARU_PERSIST_ON_SUCCESS` is set to true,
-the generated data and the pure-stage traces are persisted in the top-level `target` directory:
+the generated data and the amaru-pure-stage traces are persisted in the top-level `target` directory:
 ```text
   tests
     ├── latest↗
@@ -199,8 +199,8 @@ the generated data and the pure-stage traces are persisted in the top-level `tar
 * Each run directory contains:
   * `latest↗` symlink to the latest run.
   * `args.json` this file contains the test seed (can be set on `AMARU_TEST_SEED` to reproduce the run) and other run arguments.
-  * `traces.json` pure-stage traces, in JSON format.
-  * `traces.cbor` pure-stage traces, in CBOR format. (in the future, only the CBOR format will be needed).
+  * `traces.json` amaru-pure-stage traces, in JSON format.
+  * `traces.cbor` amaru-pure-stage traces, in CBOR format. (in the future, only the CBOR format will be needed).
   * One directory per test (e.g. `test-1/`, `test-2/`, etc.).
 
 * Each test directory contains:
@@ -228,7 +228,7 @@ Then load the `traces.json` file for the run you want to visualize.
 
 This will display:
 
-* All the `pure-stage` stages for the node (🚧this animation does not support several nodes yet).
+* All the `amaru-pure-stage` stages for the node (🚧this animation does not support several nodes yet).
 * Successive traces of various types
   * `Input` input message is received by a given stage.
   * `Resume` resume a stage execution. That trace shows what other stages are still suspended.

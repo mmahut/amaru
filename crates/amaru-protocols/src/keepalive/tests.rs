@@ -17,7 +17,7 @@ use std::{sync::Arc, time::Duration};
 use amaru_kernel::{EraHistory, NetworkMagic, NetworkName, Peer};
 use amaru_network::connection::TokioConnections;
 use amaru_ouroboros::ConnectionsResource;
-use pure_stage::{StageGraph, StageRef, tokio::TokioBuilder};
+use amaru_pure_stage::{StageGraph, StageRef, tokio::TokioBuilder};
 use tokio::{runtime::Runtime, time::timeout};
 use tracing_subscriber::EnvFilter;
 

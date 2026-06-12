@@ -15,7 +15,7 @@
 use amaru_kernel::{HeaderHash, IsHeader, ORIGIN_HASH};
 use amaru_ouroboros::ReadChainStore;
 use amaru_protocols::store_effects::ResourceHeaderStore;
-use pure_stage::{BoxFuture, ExternalEffect, ExternalEffectAPI, Resources, SendData};
+use amaru_pure_stage::{BoxFuture, ExternalEffect, ExternalEffectAPI, Resources, SendData};
 
 use crate::{errors::ConsensusError, stages::select_chain::cmp_tip};
 

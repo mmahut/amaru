@@ -19,7 +19,7 @@ use amaru_kernel::{
 };
 use amaru_observability::trace_span;
 use amaru_ouroboros::ConnectionId;
-use pure_stage::{DeserializerGuards, Effects, StageRef, Void};
+use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void};
 
 use crate::{
     blockfetch::{State, messages::Message, responder::MAX_FETCHED_BLOCKS},
@@ -32,11 +32,11 @@ use crate::{
 
 pub fn register_deserializers() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<BlockFetchInitiator>().boxed(),
-        pure_stage::register_data_deserializer::<(State, BlockFetchInitiator)>().boxed(),
-        pure_stage::register_data_deserializer::<BlockFetchMessage>().boxed(),
-        pure_stage::register_data_deserializer::<Blocks>().boxed(),
-        pure_stage::register_data_deserializer::<Blocks2>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<BlockFetchInitiator>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(State, BlockFetchInitiator)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<BlockFetchMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Blocks>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Blocks2>().boxed(),
     ]
 }
 

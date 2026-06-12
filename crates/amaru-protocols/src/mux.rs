@@ -24,10 +24,10 @@ use std::{
 use amaru_kernel::NonEmptyBytes;
 use amaru_observability::trace_span;
 use amaru_ouroboros::ConnectionId;
+use amaru_pure_stage::{EPOCH, Effects, Instant, OrTerminateWith, StageRef, TryInStage, Void};
 use anyhow::Context;
 use bytes::{Buf, BufMut, Bytes, BytesMut, TryGetError};
 use cbor_data::{Cbor, ErrorKind, ParseError};
-use pure_stage::{EPOCH, Effects, Instant, OrTerminateWith, StageRef, TryInStage, Void};
 use tracing::Instrument;
 
 use crate::{
@@ -35,14 +35,14 @@ use crate::{
     protocol::{Erased, ProtocolId, Role, RoleT},
 };
 
-pub fn register_deserializers() -> pure_stage::DeserializerGuards {
+pub fn register_deserializers() -> amaru_pure_stage::DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<MuxMessage>().boxed(),
-        pure_stage::register_data_deserializer::<NonEmptyBytes>().boxed(),
-        pure_stage::register_data_deserializer::<State>().boxed(),
-        pure_stage::register_data_deserializer::<HandlerMessage>().boxed(),
-        pure_stage::register_data_deserializer::<Sent>().boxed(),
-        pure_stage::register_data_deserializer::<Read>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<MuxMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<NonEmptyBytes>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<State>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<HandlerMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Sent>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Read>().boxed(),
     ]
 }
 
@@ -616,13 +616,13 @@ mod tests {
     use amaru_network::connection::TokioConnections;
     use amaru_ouroboros::ConnectionsResource;
     use amaru_ouroboros_traits::ConnectionProvider;
-    use futures_util::StreamExt;
-    use pure_stage::{
+    use amaru_pure_stage::{
         Effect, StageGraph,
         simulation::{Blocked, SimulationBuilder, SimulationRunning},
         tokio::TokioBuilder,
         trace_buffer::TraceBuffer,
     };
+    use futures_util::StreamExt;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
@@ -656,11 +656,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_tcp() {
-        let _guard = pure_stage::register_data_deserializer::<MuxMessage>();
-        let _guard = pure_stage::register_data_deserializer::<NonEmptyBytes>();
-        let _guard = pure_stage::register_effect_deserializer::<SendEffect>();
-        let _guard = pure_stage::register_effect_deserializer::<RecvEffect>();
-        let _guard = pure_stage::register_data_deserializer::<State>();
+        let _guard = amaru_pure_stage::register_data_deserializer::<MuxMessage>();
+        let _guard = amaru_pure_stage::register_data_deserializer::<NonEmptyBytes>();
+        let _guard = amaru_pure_stage::register_effect_deserializer::<SendEffect>();
+        let _guard = amaru_pure_stage::register_effect_deserializer::<RecvEffect>();
+        let _guard = amaru_pure_stage::register_data_deserializer::<State>();
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let server_addr = listener.local_addr().unwrap();
@@ -751,11 +751,11 @@ mod tests {
     fn test_muxing() {
         let _ = tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).with_test_writer().try_init();
 
-        let _guard = pure_stage::register_data_deserializer::<MuxMessage>();
-        let _guard = pure_stage::register_data_deserializer::<NonEmptyBytes>();
-        let _guard = pure_stage::register_effect_deserializer::<SendEffect>();
-        let _guard = pure_stage::register_effect_deserializer::<RecvEffect>();
-        let _guard = pure_stage::register_data_deserializer::<State>();
+        let _guard = amaru_pure_stage::register_data_deserializer::<MuxMessage>();
+        let _guard = amaru_pure_stage::register_data_deserializer::<NonEmptyBytes>();
+        let _guard = amaru_pure_stage::register_effect_deserializer::<SendEffect>();
+        let _guard = amaru_pure_stage::register_effect_deserializer::<RecvEffect>();
+        let _guard = amaru_pure_stage::register_data_deserializer::<State>();
 
         let trace_buffer = TraceBuffer::new_shared(100, 1_000_000);
         let drop_guard = TraceBuffer::drop_guard(&trace_buffer);
@@ -941,11 +941,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_tokio() {
-        let _guard = pure_stage::register_data_deserializer::<MuxMessage>();
-        let _guard = pure_stage::register_data_deserializer::<NonEmptyBytes>();
-        let _guard = pure_stage::register_effect_deserializer::<SendEffect>();
-        let _guard = pure_stage::register_effect_deserializer::<RecvEffect>();
-        let _guard = pure_stage::register_data_deserializer::<State>();
+        let _guard = amaru_pure_stage::register_data_deserializer::<MuxMessage>();
+        let _guard = amaru_pure_stage::register_data_deserializer::<NonEmptyBytes>();
+        let _guard = amaru_pure_stage::register_effect_deserializer::<SendEffect>();
+        let _guard = amaru_pure_stage::register_effect_deserializer::<RecvEffect>();
+        let _guard = amaru_pure_stage::register_data_deserializer::<State>();
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let server_addr = listener.local_addr().unwrap();

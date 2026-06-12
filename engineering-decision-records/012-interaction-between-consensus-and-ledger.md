@@ -5,7 +5,7 @@ status: accepted
 
 # Interaction between Consensus and Ledger
 
-The work progressing on deterministic simulation testing has raised questions about where to draw the line: which parts of the codebase shall be executed using `pure_stage` and which parts are outside its scope?
+The work progressing on deterministic simulation testing has raised questions about where to draw the line: which parts of the codebase shall be executed using `amaru-pure-stage` and which parts are outside its scope?
 In a meeting on Aug 8, 2025 between @KtorZ, @stevana, @rkuhn the following response was developed.
 
 ## Context
@@ -15,7 +15,7 @@ This complexity is tackled by dividing responsibilities among processing stages 
 Testing such a network as well as debugging it requires dedicated tooling and a suitable approach as described in [EDR011](./011-deterministic-simulation-testing.md).
 
 On the other hand, the main complexity of the ledger lies in its state management so that it can efficiently support the various required calculations for performing the business function of the Cardano blockchain.
-This is implemented using a combination of in-memory data structures and sophisticated database usage, none of which play nicely with the notion of encapsulating each and every interaction with persistent mutable state as a [`pure_stage::ExternalEffect`](https://docs.rs/pure-stage/latest/pure_stage/trait.ExternalEffect.html).
+This is implemented using a combination of in-memory data structures and sophisticated database usage, none of which play nicely with the notion of encapsulating each and every interaction with persistent mutable state as a [`amaru_pure_stage::ExternalEffect`](https://docs.rs/amaru-pure-stage/latest/amaru_pure_stage/trait.ExternalEffect.html).
 
 The interaction between consensus and the ledger fundamentally has only two parts, with a third one added merely incidentally (which should be fixed):
 
@@ -25,10 +25,10 @@ The interaction between consensus and the ledger fundamentally has only two part
 
 ## Decision
 
-We represent the interactions listed above using `pure_stage` facilities as follows:
+We represent the interactions listed above using `amaru_pure_stage` facilities as follows:
 
 - longest chain validation is an `ExternalEffect` emitted by consensus that receives a detailed validation result as its asynchronous response; handling that effect will send the new chain to a different thread using a channel and receive the response using a oneshot channel
-- epoch updates from the ledger are sent to interested consensus stages via the [`StageGraph::input`](https://docs.rs/pure-stage/latest/pure_stage/trait.StageGraph.html#tymethod.input) facility
+- epoch updates from the ledger are sent to interested consensus stages via the [`StageGraph::input`](https://docs.rs/amaru-pure-stage/latest/amaru_pure_stage/trait.StageGraph.html#tymethod.input) facility
 - a dedicated `LedgerUpdates` stage fans out updates to dependent consensus stages and allows waiting for updates while maintaining back pressure with upstream data sources
 
 ```mermaid
@@ -43,7 +43,7 @@ flowchart TB
         ll -- "epoch update" --> ls
     end
 
-    subgraph "`**consensus** (pure_stage)`"
+    subgraph "`**consensus** (amaru_pure_stage)`"
         epoch(LedgerUpdates)
         upstream(upstream<br>network)
         --> pull

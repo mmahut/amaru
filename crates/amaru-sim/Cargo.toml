@@ -21,7 +21,6 @@ cbor4ii.workspace = true
 clap.workspace = true
 hex.workspace = true
 parking_lot.workspace = true
-pure-stage = { workspace = true }
 rand.workspace = true
 rand_distr.workspace = true
 rayon.workspace = true
@@ -32,10 +31,11 @@ tracing.workspace = true
 
 # Internal dependencies ───────────────────────────────────────────────────────┐
 amaru.workspace = true
-amaru-kernel = { workspace = true, features = ["test-utils"] }
 amaru-consensus = { workspace = true, features = ["test-utils"] }
+amaru-kernel = { workspace = true, features = ["test-utils"] }
 amaru-ouroboros.workspace = true
 amaru-protocols.workspace = true
+amaru-pure-stage.workspace = true
 
 [dev-dependencies]
 # External dependencies ───────────────────────────────────────────────────────┐

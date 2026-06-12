@@ -16,7 +16,7 @@ use std::{collections::BTreeSet, time::Duration};
 
 use amaru_kernel::{Peer, Tip};
 use amaru_protocols::manager::ManagerMessage;
-use pure_stage::{
+use amaru_pure_stage::{
     DeserializerGuards, Effect, Instant, Name, ScheduleId, ScheduleIds, StageGraph, StageRef,
     simulation::{SimulationRunning, running::OverrideResult},
     trace_buffer::TraceEntry,
@@ -88,11 +88,11 @@ pub fn test_prep(static_names: &[&str]) -> TestPrep {
 
 pub fn register_guards() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<PeerSelection>().boxed(),
-        pure_stage::register_data_deserializer::<PeerSelectionMsg>().boxed(),
-        pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
-        pure_stage::register_data_deserializer::<ScheduleId>().boxed(),
-        pure_stage::register_effect_deserializer::<GenerateRandomSeed>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<PeerSelection>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<PeerSelectionMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ScheduleId>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GenerateRandomSeed>().boxed(),
     ]
 }
 
@@ -136,11 +136,15 @@ pub fn setup_preload(
     )
 }
 
-pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl pure_stage::SendData) -> TraceEntry {
+pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl amaru_pure_stage::SendData) -> TraceEntry {
     TraceEntry::suspend(Effect::send(from, to, Box::new(msg)))
 }
 
-pub fn te_schedule(at_stage: impl AsRef<str>, msg: impl pure_stage::SendData, schedule_id: ScheduleId) -> TraceEntry {
+pub fn te_schedule(
+    at_stage: impl AsRef<str>,
+    msg: impl amaru_pure_stage::SendData,
+    schedule_id: ScheduleId,
+) -> TraceEntry {
     TraceEntry::suspend(Effect::Schedule {
         at_stage: Name::from(at_stage.as_ref()),
         msg: Box::new(msg),

@@ -16,7 +16,7 @@ use std::{sync::Arc, time::Duration};
 
 use amaru_kernel::{Transaction, utils::string::ListToString};
 use amaru_ouroboros_traits::{DiagnosticChainStore, ResourceMempool};
-use pure_stage::tokio::TokioRunning;
+use amaru_pure_stage::tokio::TokioRunning;
 use tokio::sync::Notify;
 
 use crate::tests::configuration::get_tx_ids;

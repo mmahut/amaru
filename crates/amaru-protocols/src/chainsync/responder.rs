@@ -16,8 +16,8 @@ use amaru_kernel::{EraName, Peer, Point, Tip};
 use amaru_observability::trace_span;
 use amaru_ouroboros::ConnectionId;
 use amaru_ouroboros_traits::{FindAncestorOnBestChainResult, NextBestChainHeader};
+use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void};
 use anyhow::{Context, anyhow, ensure};
-use pure_stage::{DeserializerGuards, Effects, StageRef, Void};
 use tracing::Instrument;
 
 use crate::{
@@ -32,9 +32,9 @@ use crate::{
 
 pub fn register_deserializers() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<ResponderMessage>().boxed(),
-        pure_stage::register_data_deserializer::<(ResponderState, ChainSyncResponder)>().boxed(),
-        pure_stage::register_data_deserializer::<ChainSyncResponder>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ResponderMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(ResponderState, ChainSyncResponder)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ChainSyncResponder>().boxed(),
     ]
 }
 

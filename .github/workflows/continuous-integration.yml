@@ -73,7 +73,7 @@ jobs:
     with:
       runner: ubuntu-24.04
       target: wasm32-unknown-unknown
-      command: build -p amaru-consensus -p amaru-ledger -p pure-stage
+      command: build -p amaru-consensus -p amaru-ledger -p amaru-pure-stage
       cache-mode: READ
       setup: rustup target add wasm32-unknown-unknown
 

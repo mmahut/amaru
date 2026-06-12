@@ -17,8 +17,10 @@ use std::sync::Arc;
 use amaru_kernel::NetworkMagic;
 use amaru_network::connection::TokioConnections;
 use amaru_ouroboros::ConnectionsResource;
+use amaru_pure_stage::{
+    Effect, StageGraph, simulation::SimulationBuilder, tokio::TokioBuilder, trace_buffer::TraceBuffer,
+};
 use futures_util::StreamExt;
-use pure_stage::{Effect, StageGraph, simulation::SimulationBuilder, tokio::TokioBuilder, trace_buffer::TraceBuffer};
 use tokio::runtime::Runtime;
 use tracing_subscriber::EnvFilter;
 

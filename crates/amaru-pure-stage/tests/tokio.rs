@@ -14,8 +14,8 @@
 
 use std::time::Duration;
 
+use amaru_pure_stage::{StageGraph, StageRef, tokio::TokioBuilder};
 use futures_util::StreamExt;
-use pure_stage::{StageGraph, StageRef, tokio::TokioBuilder};
 use tokio::time::timeout;
 
 #[test]

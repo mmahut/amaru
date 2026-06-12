@@ -18,7 +18,7 @@ use amaru_kernel::{BlockHeight, EraName, HeaderHash, IsHeader, Peer, Point, Tip}
 use amaru_protocols::chainsync::{
     self, ChainSyncInitiatorMsg, HeaderContent, InitiatorMessage, InitiatorMessage::RequestNext,
 };
-use pure_stage::{
+use amaru_pure_stage::{
     assert_trace_contains, assert_trace_does_not_contain, tm_add_stage, tm_send,
     trace_match::{tm_send_type, tm_wire_stage_state},
 };

@@ -23,8 +23,8 @@ use std::{
 
 use amaru_kernel::{NonEmptyBytes, Peer};
 use amaru_ouroboros::{ConnectionId, ConnectionProvider, ToSocketAddrs};
+use amaru_pure_stage::BoxFuture;
 use parking_lot::Mutex;
-use pure_stage::BoxFuture;
 use tokio_util::bytes::{Buf, Bytes, BytesMut};
 
 /// A connection provider that uses in-memory channels instead of TCP sockets.

@@ -27,11 +27,11 @@ use amaru_protocols::{
     manager::ManagerMessage,
     store_effects::{ResourceHeaderStore, Store},
 };
-use anyhow::anyhow;
-use pure_stage::{
+use amaru_pure_stage::{
     Effects, OrTerminateWith, StageGraph, StageRef,
     simulation::{RandStdRng, SimulationBuilder},
 };
+use anyhow::anyhow;
 use tracing_subscriber::EnvFilter;
 
 use crate::{
