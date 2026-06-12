@@ -742,8 +742,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        Epoch, PREPROD_ERA_HISTORY, Slot, any_era_params, any_network_name, from_cbor_no_leftovers_with,
-        load_era_history_from_file, to_cbor,
+        Epoch, MAINNET_ERA_HISTORY, PREPROD_ERA_HISTORY, PREVIEW_ERA_HISTORY, Slot, any_era_params,
+        any_network_name, from_cbor_no_leftovers_with, load_era_history_from_file, to_cbor,
     };
 
     prop_compose! {
@@ -1225,6 +1225,16 @@ mod tests {
         assert_eq!(*original_era_history, loaded_era_history, "Era histories don't match");
 
         std::fs::remove_file(temp_file_path).ok();
+    }
+
+    #[test_case("mainnet", &*MAINNET_ERA_HISTORY; "mainnet")]
+    #[test_case("preprod", &*PREPROD_ERA_HISTORY; "preprod")]
+    #[test_case("preview", &*PREVIEW_ERA_HISTORY; "preview")]
+    fn well_known_network_era_history_pretty_json_snapshot(network: &str, era_history: &EraHistory) {
+        insta::assert_snapshot!(
+            format!("{network}_era_history"),
+            serde_json::to_string_pretty(era_history).expect("failed to serialize era history to pretty JSON"),
+        );
     }
 
     #[test]

@@ -49,6 +49,7 @@ amaru-uplc.workspace = true
 
 [dev-dependencies]
 # External dependencies ───────────────────────────────────────────────────────┐
+insta.workspace = true
 proptest.workspace = true
 rand.workspace = true
 test-case.workspace = true

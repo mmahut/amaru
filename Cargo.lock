@@ -191,6 +191,7 @@ dependencies = [
  "criterion",
  "getrandom 0.3.4",
  "hex",
+ "insta",
  "itertools 0.14.0",
  "minicbor",
  "num",
