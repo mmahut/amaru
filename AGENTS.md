@@ -29,7 +29,6 @@ This file provides instructions for agentic coding tools (e.g. opencode, Cursor 
 - Run ignored tests: `cargo test -- --ignored`
 - Property tests: Use proptest (enabled via test-utils feature)
 - Simulation tests: See simulation/amaru-sim (cargo test -p amaru-sim)
-- Ledger conformance: `make update-ledger-conformance-test-snapshot` then test
 - Bench: `cargo bench --bench stage_msgs --features="test-utils"`
 - Single bench: `cargo bench --bench stage_msgs --features test-utils <bench_name>`
 
