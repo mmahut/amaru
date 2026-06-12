@@ -3,3 +3,5 @@
 **/*.cbor linguist-generated=true linguist-vendored
 **/*.stderr eol=lf
 data/**/*.json linguist-generated=true linguist-vendored
+crates/amaru-ledger/tests/data/rules-conformance/**/* linguist-generated=true linguist-vendored
+crates/amaru-ledger/tests/data/**/*.cbor linguist-generated=true linguist-vendored
