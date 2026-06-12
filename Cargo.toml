@@ -11,7 +11,7 @@ categories = ["cryptography::cryptocurrencies"]
 rust-version = "1.97" # Find versions here: https://rust-lang.github.io/rustup-components-history
 
 [workspace]
-members = ["crates/*", "crates/amaru-observability/macros/", "crates/vendor/*", "simulation/*"]
+members = ["crates/*", "crates/amaru-observability/macros/", "crates/vendor/*"]
 exclude = ["crates/vendor"]
 default-members = ["crates/*"]
 resolver = "2"

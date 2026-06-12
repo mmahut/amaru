@@ -76,4 +76,4 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: failed-simulation-data
-          path: simulation/amaru-sim/test-data
+          path: amaru-sim/test-data

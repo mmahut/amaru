@@ -28,7 +28,7 @@ This file provides instructions for agentic coding tools (e.g. opencode, Cursor 
 - Run specific test file: `cargo test --test tests -p amaru-consensus`
 - Run ignored tests: `cargo test -- --ignored`
 - Property tests: Use proptest (enabled via test-utils feature)
-- Simulation tests: See simulation/amaru-sim (cargo test -p amaru-sim)
+- Simulation tests: See amaru-sim (cargo test -p amaru-sim)
 - Bench: `cargo bench --bench stage_msgs --features="test-utils"`
 - Single bench: `cargo bench --bench stage_msgs --features test-utils <bench_name>`
 
@@ -148,8 +148,7 @@ Run `make help` for all targets.
 
 ### Project Structure
 
-- crates/: amaru-kernel, amaru-consensus, amaru-ledger, amaru-protocols, amaru-ouroboros, etc.
-- simulation/amaru-sim: for DST
+- crates/: amaru-kernel, amaru-consensus, amaru-ledger, amaru-protocols, amaru-ouroboros, etc...
 - engineering-decision-records/: all major decisions (read before big changes)
 - docs/, monitoring/, conformance-tests/
 - Use pure_stage for effectful code to enable simulation
