@@ -153,25 +153,6 @@ jobs:
         shell: bash
         run: cargo bench --bench headers_tree --features="test-utils profiling"
 
-  cli:
-    name: Test Command-line
-    needs: [build-linux-x86_64]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/cache
-      - name: Install bash_unit
-        shell: bash
-        run: curl -s https://raw.githubusercontent.com/bash-unit/bash_unit/master/install.sh | bash
-      - name: Install expect
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y expect
-      - name: Run bash_unit
-        shell: bash
-        run: FORCE_COLOR=true ./bash_unit cli-tests/test_*
-
   trace-schemas:
     name: Test trace schemas & documentation
     needs: [build-linux-x86_64]

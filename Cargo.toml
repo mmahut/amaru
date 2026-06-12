@@ -139,6 +139,7 @@ kes-summed-ed25519 = { package = "amaru-kes-summed-ed25519", path = "crates/vend
 amaru-curve25519-dalek = { package = "amaru-curve25519-dalek", path = "crates/vendor/amaru-curve25519-dalek", version = "3.2.0" }
 
 # dev-dependencies
+assert_cmd = "2.2.2"
 assertables = "9.8.2"
 criterion = "0.7.0"
 divan = "0.1.21"
