@@ -1,0 +1,49 @@
+name: UPLC Continuous Integration
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "crates/amaru-uplc/**"
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: ["*"]
+    paths:
+      - "crates/amaru-uplc/**"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: UPLC Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+      - uses: ./.github/actions/cache
+        with:
+          mode: ${{ github.ref == 'refs/heads/main' && 'WRITE' || 'READ' }}
+      - name: Unit tests
+        run: cargo test -p amaru-uplc --lib --locked
+      - name: Textual conformance
+        if: "!cancelled()"
+        run: cargo test -p amaru-uplc --test conformance --locked
+      - name: Flat conformance
+        if: "!cancelled()"
+        run: cargo test -p amaru-uplc --test conformance_flat --locked
+
+  audit:
+    name: UPLC Audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+      - name: Run audit
+        run: cargo audit
