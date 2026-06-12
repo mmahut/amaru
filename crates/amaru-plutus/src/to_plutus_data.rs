@@ -15,14 +15,15 @@
 use std::{borrow::Cow, collections::BTreeMap, time::SystemTime};
 
 use amaru_kernel::{
-    Address, BigInt, Bytes, ComputeHash, Hash, Int, MaybeIndefArray, MemoizedDatum, NonEmptyKeyValuePairs, NonZeroInt,
-    Nullable, PlutusData, ShelleyDelegationPart, ShelleyPaymentPart, StakeCredential, TransactionId, size,
+    Address, BigInt, Bytes, ComputeHash, CurrencySymbol, Hash, Int, MaybeIndefArray, MemoizedDatum, MemoizedScript,
+    NonEmptyKeyValuePairs, NonZeroInt, Nullable, PlutusData, ShelleyDelegationPart, ShelleyPaymentPart,
+    StakeCredential, TransactionId, Value, size,
 };
 use thiserror::Error;
 
 use crate::{
     constr,
-    script_context::{CurrencySymbol, DatumOption, RequiredSigners, Script, TimeRange},
+    script_context::{BorrowedScript, IsPrePlutusVersion3, RequiredSigners, TimeRange},
 };
 
 /// Represents an error that occured during serialization to `PlutusData`.
@@ -75,6 +76,57 @@ where
     }
 }
 
+/// Reshape a ledger [`Value`] into the canonical Plutus value map: a [`BTreeMap`] keyed by
+/// [`CurrencySymbol`] (lovelace first, then policies ascending) whose inner maps are keyed by asset
+/// name ascending. Collecting through `BTreeMap`s re-imposes this canonical order regardless of the
+/// order assets happen to appear on the wire.
+///
+/// `include_zero_lovelace` selects the version-specific lovelace rule: PlutusV1 and PlutusV2 always
+/// carry a lovelace entry (`true`), whereas PlutusV3 omits it when zero (`false`).
+fn canonical_value_map(
+    value: &Value,
+    include_zero_lovelace: bool,
+) -> BTreeMap<CurrencySymbol, BTreeMap<Cow<'_, Bytes>, u64>> {
+    let (coin, multiasset) = match value {
+        Value::Coin(coin) => (*coin, None),
+        Value::Multiasset(coin, multiasset) => (*coin, Some(multiasset)),
+    };
+
+    let mut map = BTreeMap::new();
+
+    if include_zero_lovelace || coin > 0 {
+        map.insert(CurrencySymbol::Lovelace, BTreeMap::from([(Cow::Owned(Bytes::from(vec![])), coin)]));
+    }
+
+    if let Some(multiasset) = multiasset {
+        for (policy_id, assets) in multiasset.iter() {
+            map.insert(
+                CurrencySymbol::Native(*policy_id),
+                assets.iter().map(|(name, amount)| (Cow::Borrowed(name), amount.into())).collect(),
+            );
+        }
+    }
+
+    map
+}
+
+impl<const V: u8> ToPlutusData<V> for Value
+where
+    PlutusVersion<V>: IsKnownPlutusVersion + IsPrePlutusVersion3,
+{
+    /// In PlutusV1 and PlutusV2 the lovelace entry is always present, even when its quantity is zero.
+    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
+        <BTreeMap<_, _> as ToPlutusData<V>>::to_plutus_data(&canonical_value_map(self, true))
+    }
+}
+
+impl ToPlutusData<3> for Value {
+    /// In PlutusV3 the lovelace entry is omitted when its quantity is zero.
+    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
+        <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&canonical_value_map(self, false))
+    }
+}
+
 impl<const V: u8> ToPlutusData<V> for MemoizedDatum
 where
     PlutusVersion<V>: IsKnownPlutusVersion,
@@ -84,19 +136,6 @@ where
             MemoizedDatum::None => constr!(0),
             MemoizedDatum::Hash(hash) => constr!(1, [hash]),
             MemoizedDatum::Inline(data) => constr!(2, [data.as_ref()]),
-        }
-    }
-}
-
-impl<const V: u8> ToPlutusData<V> for DatumOption<'_>
-where
-    PlutusVersion<V>: IsKnownPlutusVersion,
-{
-    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        match self {
-            DatumOption::None => constr!(0),
-            DatumOption::Hash(hash) => constr!(1, [hash]),
-            DatumOption::Inline(data) => constr!(2, [data]),
         }
     }
 }
@@ -228,17 +267,28 @@ where
     }
 }
 
-impl<const V: u8> ToPlutusData<V> for Script<'_>
+impl<const V: u8> ToPlutusData<V> for BorrowedScript<'_>
 where
     PlutusVersion<V>: IsKnownPlutusVersion,
 {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         match self {
-            Script::Native(native) => native.compute_hash().to_plutus_data(),
-            Script::PlutusV1(plutus) => plutus.compute_hash().to_plutus_data(),
-            Script::PlutusV2(plutus) => plutus.compute_hash().to_plutus_data(),
-            Script::PlutusV3(plutus) => plutus.compute_hash().to_plutus_data(),
+            BorrowedScript::Native(native) => native.compute_hash().to_plutus_data(),
+            BorrowedScript::PlutusV1(plutus) => plutus.compute_hash().to_plutus_data(),
+            BorrowedScript::PlutusV2(plutus) => plutus.compute_hash().to_plutus_data(),
+            BorrowedScript::PlutusV3(plutus) => plutus.compute_hash().to_plutus_data(),
         }
+    }
+}
+
+impl<const V: u8> ToPlutusData<V> for MemoizedScript
+where
+    PlutusVersion<V>: IsKnownPlutusVersion,
+{
+    /// A script appears in a transaction output only as its hash; the encoding is delegated to
+    /// the borrowed [`BorrowedScript`] view to keep that hashing logic in a single place.
+    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
+        <BorrowedScript<'_> as ToPlutusData<V>>::to_plutus_data(&BorrowedScript::from(self))
     }
 }
 

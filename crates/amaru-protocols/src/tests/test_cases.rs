@@ -17,7 +17,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use amaru_kernel::{EraHistory, NetworkMagic, NetworkName, Peer};
 use amaru_network::connection::TokioConnections;
 use amaru_ouroboros_traits::ConnectionProvider;
-use pure_stage::{
+use amaru_pure_stage::{
     StageGraph, StageRef,
     tokio::{TokioBuilder, TokioRunning},
 };

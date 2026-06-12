@@ -21,7 +21,7 @@ use amaru_ouroboros::{
     MempoolMsg, MempoolSeqNo, MempoolState, TransactionValidationError, TxInsertResult, TxOrigin, TxRejectReason,
 };
 use amaru_ouroboros_traits::TxSubmissionMempool;
-use pure_stage::StageRef;
+use amaru_pure_stage::StageRef;
 use tokio::runtime::Builder;
 use tracing::Level;
 

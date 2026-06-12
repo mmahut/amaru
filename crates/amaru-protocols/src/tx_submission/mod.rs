@@ -31,8 +31,8 @@ use std::sync::Arc;
 
 use amaru_kernel::EraHistory;
 use amaru_ouroboros::{MempoolMsg, TxOrigin};
+use amaru_pure_stage::{Effects, StageRef};
 pub use initiator::initiator;
-use pure_stage::{Effects, StageRef};
 pub use responder::{ResponderLocalIn, ResponderResult, TxSubmissionMsg, responder};
 #[cfg(test)]
 pub use tests::*;
@@ -43,7 +43,7 @@ use crate::{
     protocol::{Inputs, PROTO_N2N_TX_SUB, ProtocolState, Role, RoleT},
 };
 
-pub fn register_deserializers() -> pure_stage::DeserializerGuards {
+pub fn register_deserializers() -> amaru_pure_stage::DeserializerGuards {
     vec![initiator::register_deserializers(), responder::register_deserializers()].into_iter().flatten().collect()
 }
 

@@ -15,8 +15,8 @@
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 use amaru_kernel::{BlockHeader, Header, IsHeader, Point, cbor};
+use amaru_pure_stage::{Effects, StageRef};
 use pallas_primitives::babbage::MintedHeader;
-use pure_stage::{Effects, StageRef};
 use tokio::sync::Notify;
 
 use crate::{

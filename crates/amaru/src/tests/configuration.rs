@@ -30,10 +30,10 @@ use amaru_mempool::InMemoryMempool;
 use amaru_ouroboros::{
     BaseReadChainStore, ConnectionsResource, WriteChainStore, in_memory_chain_store::InMemoryChainStore,
 };
+use amaru_pure_stage::trace_buffer::TraceBuffer;
 use amaru_stores::rocksdb::{RocksDB, RocksDbConfig};
 use anyhow::anyhow;
 use parking_lot::Mutex;
-use pure_stage::trace_buffer::TraceBuffer;
 
 use crate::{
     stages::config::{Config, StoreType},

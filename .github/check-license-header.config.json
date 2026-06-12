@@ -1,8 +1,7 @@
 [
     {
         "include": [
-            "crates/**/*.rs",
-            "simulation/**/*.rs"
+            "crates/**/*.rs"
         ],
         "exclude": [
             "crates/vendor/**"
@@ -11,8 +10,8 @@
     },
     {
         "include": [
-	    "conformance-tests/**/*.mjs",
-	    "data/**/*.mjs"
+	        "conformance-tests/**/*.mjs",
+	        "data/**/*.mjs"
         ],
         "license": ".github/license-Apache-2.0.template.mjs"
     }

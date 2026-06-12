@@ -24,7 +24,7 @@ use amaru_protocols::store_effects::{
     LoadHeaderWithValidityEffect, LoadTipEffect, ResourceHeaderStore, StoreBlockEffect,
     UnvalidatedAncestorHashesEffect,
 };
-use pure_stage::{
+use amaru_pure_stage::{
     DeserializerGuards, Effect, Instant, Name, ScheduleId, ScheduleIds, StageGraph, StageRef,
     simulation::SimulationRunning, trace_buffer::TraceEntry,
 };
@@ -122,26 +122,26 @@ impl TestPrep {
 
 pub fn register_guards() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<FetchBlocks>().boxed(),
-        pure_stage::register_data_deserializer::<Cleanup>().boxed(),
-        pure_stage::register_data_deserializer::<FetchBlocksMsg>().boxed(),
-        pure_stage::register_data_deserializer::<SelectChainMsg>().boxed(),
-        pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
-        pure_stage::register_data_deserializer::<amaru_kernel::Peer>().boxed(),
-        pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
-        pure_stage::register_data_deserializer::<amaru_kernel::cardano::network_block::NetworkBlock>().boxed(),
-        pure_stage::register_data_deserializer::<(Tip, Point, BlockHeight)>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadHeaderWithValidityEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<HasBlockEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetAnchorHashEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<GetChildrenEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<LoadTipEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<StoreBlockEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<FindMissingBlocksEffect>().boxed(),
-        pure_stage::register_effect_deserializer::<UnvalidatedAncestorHashesEffect>().boxed(),
-        pure_stage::register_data_deserializer::<(Vec<HeaderHash>, bool)>().boxed(),
-        pure_stage::register_data_deserializer::<Result<Option<MissingBlocks>, StoreError>>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<FetchBlocks>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Cleanup>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<FetchBlocksMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<SelectChainMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<ManagerMessage>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<amaru_kernel::Peer>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<amaru_kernel::cardano::network_block::NetworkBlock>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(Tip, Point, BlockHeight)>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadHeaderWithValidityEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<HasBlockEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetAnchorHashEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<GetChildrenEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<LoadTipEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<StoreBlockEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<FindMissingBlocksEffect>().boxed(),
+        amaru_pure_stage::register_effect_deserializer::<UnvalidatedAncestorHashesEffect>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(Vec<HeaderHash>, bool)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Result<Option<MissingBlocks>, StoreError>>().boxed(),
     ]
 }
 
@@ -218,7 +218,11 @@ pub fn te_store_block(at_stage: &str, hash: HeaderHash, block: amaru_kernel::Raw
     TraceEntry::suspend(Effect::external(at_stage, Box::new(StoreBlockEffect::new(&hash, block))))
 }
 
-pub fn te_schedule(at_stage: impl AsRef<str>, msg: impl pure_stage::SendData, schedule_id: ScheduleId) -> TraceEntry {
+pub fn te_schedule(
+    at_stage: impl AsRef<str>,
+    msg: impl amaru_pure_stage::SendData,
+    schedule_id: ScheduleId,
+) -> TraceEntry {
     TraceEntry::suspend(Effect::Schedule {
         at_stage: Name::from(at_stage.as_ref()),
         msg: Box::new(msg),

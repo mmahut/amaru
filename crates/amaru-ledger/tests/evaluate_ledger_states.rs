@@ -14,7 +14,13 @@
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod tests {
-    use std::{collections::BTreeMap, env, fs, io::Write as _, path::Path};
+    use std::{
+        collections::BTreeMap,
+        env, fs,
+        io::Write as _,
+        path::{Path, PathBuf},
+        sync::LazyLock,
+    };
 
     use amaru_kernel::{
         Bytes, Epoch, EraHistory, NetworkName, ProtocolParameters, Transaction, TransactionPointer, WitnessSet, cbor,
@@ -27,18 +33,19 @@ pub mod tests {
     // Tests cases are constructed in build.rs, which generates the test_cases.rs file
     include!(concat!(env!("OUT_DIR"), "/test_cases.rs"));
 
+    static PPARAMS_DIR: LazyLock<PathBuf> =
+        LazyLock::new(|| ["tests", "data", "rules-conformance", "pparams"].iter().collect());
+
     fn import_and_evaluate_vector(
         test_data_dir: &Path,
         snapshot: &str,
-        pparams_dir: &str,
         expected_result: Result<(), &str>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let network = NetworkName::Testnet(1);
         let era_history = network.into();
         let vector_file = fs::read(test_data_dir.join(snapshot))?;
         let record: TestVector = cbor::decode(&vector_file)?;
-
-        let actual = evaluate_vector(record, era_history, &test_data_dir.join(pparams_dir)).map_err(|e| e.to_string());
+        let actual = evaluate_vector(record, era_history, PPARAMS_DIR.as_ref()).map_err(|e| e.to_string());
         if let Some(path) = std::env::var_os("AMARU_UPDATE_LEDGER_CONFORMANCE_SNAPSHOT_PATH") {
             // Append to the (toml format) snapshot file that tracks which tests are expected to fail.
             if let Err(error) = actual {

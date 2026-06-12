@@ -17,7 +17,7 @@ use std::sync::Arc;
 use amaru_kernel::{EraHistory, NetworkMagic, Peer, Point, Tip};
 use amaru_observability::trace_span;
 use amaru_ouroboros::{ConnectionId, MempoolMsg, TxOrigin};
-use pure_stage::{DeserializerGuards, Effects, StageRef, Void, register_data_deserializer};
+use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void, register_data_deserializer};
 use tracing::Instrument;
 
 use crate::{
@@ -320,7 +320,7 @@ pub fn register_deserializers() -> DeserializerGuards {
 #[cfg(test)]
 mod tests {
     use amaru_kernel::NetworkName;
-    use pure_stage::{Effect, StageGraph, simulation::SimulationBuilder};
+    use amaru_pure_stage::{Effect, StageGraph, simulation::SimulationBuilder};
 
     use super::*;
 

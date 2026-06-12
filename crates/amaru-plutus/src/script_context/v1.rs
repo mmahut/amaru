@@ -12,21 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::Deref};
+use std::{borrow::Cow, collections::BTreeMap};
 
 use amaru_kernel::{
-    Address, AssetName, Certificate as PallasCertificate, Hash, StakePayload, TransactionInput, size::DATUM,
+    Address, Certificate as PallasCertificate, Hash, MemoizedDatum, MemoizedTransactionOutput, PlutusData,
+    StakePayload, TransactionInput, size::DATUM,
 };
 
 use crate::{
     IsKnownPlutusVersion, PlutusDataError, PlutusVersion, ToPlutusData, constr, constr_v1,
     script_context::{
-        Certificate, CurrencySymbol, DatumOption, Datums, IsPrePlutusVersion3, Mint, OutputRef, PlutusData,
-        ScriptContext, ScriptPurpose, StakeAddress, TransactionOutput, TxInfo, Value, Withdrawals,
+        IsPrePlutusVersion3, OutputReference, PlutusDatums, PlutusMint, PlutusStakeAddress, PlutusWithdrawals,
+        ScriptContext, ScriptPurpose, TxInfo,
     },
 };
 
-impl ToPlutusData<1> for OutputRef<'_> {
+impl ToPlutusData<1> for OutputReference<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         constr_v1!(0, [self.input, self.output])
     }
@@ -48,10 +49,10 @@ impl ToPlutusData<1> for TxInfo<'_> {
         let inputs = self
             .inputs
             .iter()
-            .filter(|output_ref| !matches!(*output_ref.output.address, Address::Byron(..)))
+            .filter(|output_ref| !matches!(output_ref.output.address, Address::Byron(..)))
             .collect::<Vec<_>>();
 
-        let fee: Value<'_> = self.fee.into();
+        let fee = amaru_kernel::Value::Coin(self.fee);
 
         constr_v1!(
             0,
@@ -100,27 +101,6 @@ where
     }
 }
 
-impl<const V: u8> ToPlutusData<V> for Value<'_>
-where
-    PlutusVersion<V>: IsKnownPlutusVersion + IsPrePlutusVersion3,
-{
-    /// Serialize a `Value` as PlutusData for PlutusV1 and PlutusV2.
-    ///
-    /// Notably, in PlutusV1 and PlutusV2, `Value` must include a
-    /// zero value lovelace asset, if there is no lovelace.
-    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        if self.0.contains_key(&CurrencySymbol::Lovelace) {
-            self.0.to_plutus_data()
-        } else {
-            let mut map = self.0.clone();
-
-            map.insert(CurrencySymbol::Lovelace, BTreeMap::from([(Cow::Owned(AssetName::from(vec![])), 0u64)]));
-
-            map.to_plutus_data()
-        }
-    }
-}
-
 impl ToPlutusData<1> for amaru_kernel::StakeAddress {
     /// In PlutusV1 and PlutusV2:
     /// Anywhere a `StakeCredential` is used, it is actually an enum with variants `Pointer` and `Credential`
@@ -134,9 +114,9 @@ impl ToPlutusData<1> for amaru_kernel::StakeAddress {
     }
 }
 
-impl ToPlutusData<1> for StakeAddress {
+impl ToPlutusData<1> for PlutusStakeAddress {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        <amaru_kernel::StakeAddress as ToPlutusData<1>>::to_plutus_data(&self.0)
+        <amaru_kernel::StakeAddress as ToPlutusData<1>>::to_plutus_data(self.as_ref())
     }
 }
 
@@ -150,7 +130,7 @@ where
 }
 
 #[allow(clippy::wildcard_enum_match_arm)]
-impl<const V: u8> ToPlutusData<V> for Certificate<'_>
+impl<const V: u8> ToPlutusData<V> for PallasCertificate
 where
     PlutusVersion<V>: IsKnownPlutusVersion + IsPrePlutusVersion3,
 {
@@ -180,7 +160,7 @@ where
     ///
     /// It is actually not possible (by the ledger serialization) logic to construct a Certificate with a `Pointer`, so this can be hardcoded to `Constr(0, [cred])`
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        match self.deref() {
+        match self {
             PallasCertificate::StakeRegistration(stake_credential) => {
                 constr!(0, [constr!(0, [stake_credential])?])
             }
@@ -215,16 +195,16 @@ where
     }
 }
 
-impl ToPlutusData<1> for TransactionOutput<'_> {
+impl ToPlutusData<1> for MemoizedTransactionOutput {
     #[allow(clippy::wildcard_enum_match_arm)]
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         constr_v1!(
             0,
             [
                 self.address,
-                self.value,
-                match self.datum {
-                    DatumOption::Hash(hash) => Some(*hash),
+                self.value.as_ref(),
+                match &self.datum {
+                    MemoizedDatum::Hash(hash) => Some(*hash),
                     _ => None::<Hash<DATUM>>,
                 },
             ]
@@ -232,7 +212,7 @@ impl ToPlutusData<1> for TransactionOutput<'_> {
     }
 }
 
-impl<const V: u8> ToPlutusData<V> for Mint<'_>
+impl<const V: u8> ToPlutusData<V> for PlutusMint<'_>
 where
     PlutusVersion<V>: IsKnownPlutusVersion + IsPrePlutusVersion3,
 {
@@ -251,13 +231,13 @@ where
     }
 }
 
-impl ToPlutusData<1> for Withdrawals {
+impl ToPlutusData<1> for PlutusWithdrawals {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        <Vec<_> as ToPlutusData<1>>::to_plutus_data(&self.0.iter().collect::<Vec<_>>())
+        <Vec<_> as ToPlutusData<1>>::to_plutus_data(&self.iter().collect::<Vec<_>>())
     }
 }
 
-impl ToPlutusData<1> for Datums<'_> {
+impl ToPlutusData<1> for PlutusDatums<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <Vec<_> as ToPlutusData<1>>::to_plutus_data(&self.0.iter().collect::<Vec<_>>())
     }

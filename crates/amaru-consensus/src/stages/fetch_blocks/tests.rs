@@ -17,7 +17,7 @@ use std::time::Duration;
 use amaru_kernel::BlockHeight;
 use amaru_ouroboros_traits::MissingBlocks;
 use amaru_protocols::manager::ManagerMessage;
-use pure_stage::{
+use amaru_pure_stage::{
     Instant, ScheduleIds, assert_trace_contains, tm_add_stage, trace_buffer::TerminationReason,
     trace_match::tm_wire_stage_state,
 };

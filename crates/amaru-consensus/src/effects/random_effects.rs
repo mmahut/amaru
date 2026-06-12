@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use pure_stage::{BoxFuture, ExternalEffect, ExternalEffectAPI, Resources, SendData};
+use amaru_pure_stage::{BoxFuture, ExternalEffect, ExternalEffectAPI, Resources, SendData};
 use rand::Rng;
 
 /// External effect that produces a fresh 256-bit random seed.

@@ -11,7 +11,7 @@ import {
 } from './trace-compare-summary.js';
 
 const CONTRACT_FORMAT_VERSION = 'amaru-trace-contract@1';
-const DEFAULT_CONFIG_PATH = new URL('../config/compare-traces.json', import.meta.url);
+const DEFAULT_CONFIG_PATH = new URL('../crate/amaru-observability/config/compare-traces.json', import.meta.url);
 
 function roundTo(value, decimals = 6) {
   const factor = 10 ** decimals;
@@ -1167,8 +1167,8 @@ function comparePerformance(baselinePerformance, candidatePerformance) {
 
 function printUsage() {
   console.error(`Usage:
-  node scripts/compare-traces --export-contract contract.json [--config config/compare-traces.json] baseline.log
-  node scripts/compare-traces [--summary-file summary.md] [--config config/compare-traces.json] contract.json candidate.log
+  node scripts/compare-traces --export-contract contract.json [--config compare-traces.json] baseline.log
+  node scripts/compare-traces [--summary-file summary.md] [--config compare-traces.json] contract.json candidate.log
 
 The command compares trace descriptors and timing metrics from a checked-in contract
 against a candidate Amaru run.

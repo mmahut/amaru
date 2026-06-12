@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use amaru_kernel::{Hash, Point, Slot, any_headers_chain_with_root, utils::tests::run_strategy};
-use pure_stage::simulation::RandStdRng;
+use amaru_pure_stage::simulation::RandStdRng;
 
 use crate::tests::{
     assertions::check_state,

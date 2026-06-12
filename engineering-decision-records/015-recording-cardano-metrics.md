@@ -23,4 +23,4 @@ We will propagate metrics via a stage effect instead of passing around a large r
 
 We had previously discussed using a generic `Metric` trait that a metrics stage could consume without caring about specifics using dynamic dispatch. This allowed the metrics to be owned by the relevant stage and modifying said metrics required no changes to any other pieces of logic.
 
-While this worked well with the `gasket` framework, it was incompatible with `Pure Stage` due to the required `pure_stage::SendData` trait. As a result, we had to compromise and fallback to the `MetricsEvent` enum solution, which still limits the amount of changes needed to add/remove metrics.
+While this worked well with the `gasket` framework, it was incompatible with `Pure Stage` due to the required `amaru_pure_stage::SendData` trait. As a result, we had to compromise and fallback to the `MetricsEvent` enum solution, which still limits the amount of changes needed to add/remove metrics.

@@ -16,7 +16,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use amaru_kernel::{BlockHeight, HeaderHash, Point, Slot};
 use amaru_ouroboros_traits::{StoreError, overriding_chain_store::OverridingChainStore};
-use pure_stage::{
+use amaru_pure_stage::{
     assert_trace_contains,
     trace_buffer::{TerminationReason, TraceEntry},
 };

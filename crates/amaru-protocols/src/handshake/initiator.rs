@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use amaru_observability::trace_span;
-use pure_stage::{DeserializerGuards, Effects, StageRef, Void};
+use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void};
 use tracing::Instrument;
 
 use crate::{
@@ -27,8 +27,8 @@ use crate::{
 
 pub fn register_deserializers() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<HandshakeInitiator>().boxed(),
-        pure_stage::register_data_deserializer::<(State, HandshakeInitiator)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<HandshakeInitiator>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(State, HandshakeInitiator)>().boxed(),
     ]
 }
 

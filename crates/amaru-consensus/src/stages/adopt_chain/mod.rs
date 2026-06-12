@@ -18,7 +18,7 @@ use amaru_kernel::{BlockHeader, BlockHeight, IsHeader, Point, Tip};
 use amaru_ouroboros::MempoolMsg;
 use amaru_ouroboros_traits::{FindAncestorOnBestChainResult, StoreError};
 use amaru_protocols::{manager::ManagerMessage, store_effects::Store};
-use pure_stage::{Effects, Instant, OrTerminateWith, StageRef};
+use amaru_pure_stage::{Effects, Instant, OrTerminateWith, StageRef};
 
 use crate::stages::{block_source::BlockSourceMsg, select_chain::cmp_tip};
 
@@ -73,7 +73,7 @@ use crate::stages::{block_source::BlockSourceMsg, select_chain::cmp_tip};
 /// is the source of truth for quick height guards and is kept in sync with
 /// the store only on successful adoption paths.
 ///
-/// The stage is tested exclusively via pure_stage simulation (see
+/// The stage is tested exclusively via amaru_pure_stage simulation (see
 /// `test_setup.rs`): `HeaderTree` + `InMemConsensusStore` + `ResourceHeaderStore`,
 /// exhaustive `te_*` effect tracers for every `LoadHeaderEffect`,
 /// `RollForwardChainEffect`, `SwitchToForkEffect`, `FindAncestorOnBestChainEffect`,

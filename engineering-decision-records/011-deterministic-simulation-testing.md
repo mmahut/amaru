@@ -29,20 +29,20 @@ deterministically reproduce it from some seed.
 
 To tackle the problem of testing and debugging we've introduced two changes:
 
-  1. Introduced a library, called pure-stage, for building parallel processing
+  1. Introduced a library, called amaru-pure-stage, for building parallel processing
      networks that can be run in a completely deterministic fashion. The idea
      being that the whole node-internal processing network will be ported from
      using gasket (which wasn't designed with determinism in mind) to
-     pure-stage;
+     amaru-pure-stage;
 
   2. A discrete-event simulator which spawns a network of nodes and simulates
      the network connections between them. The simulator decides when, or if,
      messages get delivered to the nodes and can step through the execution
-     deterministically using the pure-stage API.
+     deterministically using the amaru-pure-stage API.
 
 ## Consequences
 
-Apart from the goal of determinism, the design of the pure-stage library and
+Apart from the goal of determinism, the design of the amaru-pure-stage library and
 the simulator were mainly driven by the following considerations.
 
 ### Pipelined architecture
@@ -79,7 +79,7 @@ trying to deliver messages between A and B, then those messages will timeout
 immediately (unlike if we do Jepsen-style system tests where we have to wait
 for the timeouts to happen in real-time).
 
-Since the pure-stage library allows for modelling several connected stages that
+Since the amaru-pure-stage library allows for modelling several connected stages that
 might share memory, one cannot simply assume that the processing of one message
 is a discrete event that produces output messages instantly. So the simulator
 needs to not only orchestrate the network, but also the thread scheduler so to
@@ -121,7 +121,7 @@ any failure that could happen in a real world deployment should be reproducible
 within the simulator (and any failure to do so should be considered a bug in
 the simulator), but of course one has to draw a line somewhere.
 
-To achieve this the pure-stage library has a runtime interface that can be
+To achieve this the amaru-pure-stage library has a runtime interface that can be
 toggled between being deterministic or to use tokio. This is described in more
 detail under the section ["relation to production
 mode"](https://github.com/pragma-org/amaru/blob/stevan/main/engineering-decision-records/011-deterministic-simulation-testing.md#relation-to-production-mode).
@@ -164,11 +164,11 @@ sketch of how to implement them:
 
 * I/O and GC pauses. Rust doesn't have GC, but disk I/O can sometimes be slower
   than normal due to other stuff happening on the computer that the node is
-  running on. I/O pauses can be implemented at the pure-stage level by delaying
+  running on. I/O pauses can be implemented at the amaru-pure-stage level by delaying
   when a future becomes available;
 
 * Time skews (the clock of nodes drifts apart). The simulator controls the
-  clock of the nodes, via pure-stage's API, so skews can be implemented by
+  clock of the nodes, via amaru-pure-stage's API, so skews can be implemented by
   advancing some node's clocks more than others;
 
 * Disk failures (since all of our stable storage is delegated to RocksDB we
@@ -247,7 +247,7 @@ When the simulator finds a test case for which the above property doesn't hold,
 or if we run into an error in a production deployment, it's important to be
 able to debug the problem.
 
-Special care has been taken in the design of the simulator and pure-stage to
+Special care has been taken in the design of the simulator and amaru-pure-stage to
 record all steps necessary to be able to deterministically reproduce exactly
 what happened leading up to the failure or error.
 
@@ -288,11 +288,11 @@ Some differences that may or may not motivate the double effort:
 
 ### Relation to production Mode
 
-The above description focuses on a special mode of execution for the pure-stage
+The above description focuses on a special mode of execution for the amaru-pure-stage
 infrastructure that allows us to deterministically run a whole network while
 precisely following what each node is doing. This mode is single-threaded by
 definition due to the ordering guarantees it needs to make. When running an
-Amaru node in production, the very same pure-stage components are used with a
+Amaru node in production, the very same amaru-pure-stage components are used with a
 non-deterministic execution engine that allows for parallelism, namely the
 Tokio runtime. The idea here is that simulation testing should eventually
 exhaust all possible interleavings of messages and other effects, thus covering

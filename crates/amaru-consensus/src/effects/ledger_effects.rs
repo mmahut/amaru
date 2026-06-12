@@ -21,8 +21,8 @@ use amaru_ouroboros_traits::{
     TransactionValidationError,
 };
 use amaru_protocols::store_effects::ResourceHeaderStore;
+use amaru_pure_stage::{BoxFuture, Effects, ExternalEffect, ExternalEffectAPI, Resources, SendData, Void};
 use opentelemetry::trace::FutureExt;
-use pure_stage::{BoxFuture, Effects, ExternalEffect, ExternalEffectAPI, Resources, SendData, Void};
 
 /// Ledger operations available to a stage.
 /// This trait can have mock implementations for unit testing a stage.
@@ -63,7 +63,7 @@ pub trait LedgerOps: Send + Sync {
     fn registered_relay_socket_addrs(&self) -> BoxFuture<'_, Result<BTreeSet<SocketAddr>, BlockValidationError>>;
 }
 
-/// Implementation of LedgerOps using pure_stage::Effects.
+/// Implementation of LedgerOps using amaru_pure_stage::Effects.
 #[derive(Clone, Debug)]
 pub struct Ledger {
     effects: Effects<Void>,

@@ -17,7 +17,7 @@ use std::fmt::Debug;
 use amaru_kernel::{IsHeader, NonEmptyVec, Point, RawBlock};
 use amaru_metrics::protocol::ServedBlockCountMetrics;
 use amaru_observability::trace_span;
-use pure_stage::{DeserializerGuards, Effects, StageRef, Void};
+use amaru_pure_stage::{DeserializerGuards, Effects, StageRef, Void};
 use tracing::Instrument;
 
 use crate::{
@@ -33,8 +33,8 @@ use crate::{
 
 pub fn register_deserializers() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<BlockFetchResponder>().boxed(),
-        pure_stage::register_data_deserializer::<(State, BlockFetchResponder)>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<BlockFetchResponder>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<(State, BlockFetchResponder)>().boxed(),
     ]
 }
 
@@ -292,7 +292,7 @@ pub mod tests {
         utils::tests::run_strategy,
     };
     use amaru_ouroboros_traits::{WriteChainStore, in_memory_chain_store::InMemoryChainStore};
-    use pure_stage::simulation::simulation_builder::run_test;
+    use amaru_pure_stage::simulation::simulation_builder::run_test;
 
     use super::*;
     use crate::{protocol::Responder, store_effects::ResourceHeaderStore};

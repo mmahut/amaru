@@ -1,0 +1,59 @@
+services:
+  otlp-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    environment:
+      - NO_PROXY=localhost,127.0.0.1
+      - no_proxy=localhost,127.0.0.1
+    volumes:
+      - "./otlp-collector.yml:/etc/otlp-collector.yml"
+    command: ["--config", "/etc/otlp-collector.yml"]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+
+  prometheus:
+    profiles: [prometheus]
+    image: prom/prometheus:v3.0.1
+    volumes:
+      - "./profiles/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
+
+  jaeger:
+    profiles: [jaeger]
+    image: jaegertracing/jaeger:2.4.0
+    volumes:
+      - "./profiles/jaeger/jaeger-ui.json:/etc/jaeger/jaeger-ui.json"
+      - "./profiles/jaeger/jaeger.yml:/etc/jaeger/config.yml"
+    command: ["--config", "/etc/jaeger/config.yml"]
+    ports:
+      - "16686:16686"
+
+  tempo:
+    profiles: [tempo]
+    image: grafana/tempo:2.9.1
+    ports:
+      - "3200:3200"
+    volumes:
+      - "./profiles/tempo/tempo.yml:/etc/tempo/tempo.yml"
+      - "tempo-data:/var/tempo"
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+
+  grafana:
+    profiles: [grafana]
+    image: grafana/grafana:latest
+    volumes:
+      - "./profiles/grafana/grafana.yml:/etc/grafana/provisioning/datasources/datasources.yaml"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor
+    ports:
+      - "80:3000"
+
+
+
+volumes:
+  tempo-data:

@@ -1,0 +1,8 @@
+services:
+  otlp-collector:
+    volumes:
+      - "./otlp-collector.yml:/etc/otlp-collector.yml"
+      - "./profiles/tempo/otlp-collector.yml:/etc/otlp-collector-tempo.yml"
+    command:
+      - "--config"
+      - "file:/etc/otlp-collector.yml,file:/etc/otlp-collector-tempo.yml"

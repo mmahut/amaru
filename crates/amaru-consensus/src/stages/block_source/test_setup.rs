@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use amaru_kernel::{BlockHeight, Tip};
-use pure_stage::{
+use amaru_pure_stage::{
     DeserializerGuards, Effect, StageGraph, StageRef,
     simulation::{SimulationBuilder, SimulationRunning},
     trace_buffer::{TraceBuffer, TraceEntry},
@@ -41,13 +41,13 @@ pub fn test_prep(adopted_tip: Tip, max_tip_distance: u64) -> TestPrep {
 
 pub fn register_guards() -> DeserializerGuards {
     vec![
-        pure_stage::register_data_deserializer::<BlockSource>().boxed(),
-        pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
-        pure_stage::register_data_deserializer::<PeerSelectionMsg>().boxed(),
-        pure_stage::register_data_deserializer::<amaru_kernel::Peer>().boxed(),
-        pure_stage::register_data_deserializer::<Tip>().boxed(),
-        pure_stage::register_data_deserializer::<amaru_kernel::Point>().boxed(),
-        pure_stage::register_data_deserializer::<BlockHeight>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<BlockSource>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<BlockSourceMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<PeerSelectionMsg>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<amaru_kernel::Peer>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<Tip>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<amaru_kernel::Point>().boxed(),
+        amaru_pure_stage::register_data_deserializer::<BlockHeight>().boxed(),
     ]
 }
 
@@ -75,7 +75,7 @@ pub fn setup(prep: &TestPrep, msgs: &[BlockSourceMsg]) -> (SimulationRunning, De
     (running, guards, logs.logs())
 }
 
-pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl pure_stage::SendData) -> TraceEntry {
+pub fn te_send(from: impl AsRef<str>, to: impl AsRef<str>, msg: impl amaru_pure_stage::SendData) -> TraceEntry {
     TraceEntry::suspend(Effect::send(from, to, Box::new(msg)))
 }
 

@@ -16,7 +16,7 @@ use std::{cmp::Ordering, collections::BTreeMap};
 
 use amaru_kernel::{BlockHeader, HeaderHash, IsHeader, ORIGIN_HASH, Point, Tip};
 use amaru_protocols::store_effects::Store;
-use pure_stage::{Effects, OrTerminateWith, StageRef};
+use amaru_pure_stage::{Effects, OrTerminateWith, StageRef};
 
 use crate::effects::FindBestCandidate;
 

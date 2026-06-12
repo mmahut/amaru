@@ -1,0 +1,12 @@
+# Jaeger-specific overrides: add jaeger exporter and update traces pipeline
+exporters:
+  otlp/jaeger:
+    endpoint: "jaeger:4317"
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [debug, otlp/jaeger]

@@ -30,7 +30,7 @@ use amaru_protocols::{
     manager,
     manager::{Manager, ManagerConfig, ManagerMessage, PeerSelectionNotify},
 };
-use pure_stage::{StageGraph, StageRef};
+use amaru_pure_stage::{StageGraph, StageRef};
 
 use crate::stages::config::Config;
 

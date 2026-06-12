@@ -30,8 +30,8 @@ use amaru_kernel::{
 };
 use amaru_ouroboros::ConnectionId;
 use amaru_protocols::chainsync::{ChainSyncInitiatorMsg, HeaderContent, InitiatorMessage, InitiatorResult};
+use amaru_pure_stage::{SendData, serde::to_cbor};
 use criterion::{Criterion, criterion_group, criterion_main};
-use pure_stage::{SendData, serde::to_cbor};
 
 fn stage_msgs(c: &mut Criterion) {
     let mut group = c.benchmark_group("Stage Messages");
@@ -94,7 +94,7 @@ fn stage_msgs(c: &mut Criterion) {
     let msg = TrackPeersMsg::FromUpstream(ChainSyncInitiatorMsg {
         peer: amaru_kernel::Peer { name: "peer1".to_string() },
         conn_id: ConnectionId::initial(),
-        handler: pure_stage::StageRef::<InitiatorMessage>::named_for_tests("test"),
+        handler: amaru_pure_stage::StageRef::<InitiatorMessage>::named_for_tests("test"),
         msg: InitiatorResult::Initialize,
     });
     let msg: Box<dyn SendData> = Box::new(msg);
@@ -103,7 +103,7 @@ fn stage_msgs(c: &mut Criterion) {
     let msg = TrackPeersMsg::FromUpstream(ChainSyncInitiatorMsg {
         peer: amaru_kernel::Peer { name: "peer1".to_string() },
         conn_id: ConnectionId::initial(),
-        handler: pure_stage::StageRef::<InitiatorMessage>::named_for_tests("test"),
+        handler: amaru_pure_stage::StageRef::<InitiatorMessage>::named_for_tests("test"),
         msg: InitiatorResult::RollForward(header_content.clone(), tip),
     });
     let msg: Box<dyn SendData> = Box::new(msg);

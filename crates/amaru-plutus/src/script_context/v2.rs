@@ -14,13 +14,11 @@
 
 use std::collections::BTreeMap;
 
-use amaru_kernel::{Address, StakePayload};
+use amaru_kernel::{Address, MemoizedTransactionOutput, PlutusData, StakePayload};
 
 use crate::{
     PlutusDataError, ToPlutusData, constr_v2,
-    script_context::{
-        Datums, OutputRef, PlutusData, ScriptContext, StakeAddress, TransactionOutput, TxInfo, Value, Withdrawals,
-    },
+    script_context::{OutputReference, PlutusDatums, PlutusStakeAddress, PlutusWithdrawals, ScriptContext, TxInfo},
 };
 
 impl ToPlutusData<2> for ScriptContext<'_> {
@@ -31,7 +29,7 @@ impl ToPlutusData<2> for ScriptContext<'_> {
 
 impl ToPlutusData<2> for TxInfo<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        let fee: Value<'_> = self.fee.into();
+        let fee = amaru_kernel::Value::Coin(self.fee);
         constr_v2!(
             0,
             [
@@ -52,35 +50,35 @@ impl ToPlutusData<2> for TxInfo<'_> {
     }
 }
 
-impl ToPlutusData<2> for OutputRef<'_> {
-    /// Serialize an `OutputRef` as PlutusData for PlutusV2.
+impl ToPlutusData<2> for OutputReference<'_> {
+    /// Serialize an `OutputReference` as PlutusData for PlutusV2.
     ///
     /// # Errors
     /// If the UTxO is locked at a bootstrap address, this will return a `PlutusDataError`.
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        if let Address::Byron(_) = *self.output.address {
-            return Err(PlutusDataError::unsupported_version("byron address included in OutputRef", 2));
+        if let Address::Byron(_) = self.output.address {
+            return Err(PlutusDataError::unsupported_version("byron address included in OutputReference", 2));
         }
 
         constr_v2!(0, [self.input, self.output])
     }
 }
 
-impl ToPlutusData<2> for TransactionOutput<'_> {
+impl ToPlutusData<2> for MemoizedTransactionOutput {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        constr_v2!(0, [self.address, self.value, self.datum, self.script])
+        constr_v2!(0, [self.address, self.value.as_ref(), self.datum, self.script])
     }
 }
 
-impl ToPlutusData<2> for Datums<'_> {
+impl ToPlutusData<2> for PlutusDatums<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <BTreeMap<_, _> as ToPlutusData<2>>::to_plutus_data(&self.0)
     }
 }
 
-impl ToPlutusData<2> for Withdrawals {
+impl ToPlutusData<2> for PlutusWithdrawals {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        let map = self.0.iter().collect::<BTreeMap<_, _>>();
+        let map = self.iter().collect::<BTreeMap<_, _>>();
         <BTreeMap<_, _> as ToPlutusData<2>>::to_plutus_data(&map)
     }
 }
@@ -98,8 +96,8 @@ impl ToPlutusData<2> for amaru_kernel::StakeAddress {
     }
 }
 
-impl ToPlutusData<2> for StakeAddress {
+impl ToPlutusData<2> for PlutusStakeAddress {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        <amaru_kernel::StakeAddress as ToPlutusData<2>>::to_plutus_data(&self.0)
+        <amaru_kernel::StakeAddress as ToPlutusData<2>>::to_plutus_data(self.as_ref())
     }
 }

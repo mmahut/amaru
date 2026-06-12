@@ -115,6 +115,6 @@ pub(crate) fn command(version: &'static str) -> clap::Command {
 }
 
 pub(crate) fn parse(version: &'static str) -> Result<Cli, clap::Error> {
-    let matches = command(version).try_get_matches()?;
+    let matches = command(version).get_matches();
     <Cli as FromArgMatches>::from_arg_matches(&matches)
 }

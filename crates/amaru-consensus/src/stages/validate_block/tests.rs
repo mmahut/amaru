@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use amaru_kernel::{IsHeader, Point};
-use pure_stage::{TerminationReason, trace_match::assert_trace_contains};
+use amaru_pure_stage::{TerminationReason, trace_match::assert_trace_contains};
 use tracing::Level;
 
 use super::*;

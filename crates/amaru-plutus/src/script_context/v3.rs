@@ -15,28 +15,29 @@
 use std::{collections::BTreeMap, ops::Deref};
 
 use amaru_kernel::{
-    Address, AssetName, Bytes, Certificate as PallasCertificate, ComparableProposalId, Constitution, CostModels, DRep,
-    DRepVotingThresholds, ExUnitPrices, ExUnits, GovernanceAction, Hash, PoolVotingThresholds, Proposal, ProposalId,
-    ProtocolParamUpdate, RationalNumber, StakeCredential, StakePayload, Vote, size::CREDENTIAL,
+    Address, Certificate as PallasCertificate, ComparableProposalId, Constitution, CostModels, DRep,
+    DRepVotingThresholds, ExUnitPrices, ExUnits, GovernanceAction, MemoizedTransactionOutput, PlutusData,
+    PoolVotingThresholds, Proposal, ProposalId, ProtocolParamUpdate, RationalNumber, StakeCredential, StakePayload,
+    TransactionInput, Vote, Voter,
 };
 use num::Integer;
 
 use crate::{
     PlutusDataError, ToPlutusData, constr, constr_v3,
     script_context::{
-        Certificate, CurrencySymbol, Datums, Mint, OutputRef, PlutusData, ScriptContext, ScriptInfo, ScriptPurpose,
-        StakeAddress, TransactionInput, TransactionOutput, TxInfo, Value, Voter, Votes, Withdrawals,
+        OutputReference, PlutusDatums, PlutusMint, PlutusStakeAddress, PlutusVotes, PlutusWithdrawals, ScriptContext,
+        ScriptInfo, ScriptPurpose, TxInfo,
     },
 };
 
-impl ToPlutusData<3> for OutputRef<'_> {
-    /// Serialize an `OutputRef` as PlutusData for PlutusV3.
+impl ToPlutusData<3> for OutputReference<'_> {
+    /// Serialize an `OutputReference` as PlutusData for PlutusV3.
     ///
     /// # Errors
     /// If the UTxO is locked at a bootstrap address, this will return a `PlutusDataError`.
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        if let Address::Byron(_) = *self.output.address {
-            return Err(PlutusDataError::unsupported_version("byron address included in OutputRef", 3));
+        if let Address::Byron(_) = self.output.address {
+            return Err(PlutusDataError::unsupported_version("byron address included in OutputReference", 3));
         }
 
         constr_v3!(0, [self.input, self.output])
@@ -107,68 +108,9 @@ impl ToPlutusData<3> for TransactionInput {
     }
 }
 
-impl ToPlutusData<3> for TransactionOutput<'_> {
+impl ToPlutusData<3> for MemoizedTransactionOutput {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        constr_v3!(0, [self.address, self.value, self.datum, self.script])
-    }
-}
-
-impl ToPlutusData<3> for Value<'_> {
-    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        if self.ada().is_none() {
-            <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(
-                &self
-                    .0
-                    .iter()
-                    .filter(|(currency, _)| !matches!(currency, CurrencySymbol::Lovelace))
-                    .collect::<BTreeMap<_, _>>(),
-            )
-        } else {
-            <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&self.0)
-        }
-    }
-}
-impl ToPlutusData<3> for amaru_kernel::Value {
-    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        fn ada_entry(coin: &u64) -> Result<(PlutusData, PlutusData), PlutusDataError> {
-            Ok((
-                <Bytes as ToPlutusData<3>>::to_plutus_data(&Bytes::from(vec![]))?,
-                PlutusData::Map(pallas_codec::utils::KeyValuePairs::Def(vec![(
-                    <AssetName as ToPlutusData<3>>::to_plutus_data(&AssetName::from(vec![]))?,
-                    <u64 as ToPlutusData<3>>::to_plutus_data(coin)?,
-                )])),
-            ))
-        }
-
-        let entries = match self {
-            amaru_kernel::Value::Coin(coin) if *coin > 0 => Ok(vec![ada_entry(coin)?]),
-            amaru_kernel::Value::Coin(_) => Ok(vec![]),
-            amaru_kernel::Value::Multiasset(coin, multiasset) => {
-                let ada = (*coin > 0).then(|| ada_entry(coin)).transpose()?;
-                let multiasset_entries = multiasset
-                    .iter()
-                    .map(|(policy_id, assets)| {
-                        Ok((
-                            <Hash<CREDENTIAL> as ToPlutusData<3>>::to_plutus_data(policy_id)?,
-                            PlutusData::Map(pallas_codec::utils::KeyValuePairs::Def(
-                                assets
-                                    .iter()
-                                    .map(|(asset, amount)| {
-                                        Ok((
-                                            <Bytes as ToPlutusData<3>>::to_plutus_data(asset)?,
-                                            <u64 as ToPlutusData<3>>::to_plutus_data(&amount.into())?,
-                                        ))
-                                    })
-                                    .collect::<Result<Vec<_>, _>>()?,
-                            )),
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(ada.into_iter().chain(multiasset_entries).collect())
-            }
-        }?;
-
-        Ok(PlutusData::Map(pallas_codec::utils::KeyValuePairs::Def(entries)))
+        constr_v3!(0, [self.address, self.value.as_ref(), self.datum, self.script])
     }
 }
 
@@ -183,9 +125,9 @@ impl ToPlutusData<3> for DRep {
     }
 }
 
-impl ToPlutusData<3> for Certificate<'_> {
+impl ToPlutusData<3> for PallasCertificate {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        match self.certificate {
+        match self {
             PallasCertificate::StakeRegistration(stake_credential) => {
                 constr_v3!(0, [stake_credential, None::<PlutusData>])
             }
@@ -548,25 +490,25 @@ impl ToPlutusData<3> for Vote {
     }
 }
 
-impl ToPlutusData<3> for Mint<'_> {
+impl ToPlutusData<3> for PlutusMint<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&self.0)
     }
 }
 
-impl ToPlutusData<3> for Withdrawals {
+impl ToPlutusData<3> for PlutusWithdrawals {
+    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
+        <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&self.iter().collect::<BTreeMap<_, _>>())
+    }
+}
+
+impl ToPlutusData<3> for PlutusDatums<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&self.0)
     }
 }
 
-impl ToPlutusData<3> for Datums<'_> {
-    fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        <BTreeMap<_, _> as ToPlutusData<3>>::to_plutus_data(&self.0)
-    }
-}
-
-impl ToPlutusData<3> for Votes<'_> {
+impl ToPlutusData<3> for PlutusVotes<'_> {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
         self.0.to_plutus_data()
     }
@@ -581,9 +523,9 @@ impl ToPlutusData<3> for amaru_kernel::StakeAddress {
     }
 }
 
-impl ToPlutusData<3> for StakeAddress {
+impl ToPlutusData<3> for PlutusStakeAddress {
     fn to_plutus_data(&self) -> Result<PlutusData, PlutusDataError> {
-        <amaru_kernel::StakeAddress as ToPlutusData<3>>::to_plutus_data(&self.0)
+        <amaru_kernel::StakeAddress as ToPlutusData<3>>::to_plutus_data(self.as_ref())
     }
 }
 

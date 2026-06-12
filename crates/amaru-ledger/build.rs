@@ -41,7 +41,7 @@ fn get_conformance_test_vectors() -> Result<()> {
     let out_dir = env::var("OUT_DIR").context("OUT_DIR not set")?;
     let out_file = Path::new(&out_dir).join("test_cases.rs");
 
-    let test_data_dir = env::current_dir()?.join("tests").join("data").join("rules-conformance");
+    let test_data_dir = env::current_dir()?.join("tests").join("data").join("rules-conformance").join("eras");
     let mut files = Vec::new();
     visit_dirs(&test_data_dir, &mut files);
 
@@ -54,30 +54,24 @@ fn get_conformance_test_vectors() -> Result<()> {
         let Ok(relative_path) = path.strip_prefix(&test_data_dir) else {
             continue;
         };
+
         let Some(relative_path_str) = relative_path.to_str() else {
             continue;
         };
-        if relative_path_str.contains("pparams-by-hash") {
-            continue;
-        }
+
         let relative_path_str = relative_path_str.replace("\\", "/");
-        let pparams_dir = "eras/conway/impl/dump/pparams-by-hash";
+
         let result = match failures.get(&relative_path_str) {
             Some(reason) => format!("Err(\"{}\")", reason.escape_default()),
             None => "Ok(())".to_string(),
         };
-        writeln!(
-            &mut output,
-            "#[test_case::test_case(\"{}\", \"{}\", {result})]",
-            relative_path_str.escape_default(),
-            pparams_dir.escape_default()
-        )?;
+
+        writeln!(&mut output, "#[test_case::test_case(\"{}\", {result})]", relative_path_str.escape_default())?;
     }
     writeln!(
         &mut output,
-        r#"pub fn rules_conformance_test_case(snapshot: &str, pparams_dir: &str, result: Result<(), &str>) -> Result<(), Box<dyn std::error::Error>> {{
-    let test_data_dir = Path::new(TEST_DATA_DIR);
-    import_and_evaluate_vector(test_data_dir, snapshot, pparams_dir, result)
+        r#"pub fn rules_conformance_test_case(snapshot: &str, result: Result<(), &str>) -> Result<(), Box<dyn std::error::Error>> {{
+    import_and_evaluate_vector(Path::new(TEST_DATA_DIR), snapshot, result)
 }}"#
     )?;
 

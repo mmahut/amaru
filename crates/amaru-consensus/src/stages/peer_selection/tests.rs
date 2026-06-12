@@ -17,7 +17,7 @@
 
 use amaru_ouroboros::{ConnectionDirection, ConnectionId};
 use amaru_protocols::manager::ManagerMessage;
-use pure_stage::trace_match::{assert_trace_contains, tm_send_match};
+use amaru_pure_stage::trace_match::{assert_trace_contains, tm_send_match};
 use tracing::Level;
 
 use super::*;

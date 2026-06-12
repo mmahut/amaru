@@ -15,12 +15,13 @@
 use std::{collections::BTreeMap, fmt};
 
 use amaru_kernel::{
-    EraHistory, HasTransactionId, NetworkName, ProtocolParameters, TransactionBody, TransactionInput,
-    TransactionPointer, WitnessSet, cbor, decode_plutus_script, to_cbor, transaction_input_to_string,
+    BorrowedScript, EraHistory, HasTransactionId, NetworkName, ProtocolParameters, TransactionBody, TransactionInput,
+    TransactionPointer, TxInfo, TxInfoTranslationError, Utxos, WitnessSet, cbor, decode_plutus_script, to_cbor,
+    transaction_input_to_string,
 };
 use amaru_plutus::{
     arena_pool::ArenaPool,
-    script_context::{Script, TxInfo, TxInfoTranslationError, Utxos},
+    script_context::ToScriptArgs,
     to_plutus_data::{PLUTUS_V1, PLUTUS_V2, PLUTUS_V3, PlutusDataError},
 };
 use amaru_uplc::{
@@ -140,10 +141,10 @@ where
 
             // TODO: The following code screams for traits.
             let (mut program, plutus_version, args, cost_model) = match script {
-                Script::Native(_) => {
+                BorrowedScript::Native(_) => {
                     unreachable!("cannot have a redeemer point to a native_script")
                 }
-                Script::PlutusV1(plutus_script) => {
+                BorrowedScript::PlutusV1(plutus_script) => {
                     let (program, plutus_version) =
                         decode_plutus_script(plutus_script, protocol_parameters.protocol_version, &arena)
                             .map_err(PhaseTwoError::from)?;
@@ -158,7 +159,7 @@ where
 
                     (program, plutus_version, args, cost_model)
                 }
-                Script::PlutusV2(plutus_script) => {
+                BorrowedScript::PlutusV2(plutus_script) => {
                     let (program, plutus_version) =
                         decode_plutus_script(plutus_script, protocol_parameters.protocol_version, &arena)
                             .map_err(PhaseTwoError::from)?;
@@ -173,7 +174,7 @@ where
 
                     (program, plutus_version, args, cost_model)
                 }
-                Script::PlutusV3(plutus_script) => {
+                BorrowedScript::PlutusV3(plutus_script) => {
                     let (program, plutus_version) =
                         decode_plutus_script(plutus_script, protocol_parameters.protocol_version, &arena)
                             .map_err(PhaseTwoError::from)?;
