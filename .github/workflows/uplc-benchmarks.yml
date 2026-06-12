@@ -28,7 +28,7 @@ jobs:
       - name: Check for changes since last run
         id: check
         run: |
-          LAST_RUN=$(gh run list --workflow=uplc-benchmarks.yml --status=success --limit=1 --json createdAt --jq '.[0].createdAt' 2>/dev/null || echo "")
+          LAST_RUN=$(gh run list --workflow=uplc-benchmarks.yml --branch=main --status=success --limit=1 --json createdAt --jq '.[0].createdAt' 2>/dev/null || echo "")
 
           if [ -z "$LAST_RUN" ]; then
             echo "No previous benchmark run found, will run benchmarks"
