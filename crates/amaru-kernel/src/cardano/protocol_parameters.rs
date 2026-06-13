@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
-
-use pallas_math::math::{FixedDecimal, FixedPrecision};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
 use crate::{
-    CostModel, CostModels, DRepVotingThresholds, EraHistory, ExUnitPrices, ExUnits, Language, Lovelace, PoolId,
-    PoolVotingThresholds, ProtocolParamUpdate, ProtocolVersion, RationalNumber, Slot, cbor,
+    CostModel, CostModels, DRepVotingThresholds, ExUnitPrices, ExUnits, Language, Lovelace, PoolVotingThresholds,
+    ProtocolParamUpdate, ProtocolVersion, RationalNumber, cbor,
 };
 
 mod default;
@@ -159,8 +154,8 @@ impl ProtocolParameters {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-impl<'de> Deserialize<'de> for ProtocolParameters {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+impl<'de> serde::Deserialize<'de> for ProtocolParameters {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         crate::utils::serde::deserialize_proxy(d)
     }
 }
@@ -498,138 +493,6 @@ impl<C> cbor::encode::Encode<C> for ProtocolParameters {
         encode_rationale(e, &self.min_fee_ref_script_lovelace_per_byte)?;
 
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct GlobalParameters {
-    /// The maximum depth of a rollback, also known as the security parameter 'k'.
-    /// This translates down to the length of our volatile storage, containing states of the ledger
-    /// which aren't yet considered final.
-    pub consensus_security_param: usize,
-
-    /// Multiplier applied to the CONSENSUS_SECURITY_PARAM to determine the epoch length.
-    pub epoch_length_scale_factor: usize,
-
-    /// Inverse of the active slot coefficient (i.e. 1/f);
-    pub active_slot_coeff_inverse: usize,
-
-    /// Maximum supply of Ada, in lovelace (1 Ada = 1,000,000 Lovelace)
-    pub max_lovelace_supply: Lovelace,
-
-    /// Number of slots for a single KES validity period.
-    pub slots_per_kes_period: u64,
-
-    /// Maximum number of KES key evolution. Combined with SLOTS_PER_KES_PERIOD, these values
-    /// indicates the validity period of a KES key before a new one is required.
-    pub max_kes_evolution: u8,
-
-    /// Number of slots in an epoch
-    pub epoch_length: usize,
-
-    /// Relative slot from which data of the previous epoch can be considered stable.
-    pub stability_window: Slot,
-
-    /// Number of slots at the end of each epoch which do NOT contribute randomness to the candidate
-    /// nonce of the following epoch.
-    pub randomness_stabilization_window: u64,
-
-    /// POSIX time (milliseconds) of the System Start.
-    pub system_start: u64,
-}
-
-/// This data type encapsulates the parameters needed by the consensus layer to operate.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ConsensusParameters {
-    randomness_stabilization_window: u64,
-    slots_per_kes_period: u64,
-    max_kes_evolution: u64,
-    active_slot_coeff: SerializedFixedDecimal,
-    era_history: EraHistory,
-    ocert_counters: BTreeMap<PoolId, u64>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct SerializedFixedDecimal(FixedDecimal);
-
-impl Serialize for SerializedFixedDecimal {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&self.0.to_string())
-    }
-}
-
-impl<'a> Deserialize<'a> for SerializedFixedDecimal {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        let s = String::deserialize(deserializer)?;
-        FixedDecimal::from_str(&s, s.len() as u64).map(SerializedFixedDecimal).map_err(serde::de::Error::custom)
-    }
-}
-
-impl ConsensusParameters {
-    /// Create new consensus parameters from the given global parameters.
-    pub fn new(
-        global_parameters: GlobalParameters,
-        era_history: &EraHistory,
-        ocert_counters: BTreeMap<PoolId, u64>,
-    ) -> Self {
-        Self::create(
-            global_parameters.randomness_stabilization_window,
-            global_parameters.slots_per_kes_period,
-            global_parameters.max_kes_evolution as u64,
-            1f64 / global_parameters.active_slot_coeff_inverse as f64,
-            era_history,
-            ocert_counters,
-        )
-    }
-
-    /// Create new consensus parameters from individual values.
-    pub fn create(
-        randomness_stabilization_window: u64,
-        slots_per_kes_period: u64,
-        max_kes_evolution: u64,
-        active_slot_coeff: f64,
-        era_history: &EraHistory,
-        ocert_counters: BTreeMap<PoolId, u64>,
-    ) -> ConsensusParameters {
-        let active_slot_coeff = FixedDecimal::from((active_slot_coeff * 100.0) as u64) / FixedDecimal::from(100u64);
-        Self {
-            randomness_stabilization_window,
-            slots_per_kes_period,
-            max_kes_evolution,
-            active_slot_coeff: SerializedFixedDecimal(active_slot_coeff),
-            era_history: era_history.clone(),
-            ocert_counters,
-        }
-    }
-
-    pub fn era_history(&self) -> &EraHistory {
-        &self.era_history
-    }
-
-    pub fn randomness_stabilization_window(&self) -> u64 {
-        self.randomness_stabilization_window
-    }
-
-    pub fn slot_to_kes_period(&self, slot: Slot) -> u64 {
-        u64::from(slot) / self.slots_per_kes_period
-    }
-
-    pub fn max_kes_evolutions(&self) -> u64 {
-        self.max_kes_evolution
-    }
-
-    pub fn latest_opcert_sequence_number(&self, pool_id: &PoolId) -> Option<u64> {
-        self.ocert_counters.get(pool_id).copied()
-    }
-
-    pub fn active_slot_coeff(&self) -> FixedDecimal {
-        self.active_slot_coeff.0.clone()
     }
 }
 

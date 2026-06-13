@@ -1,6 +1,7 @@
 export AMARU_NETWORK ?= preprod
 export AMARU_PEER_ADDRESS ?= 127.0.0.1:3001
 AWS_DEFAULT_REGION ?= auto
+BOOTSTRAP_TARGET_EPOCH ?=
 BOOTSTRAP_SNAPSHOT_EPOCH ?=
 BUCKET_NAME ?=
 ENDPOINT ?=
@@ -77,8 +78,8 @@ help:
 bootstrap: ## &start Bootstrap Amaru from scratch (snapshots + headers + ledger-state + nonces)
 	cargo run --profile $(BUILD_PROFILE) -- $(COMMON_ARGS) bootstrap $(ARGS)
 
-create-snapshots: ## &start Create a three-epoch bootstrap snapshot set (set BOOTSTRAP_SNAPSHOT_EPOCH to override auto epoch)
-	cargo run --profile $(BUILD_PROFILE) -- $(COMMON_ARGS) create-snapshots $(if $(BOOTSTRAP_SNAPSHOT_EPOCH),--epoch $(BOOTSTRAP_SNAPSHOT_EPOCH),) $(ARGS)
+create-snapshots: ## &start Create a three-epoch bootstrap snapshots (set BOOTSTRAP_TARGET_EPOCH to override auto epoch)
+	cargo run --profile $(BUILD_PROFILE) -- $(COMMON_ARGS) create-snapshots $(if $(BOOTSTRAP_TARGET_EPOCH),--epoch $(BOOTSTRAP_TARGET_EPOCH),) $(ARGS)
 
 publish-bootstrap-snapshots: ## &start Upload and publish the three existing bootstrap snapshots starting at $BOOTSTRAP_SNAPSHOT_EPOCH
 	@set -euo pipefail; \

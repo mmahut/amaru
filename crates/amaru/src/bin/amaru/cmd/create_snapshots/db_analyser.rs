@@ -21,6 +21,7 @@ use std::{
     thread,
 };
 
+use amaru_kernel::Slot;
 use tracing::{info, warn};
 
 const DB_ANALYSER_PROGRESS_REPORT_INTERVAL_SECS: f64 = 30.0;
@@ -50,8 +51,8 @@ pub(super) fn run_db_analyser(
     binary: &str,
     config_dir: &Path,
     db_dir: &Path,
-    target_slot: u64,
-    analyse_from: Option<u64>,
+    target_slot: Slot,
+    analyse_from: Option<Slot>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config_dir = config_dir.canonicalize()?;
     let db_dir = db_dir.canonicalize()?;
@@ -135,8 +136,8 @@ where
 
 #[derive(Debug)]
 pub(super) struct DbAnalyserLogRelay {
-    target_slot: u64,
-    start_slot: u64,
+    target_slot: Slot,
+    start_slot: Slot,
     last_progress_report_elapsed_secs: Option<f64>,
 }
 
@@ -148,8 +149,8 @@ pub(super) enum DbAnalyserLogAction {
 }
 
 impl DbAnalyserLogRelay {
-    pub(super) fn new(target_slot: u64, analyse_from: Option<u64>) -> Self {
-        Self { target_slot, start_slot: analyse_from.unwrap_or(0), last_progress_report_elapsed_secs: None }
+    pub(super) fn new(target_slot: Slot, analyse_from: Option<Slot>) -> Self {
+        Self { target_slot, start_slot: analyse_from.unwrap_or_default(), last_progress_report_elapsed_secs: None }
     }
 
     pub(super) fn handle_line(&mut self, line: &str) -> DbAnalyserLogAction {
@@ -189,7 +190,7 @@ impl DbAnalyserLogRelay {
     }
 
     fn started_message(&self) -> String {
-        if self.start_slot == 0 {
+        if self.start_slot == Slot::default() {
             format!("db-analyser started: replaying to slot {}", self.target_slot)
         } else {
             format!(
@@ -199,7 +200,7 @@ impl DbAnalyserLogRelay {
         }
     }
 
-    fn progress_message(&self, elapsed_secs: f64, current_slot: u64) -> String {
+    fn progress_message(&self, elapsed_secs: f64, current_slot: Slot) -> String {
         if self.is_restoring_resume_snapshot(current_slot) {
             return format!(
                 "db-analyser resume: still restoring stored ledger snapshot at slot {} before replaying to slot {} (elapsed {})",
@@ -209,9 +210,14 @@ impl DbAnalyserLogRelay {
             );
         }
 
-        let capped_slot = current_slot.clamp(self.start_slot, self.target_slot);
-        let done_slots = capped_slot.saturating_sub(self.start_slot);
-        let total_slots = self.target_slot.saturating_sub(self.start_slot).max(1);
+        let current_slot = current_slot.as_u64();
+        let start_slot = self.start_slot.as_u64();
+        let target_slot = self.target_slot.as_u64();
+
+        let capped_slot = current_slot.clamp(start_slot, target_slot);
+        let done_slots = capped_slot.saturating_sub(start_slot);
+        let total_slots = target_slot.saturating_sub(start_slot).max(1);
+
         let progress = done_slots as f64 / total_slots as f64;
         let eta_secs =
             if progress > 0.0 && progress < 1.0 { elapsed_secs * ((1.0 - progress) / progress) } else { 0.0 };
@@ -226,8 +232,8 @@ impl DbAnalyserLogRelay {
         )
     }
 
-    fn is_restoring_resume_snapshot(&self, current_slot: u64) -> bool {
-        self.start_slot > 0 && current_slot <= self.start_slot && self.start_slot < self.target_slot
+    fn is_restoring_resume_snapshot(&self, current_slot: Slot) -> bool {
+        self.start_slot > Slot::default() && current_slot <= self.start_slot && self.start_slot < self.target_slot
     }
 }
 
@@ -242,18 +248,17 @@ fn parse_db_analyser_started_line(line: &str) -> Option<f64> {
     rest.starts_with("Started StoreLedgerStateAt (SlotNo ").then_some(elapsed_secs)
 }
 
-pub(super) fn parse_db_analyser_progress_line(line: &str) -> Option<(f64, u64)> {
+pub(super) fn parse_db_analyser_progress_line(line: &str) -> Option<(f64, Slot)> {
     let (elapsed_secs, rest) = parse_db_analyser_elapsed_line(line)?;
     if !rest.starts_with("BlockNo ") {
         return None;
     }
-
     let slot_fragment = rest.split_once("SlotNo ")?.1;
     let slot = slot_fragment.split_whitespace().next()?.parse().ok()?;
     Some((elapsed_secs, slot))
 }
 
-fn parse_db_analyser_snapshot_stored_line(line: &str) -> Option<(f64, u64)> {
+fn parse_db_analyser_snapshot_stored_line(line: &str) -> Option<(f64, Slot)> {
     let (elapsed_secs, rest) = parse_db_analyser_elapsed_line(line)?;
     let slot = rest.strip_prefix("Snapshot stored at SlotNo ")?.split_whitespace().next()?.parse().ok()?;
     Some((elapsed_secs, slot))
@@ -279,16 +284,16 @@ fn format_seconds(seconds: f64) -> String {
     }
 }
 
-pub(super) fn exact_snapshot_dir(ledger_snapshot_dir: &Path, slot: u64) -> Option<PathBuf> {
+pub(super) fn exact_snapshot_dir(ledger_snapshot_dir: &Path, slot: Slot) -> Option<PathBuf> {
     let path = ledger_snapshot_dir.join(format!("{slot}_db-analyser"));
     path.is_dir().then_some(path)
 }
 
 pub(super) fn select_analyse_from_slot(
     ledger_snapshot_dir: &Path,
-    target_slot: u64,
-    previous_snapshot_slot: Option<u64>,
-) -> Result<Option<u64>, Box<dyn std::error::Error>> {
+    target_slot: Slot,
+    previous_snapshot_slot: Option<Slot>,
+) -> Result<Option<Slot>, Box<dyn std::error::Error>> {
     let Some(previous_snapshot_slot) = previous_snapshot_slot else {
         return Ok(latest_snapshot_slot_at_or_before(ledger_snapshot_dir, target_slot)?);
     };
@@ -316,13 +321,13 @@ pub(super) fn select_analyse_from_slot(
 
 pub(super) fn latest_snapshot_slot_at_or_before(
     ledger_snapshot_dir: &Path,
-    target_slot: u64,
-) -> Result<Option<u64>, io::Error> {
+    target_slot: Slot,
+) -> Result<Option<Slot>, io::Error> {
     if !ledger_snapshot_dir.try_exists()? {
         return Ok(None);
     }
 
-    let mut best: Option<u64> = None;
+    let mut best: Option<Slot> = None;
     for entry in fs::read_dir(ledger_snapshot_dir)? {
         let entry = entry?;
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
@@ -339,17 +344,19 @@ pub(super) fn latest_snapshot_slot_at_or_before(
     Ok(best)
 }
 
-pub(super) fn parse_snapshot_slot_dir_name(name: &str) -> Option<u64> {
+pub(super) fn parse_snapshot_slot_dir_name(name: &str) -> Option<Slot> {
     name.strip_suffix("_db-analyser")?.parse().ok()
 }
 
 #[cfg(test)]
 mod tests {
+    use amaru_kernel::Slot;
+
     use super::{DbAnalyserLogAction, DbAnalyserLogRelay};
 
     #[test]
     fn started_message_explains_resume_source() {
-        let mut relay = DbAnalyserLogRelay::new(134_524_753, Some(134_092_758));
+        let mut relay = DbAnalyserLogRelay::new(Slot::from(134_524_753), Some(Slot::from(134_092_758)));
 
         assert_eq!(
             relay.handle_line("[0.0s] Started StoreLedgerStateAt (SlotNo 134524753)"),
@@ -362,7 +369,7 @@ mod tests {
 
     #[test]
     fn progress_message_describes_resume_restore_before_replay() {
-        let mut relay = DbAnalyserLogRelay::new(134_524_753, Some(134_092_758));
+        let mut relay = DbAnalyserLogRelay::new(Slot::from(134_524_753), Some(Slot::from(134_092_758)));
 
         assert_eq!(
             relay.handle_line("[32.0s] BlockNo 42 SlotNo 134092758"),
@@ -375,7 +382,7 @@ mod tests {
 
     #[test]
     fn progress_message_switches_to_percentage_after_resume_slot() {
-        let mut relay = DbAnalyserLogRelay::new(134_524_753, Some(134_092_758));
+        let mut relay = DbAnalyserLogRelay::new(Slot::from(134_524_753), Some(Slot::from(134_092_758)));
 
         assert_eq!(
             relay.handle_line("[32.0s] BlockNo 42 SlotNo 134100000"),

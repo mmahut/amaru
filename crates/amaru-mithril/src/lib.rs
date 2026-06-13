@@ -21,7 +21,7 @@ use std::{
     sync::Arc,
 };
 
-use amaru_kernel::{Hasher, NetworkName, Point, cbor};
+use amaru_kernel::{Hasher, NetworkName, Point, Slot, cbor};
 use async_trait::async_trait;
 use flate2::{Compression, GzBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
@@ -377,12 +377,12 @@ pub fn first_missing_immutable_chunk(immutable_dir: &Path) -> Result<u64, io::Er
     }
 }
 
-pub fn chunk_for_slot(slot: u64) -> u64 {
-    slot / 21_600
+pub fn chunk_for_slot(slot: Slot) -> u64 {
+    u64::from(slot) / 21_600
 }
 
 pub fn from_chunk_for_resume_point(latest_chunk: Option<u64>, resume_point: Point) -> u64 {
-    latest_chunk.unwrap_or_else(|| chunk_for_slot(resume_point.slot_or_default().into()).saturating_sub(1))
+    latest_chunk.unwrap_or_else(|| chunk_for_slot(resume_point.slot_or_default()).saturating_sub(1))
 }
 
 #[cfg(test)]

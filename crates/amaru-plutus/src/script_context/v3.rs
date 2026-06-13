@@ -531,7 +531,7 @@ impl ToPlutusData<3> for PlutusStakeAddress {
 
 #[cfg(test)]
 mod tests {
-    use amaru_kernel::{NetworkName, Transaction, cbor, to_cbor};
+    use amaru_kernel::{PREPROD_ERA_HISTORY, PREPROD_GLOBAL_PARAMETERS, Transaction, cbor, to_cbor};
     use test_case::test_case;
 
     use super::{
@@ -555,9 +555,6 @@ mod tests {
         // If not, we should fail early.
         assert_eq!(test_vector.meta.plutus_version, 3);
 
-        // this should probably be encoded in the TestVector itself
-        let network = NetworkName::Preprod;
-
         let transaction: Transaction = cbor::decode(&test_vector.input.transaction_bytes).unwrap();
 
         let utxos = test_vector.input.utxo.clone().into();
@@ -567,8 +564,9 @@ mod tests {
             transaction.tx_id(),
             &utxos,
             &0.into(),
-            network,
-            network.into(),
+            // These should probably be encoded in the TestVector itself
+            &PREPROD_ERA_HISTORY,
+            &PREPROD_GLOBAL_PARAMETERS,
         )
         .unwrap();
 

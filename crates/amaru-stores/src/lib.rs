@@ -19,7 +19,7 @@ pub mod rocksdb;
 pub mod tests {
     use amaru_kernel::{
         Anchor, ComparableProposalId, DRepRegistration, Epoch, EraHistory, Hash, MemoizedTransactionOutput,
-        NetworkName, PREPROD_DEFAULT_PROTOCOL_PARAMETERS, Point, PoolId, PoolParams, Slot, StakeCredential,
+        PREPROD_DEFAULT_PROTOCOL_PARAMETERS, PREPROD_ERA_HISTORY, Point, PoolId, PoolParams, Slot, StakeCredential,
         TransactionInput, any_certificate_pointer, any_hash28, any_pool_params, any_proposal_id, any_stake_credential,
     };
     use amaru_ledger::{
@@ -167,13 +167,11 @@ pub mod tests {
         let point = Point::Specific(slot, Hash::from([0u8; 32]));
         let slot_leader = any_hash28().new_tree(runner).unwrap().current();
 
-        let era_history = (*Into::<&'static EraHistory>::into(NetworkName::Preprod)).clone();
-
         {
             let context = store.create_transaction();
 
             context.save(
-                &era_history,
+                &PREPROD_ERA_HISTORY,
                 &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
                 GovernanceActivity::default(),
                 &point,
@@ -301,10 +299,9 @@ pub mod tests {
             proposals: std::iter::empty(),
             votes: std::iter::empty(),
         };
-        let era_history = (*Into::<&'static EraHistory>::into(NetworkName::Preprod)).clone();
         let context = store.create_transaction();
         context.save(
-            &era_history,
+            &PREPROD_ERA_HISTORY,
             &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
             GovernanceActivity::default(),
             &point,
@@ -333,10 +330,9 @@ pub mod tests {
             votes: std::iter::empty(),
         };
 
-        let era_history = (*Into::<&'static EraHistory>::into(NetworkName::Preprod)).clone();
         let context = store.create_transaction();
         context.save(
-            &era_history,
+            &PREPROD_ERA_HISTORY,
             &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
             GovernanceActivity::default(),
             &point,
@@ -364,10 +360,9 @@ pub mod tests {
             proposals: std::iter::empty(),
             votes: std::iter::empty(),
         };
-        let era_history = (*Into::<&'static EraHistory>::into(NetworkName::Preprod)).clone();
         let context = store.create_transaction();
         context.save(
-            &era_history,
+            &PREPROD_ERA_HISTORY,
             &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
             GovernanceActivity::default(),
             &point,
@@ -412,10 +407,9 @@ pub mod tests {
 
         assert!(store.iter_dreps()?.any(|(key, _)| key == fixture.drep_key), "DRep not present before removal");
 
-        let era_history = (*Into::<&'static EraHistory>::into(NetworkName::Preprod)).clone();
         let context = store.create_transaction();
         context.save(
-            &era_history,
+            &PREPROD_ERA_HISTORY,
             &PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
             GovernanceActivity::default(),
             &point,

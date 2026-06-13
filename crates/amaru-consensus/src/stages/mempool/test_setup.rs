@@ -13,7 +13,8 @@
 // limitations under the License.
 
 use amaru_kernel::{
-    Hash, NetworkName, Transaction, TransactionBody, TransactionInput, WitnessSet, size::TRANSACTION_BODY,
+    Hash, PREPROD_ERA_HISTORY, PREPROD_GLOBAL_PARAMETERS, Transaction, TransactionBody, TransactionInput, WitnessSet,
+    size::TRANSACTION_BODY,
 };
 use amaru_metrics::{MetricsEvent, mempool::MempoolMetrics};
 use amaru_ouroboros::{MempoolMsg, MockCanValidateBlocks, ResourceMempool, TxInsertResult, TxOrigin};
@@ -73,8 +74,9 @@ pub fn setup(prep: &TestPrep) -> (SimulationRunning, DeserializerGuards, Logs) {
     let guards = register_guards();
 
     let mut network = SimulationBuilder::default().with_trace_buffer(TraceBuffer::new_shared(100, 1_000_000));
-    let era_history = <&amaru_kernel::EraHistory>::from(NetworkName::Preprod);
-    let global_parameters = <&amaru_kernel::GlobalParameters>::from(NetworkName::Preprod);
+    let era_history = &*PREPROD_ERA_HISTORY;
+    let global_parameters = &PREPROD_GLOBAL_PARAMETERS;
+
     network.resources().put::<ResourceParameters>(global_parameters.clone());
     network.resources().put::<ResourceEraHistory>(era_history.clone());
     network.resources().put::<ResourceBlockValidation>(std::sync::Arc::new(MockCanValidateBlocks));

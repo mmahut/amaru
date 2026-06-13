@@ -30,8 +30,9 @@ use amaru_metrics::ledger::LedgerMetrics;
 use amaru_observability::{info_span, trace_span};
 use amaru_ouroboros_traits::{HasStakeDistribution, PoolSummary, has_stake_distribution::GetPoolError};
 use amaru_plutus::arena_pool::ArenaPool;
+use num::CheckedSub;
 use thiserror::Error;
-use tracing::{Span, info, trace};
+use tracing::{Span, info, trace, warn};
 
 use crate::{
     context::{DefaultPreparationContext, DefaultValidationContext},
@@ -224,6 +225,10 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
 
     pub fn era_history(&self) -> &EraHistory {
         &self.era_history
+    }
+
+    pub fn global_parameters(&self) -> &GlobalParameters {
+        &self.global_parameters
     }
 
     /// Inspect the tip of this ledger state. This corresponds to the point of the latest block
@@ -419,7 +424,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         let next_epoch = unsafe_slot_to_epoch(&self.era_history, next_slot);
 
         // Once we reach the stability window, compute rewards unless we've already done so.
-        let is_stake_distribution_stable = next_relative_slot >= self.global_parameters.stability_window;
+        let is_stake_distribution_stable = next_relative_slot >= self.global_parameters.stability_window();
 
         // FIXME: Asynchronous rewards calculation
         //
@@ -474,7 +479,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             let security_param = self.global_parameters.consensus_security_param;
 
             // Yield any now-stable state change
-            let now_stable = if self.volatile.len() >= security_param {
+            let now_stable = if self.volatile.len() as u64 >= security_param {
                 let now_stable = self.volatile.pop_front().unwrap_or_else(|| {
                     unreachable!(
                         "pre-condition: self.volatile.len()={} >= consensus_security_param={}",
@@ -651,6 +656,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             self.network(),
             self.protocol_parameters(),
             self.era_history(),
+            self.global_parameters(),
             self.governance_activity(),
             TransactionPointer { slot, transaction_index: 0 },
             transaction,
@@ -726,6 +732,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 self.network(),
                 self.protocol_parameters(),
                 self.era_history(),
+                self.global_parameters(),
                 self.governance_activity(),
                 block,
             )?;
@@ -865,19 +872,25 @@ pub fn initial_stake_distributions(
     snapshots: &impl HistoricalStores,
     era_history: &EraHistory,
 ) -> Result<VecDeque<StakeDistribution>, StoreError> {
-    let latest_epoch = snapshots.most_recent_snapshot();
-
     let mut stake_distributions = VecDeque::new();
 
-    let epoch_for_rewards = Epoch::from(latest_epoch - Epoch::from(2));
-    let epoch_for_leader_schedule = Epoch::from(latest_epoch - Epoch::from(1));
+    let latest_epoch = snapshots.most_recent_snapshot();
+    let epoch_for_leader_schedule = latest_epoch.checked_sub(Epoch::ONE);
+    let epoch_for_rewards = latest_epoch.checked_sub(Epoch::TWO);
 
-    for epoch in [epoch_for_rewards, epoch_for_leader_schedule, latest_epoch] {
-        let snapshot = snapshots.for_epoch(epoch)?;
-
-        stake_distributions.push_front(
-            compute_stake_distribution(&snapshot, era_history).map_err(|err| StoreError::Internal(err.into()))?,
-        );
+    for (ix, epoch) in [epoch_for_rewards, epoch_for_leader_schedule, Some(latest_epoch)].into_iter().enumerate() {
+        if let Some(epoch) = epoch {
+            let snapshot = snapshots.for_epoch(epoch)?;
+            stake_distributions.push_front(
+                compute_stake_distribution(&snapshot, era_history).map_err(|err| StoreError::Internal(err.into()))?,
+            );
+        } else {
+            warn!(
+                "ignoring initial stake distribution for epoch 'e - {}', where e = {}; not available",
+                2 - ix,
+                latest_epoch
+            );
+        }
     }
 
     Ok(stake_distributions)
@@ -950,10 +963,14 @@ impl HasStakeDistribution for StakeDistributionObserver {
             // Either way, we do know at this point how to forecast this slot.
             .slot_to_epoch_unchecked_horizon(slot)
             .map_err(GetPoolError::SlotToEpochConversionFailure)?
-            - 2;
+            .checked_sub(Epoch::TWO);
+
         let view = self.view.lock().unwrap();
-        let stake_distribution =
-            view.iter().find(|s| s.epoch == epoch).ok_or(GetPoolError::StakeDistributionNotAvailable(slot, epoch))?;
+
+        let stake_distribution = view
+            .iter()
+            .find(|s| Some(s.epoch) == epoch)
+            .ok_or(GetPoolError::StakeDistributionNotAvailable(slot, epoch))?;
 
         Ok(stake_distribution.pools.get(pool).map(|st| PoolSummary {
             vrf: st.parameters.vrf,

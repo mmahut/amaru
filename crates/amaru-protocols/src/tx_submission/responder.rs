@@ -761,7 +761,7 @@ pub enum TxSubmissionMsg {
 mod tests {
     use std::{collections::BTreeMap, sync::Arc};
 
-    use amaru_kernel::{EraName, TESTNET_ERA_HISTORY, Transaction};
+    use amaru_kernel::{EraHistory, EraName, Transaction};
     use amaru_mempool::strategies::InMemoryMempool;
     use amaru_ouroboros_traits::{
         MempoolSeqNo, TransactionValidationError, TxInsertResult, TxOrigin, TxRejectReason,
@@ -772,7 +772,7 @@ mod tests {
     use crate::tx_submission::{assert_actions_eq, tests::create_transactions};
 
     fn test_era() -> EraName {
-        TESTNET_ERA_HISTORY.current_era_tag()
+        EraHistory::default().current_era_tag()
     }
 
     #[tokio::test]
@@ -991,7 +991,7 @@ mod tests {
         let txs = create_transactions(1);
         let muxer = StageRef::<MuxMessage>::blackhole();
         let mempool_stage = StageRef::<MempoolMsg>::blackhole();
-        let era_history = Arc::new(TESTNET_ERA_HISTORY.clone());
+        let era_history = Arc::new(EraHistory::default());
         let (_state, mut responder) =
             TxSubmissionResponder::new(muxer, test_params(), TxOrigin::Local, mempool_stage, era_history);
 
@@ -1008,7 +1008,7 @@ mod tests {
         let txs = create_transactions(1);
         let muxer = StageRef::<MuxMessage>::blackhole();
         let mempool_stage = StageRef::<MempoolMsg>::blackhole();
-        let era_history = Arc::new(TESTNET_ERA_HISTORY.clone());
+        let era_history = Arc::new(EraHistory::default());
         let (_state, mut responder) =
             TxSubmissionResponder::new(muxer, test_params(), TxOrigin::Local, mempool_stage, era_history);
 
@@ -1023,7 +1023,7 @@ mod tests {
         // No tx_id is currently Inflight; ignore the stale timeout.
         let muxer = StageRef::<MuxMessage>::blackhole();
         let mempool_stage = StageRef::<MempoolMsg>::blackhole();
-        let era_history = Arc::new(TESTNET_ERA_HISTORY.clone());
+        let era_history = Arc::new(EraHistory::default());
         let (_state, mut responder) =
             TxSubmissionResponder::new(muxer, test_params(), TxOrigin::Local, mempool_stage, era_history);
 
@@ -1039,7 +1039,7 @@ mod tests {
         let txs = create_transactions(2);
         let muxer = StageRef::<MuxMessage>::blackhole();
         let mempool_stage = StageRef::<MempoolMsg>::blackhole();
-        let era_history = Arc::new(TESTNET_ERA_HISTORY.clone());
+        let era_history = Arc::new(EraHistory::default());
         let (_state, mut responder) =
             TxSubmissionResponder::new(muxer, test_params(), TxOrigin::Local, mempool_stage, era_history);
 
@@ -1055,7 +1055,7 @@ mod tests {
         let txs = create_transactions(2);
         let muxer = StageRef::<MuxMessage>::blackhole();
         let mempool_stage = StageRef::<MempoolMsg>::blackhole();
-        let era_history = Arc::new(TESTNET_ERA_HISTORY.clone());
+        let era_history = Arc::new(EraHistory::default());
         let (_state, mut responder) =
             TxSubmissionResponder::new(muxer, test_params(), TxOrigin::Local, mempool_stage, era_history);
 
@@ -1076,7 +1076,7 @@ mod tests {
         let txs = create_transactions(2);
         let muxer = StageRef::<MuxMessage>::blackhole();
         let mempool_stage = StageRef::<MempoolMsg>::blackhole();
-        let era_history = Arc::new(TESTNET_ERA_HISTORY.clone());
+        let era_history = Arc::new(EraHistory::default());
         let (_state, mut responder) =
             TxSubmissionResponder::new(muxer, test_params(), TxOrigin::Local, mempool_stage, era_history);
 
@@ -1145,7 +1145,7 @@ mod tests {
                 test_params(),
                 TxOrigin::Local,
                 StageRef::blackhole(),
-                Arc::new(TESTNET_ERA_HISTORY.clone()),
+                Arc::new(EraHistory::default()),
             )
             .1,
             mempool,

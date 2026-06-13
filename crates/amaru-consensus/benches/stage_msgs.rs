@@ -23,7 +23,7 @@ use amaru_consensus::stages::{
     validate_block::ValidateBlockMsg,
 };
 use amaru_kernel::{
-    BlockHeader, BlockHeight, EraName, Peer, Point, TESTNET_ERA_HISTORY, Tip, any_header_hash,
+    BlockHeader, BlockHeight, EraHistory, EraName, Peer, Point, Tip, any_header_hash,
     cardano::network_block::{NetworkBlock, make_block},
     make_header,
     utils::tests::run_strategy,
@@ -79,7 +79,7 @@ fn stage_msgs(c: &mut Criterion) {
 
     let block = make_block();
     #[allow(clippy::expect_used)]
-    let nb = NetworkBlock::new(&TESTNET_ERA_HISTORY, &block).expect("minimal network block");
+    let nb = NetworkBlock::new(&EraHistory::default(), &block).expect("minimal network block");
     let header = BlockHeader::from(make_header(1234, 12345, None));
     let header_content = HeaderContent::new(&header, EraName::Conway);
 

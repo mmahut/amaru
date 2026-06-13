@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::error::Error;
+use std::{error::Error, str::FromStr};
 
-use amaru_kernel::NetworkName;
+use amaru_kernel::{Epoch, Hash, NetworkName, Point, Slot};
 use serde::Deserialize;
 use tracing::info;
 
@@ -32,7 +32,10 @@ struct KoiosTip {
     epoch_no: u64,
 }
 
-pub(super) async fn fetch_current_epoch(client: &reqwest::Client, network: NetworkName) -> Result<u64, Box<dyn Error>> {
+pub(super) async fn fetch_current_epoch(
+    client: &reqwest::Client,
+    network: NetworkName,
+) -> Result<Epoch, Box<dyn Error>> {
     let response = client
         .get(format!("{}/tip", koios_api_base(network)?))
         .header(reqwest::header::ACCEPT, "application/json")
@@ -43,7 +46,8 @@ pub(super) async fn fetch_current_epoch(client: &reqwest::Client, network: Netwo
     let tip = response.json::<Vec<KoiosTip>>().await?.into_iter().next().ok_or("Koios returned empty tip response")?;
 
     info!(epoch = tip.epoch_no, "resolved current epoch from Koios");
-    Ok(tip.epoch_no)
+
+    Ok(Epoch::from(tip.epoch_no))
 }
 
 async fn fetch_block_by_hash(
@@ -79,7 +83,7 @@ fn koios_api_base(network: NetworkName) -> Result<&'static str, Box<dyn Error>> 
 pub(super) async fn fetch_last_block_for_epoch(
     client: &reqwest::Client,
     network: NetworkName,
-    epoch: u64,
+    epoch: Epoch,
 ) -> Result<EpochTarget, Box<dyn Error>> {
     let response = client
         .get(format!("{}/blocks", koios_api_base(network)?))
@@ -97,14 +101,14 @@ pub(super) async fn fetch_last_block_for_epoch(
         .ok_or_else(|| format!("Koios returned no blocks for epoch {epoch}"))?;
 
     let parent_block = fetch_block_by_hash(client, network, &block.parent_hash).await?;
-    let parent_point = format!("{}.{}", parent_block.abs_slot, parent_block.hash);
+    let parent_point = Point::from_str(&format!("{}.{}", parent_block.abs_slot, parent_block.hash))?;
 
-    info!(epoch, slot = block.abs_slot, hash = %block.hash, parent_point, "resolved last produced block for epoch");
+    info!(%epoch, slot = %block.abs_slot, hash = block.hash, %parent_point, "resolved last produced block for epoch");
 
     Ok(EpochTarget {
         epoch,
-        slot: block.abs_slot,
-        hash: block.hash,
+        slot: Slot::from(block.abs_slot),
+        hash: Hash::from_str(&block.hash)?,
         parent_point: Some(parent_point),
         archive_path: None,
         snapshot_path: None,

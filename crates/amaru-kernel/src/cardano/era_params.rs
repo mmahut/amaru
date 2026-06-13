@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use crate::{EraName, cbor, utils::cbor::SerialisedAsMillis};
+use crate::{EraBound, EraName, cbor, utils::cbor::SerialisedAsMillis};
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EraParams {
@@ -34,6 +34,21 @@ impl EraParams {
             return None;
         }
         Some(EraParams { epoch_size_slots, slot_length, era_name })
+    }
+
+    pub fn from_bounds(start: &EraBound, end: &EraBound, era_name: EraName) -> Option<Self> {
+        if end.slot <= start.slot || end.epoch <= start.epoch {
+            return None;
+        }
+
+        let slots_elapsed = end.slot.as_u64() - start.slot.as_u64();
+        let epochs_elapsed = end.epoch - start.epoch;
+        let time_elapsed = end.time.saturating_sub(start.time);
+
+        let epoch_size_slots = slots_elapsed / epochs_elapsed.as_u64();
+        let slot_length = Duration::from_millis(time_elapsed.as_millis() as u64 / slots_elapsed);
+
+        Some(Self { epoch_size_slots, slot_length, era_name })
     }
 }
 

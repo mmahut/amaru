@@ -14,7 +14,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use amaru_kernel::{EraHistory, NetworkMagic, NetworkName, Peer};
+use amaru_kernel::{NetworkMagic, PREPROD_ERA_HISTORY, Peer};
 use amaru_network::connection::TokioConnections;
 use amaru_ouroboros::ConnectionsResource;
 use amaru_pure_stage::{StageGraph, StageRef, tokio::TokioBuilder};
@@ -44,7 +44,6 @@ fn test_keepalive_with_node() {
 
     network.resources().put::<ConnectionsResource>(Arc::new(conn));
 
-    let era_history: &EraHistory = NetworkName::Preprod.into();
     let connection = network.stage("connection", connection::stage);
     let connection = network.wire_up(
         connection,
@@ -55,7 +54,7 @@ fn test_keepalive_with_node() {
             ManagerConfig::default(),
             NetworkMagic::for_testing(),
             StageRef::blackhole(),
-            Arc::new(era_history.clone()),
+            Arc::new(PREPROD_ERA_HISTORY.clone()),
             StageRef::blackhole(),
             StageRef::blackhole(), // dummy manager for test
         ),

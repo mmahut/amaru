@@ -165,7 +165,7 @@ mod tests {
     use amaru_minicbor_extra::{from_cbor, to_cbor};
 
     use crate::{
-        Block, BlockHeader, TESTNET_ERA_HISTORY, Transaction,
+        Block, BlockHeader, PREPROD_ERA_HISTORY, Transaction,
         cardano::network_block::{NetworkBlock, make_block_with_header},
         include_cbor, make_header,
     };
@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn decode_returns_inner_block() {
         let header = BlockHeader::from(make_header(1, 42, None));
-        let era_history = &*TESTNET_ERA_HISTORY;
+        let era_history = &*PREPROD_ERA_HISTORY;
 
         // make a network block from a block
         let block = make_block_with_header(&header);

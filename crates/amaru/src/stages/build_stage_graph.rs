@@ -93,13 +93,7 @@ pub fn build_stage_graph(
     let block_source_stage = stage_graph.stage("block_source", block_source::stage);
     let block_source_sender = block_source_stage.sender();
 
-    let k = {
-        #[expect(clippy::expect_used)]
-        global_parameters
-            .consensus_security_param
-            .try_into()
-            .expect("consensus security param will not be larger than u64::MAX")
-    };
+    let k = global_parameters.consensus_security_param;
 
     // Wire mempool (from main) — kept for its own use even if not passed to adopt_chain in this resolution
     let mempool_stage = stage_graph.wire_up(mempool_stage, MempoolStageState::default()).without_state();

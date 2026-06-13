@@ -21,7 +21,7 @@ use std::{
     time::Instant,
 };
 
-use amaru::{DEFAULT_NETWORK, default_chain_dir, default_data_dir, default_ledger_dir};
+use amaru::{default_chain_dir, default_data_dir, default_ledger_dir};
 use amaru_consensus::store::PraosChainStore;
 use amaru_kernel::{
     BlockHeader, ConsensusParameters, EraHistory, GlobalParameters, Hash, NetworkName, Point, RawBlock,
@@ -44,13 +44,7 @@ pub struct Args {
     ///
     /// Should be one of 'mainnet', 'preprod', 'preview' or `testnet:<magic>` where
     /// `magic` is a 32-bits unsigned value denoting a particular testnet.
-    #[arg(
-        long,
-        value_name = "NETWORK",
-        env = "AMARU_NETWORK",
-        default_value_t = DEFAULT_NETWORK,
-        verbatim_doc_comment
-    )]
+    #[arg(long, value_name = "NETWORK", env = "AMARU_NETWORK", verbatim_doc_comment)]
     network: NetworkName,
 
     /// Path of the ledger on-disk storage.
@@ -193,10 +187,16 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let ledger_dir = args.ledger_dir.unwrap_or_else(|| default_ledger_dir(network).into());
     let chain_dir = args.chain_dir.unwrap_or_else(|| default_chain_dir(network).into());
 
-    let era_history: &EraHistory = network.into();
-    let global_parameters: &GlobalParameters = network.into();
+    let era_history: &EraHistory =
+        network.as_era_history().ok_or_else(|| anyhow!("missing default EraHistory for network: {network}"))?;
+
+    let global_parameters: &GlobalParameters = network
+        .as_global_parameters()
+        .ok_or_else(|| anyhow!("missing default GlobalParameters for network: {network}"))?;
+
     let consensus_parameters =
         Arc::new(ConsensusParameters::new(global_parameters.clone(), era_history, Default::default()));
+
     let block_validator = new_block_validator(network, ledger_dir)?;
     let tip = block_validator.get_tip();
     let chain_store: Arc<dyn ChainStore> = Arc::new(RocksDBStore::open(&RocksDbConfig::new(chain_dir))?);

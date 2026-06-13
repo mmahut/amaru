@@ -15,7 +15,7 @@
 use std::{sync::Arc, time::Duration};
 
 use amaru_kernel::{
-    BlockHeader, HeaderHash, Peer, Point, RawBlock, TESTNET_ERA_HISTORY, Tip,
+    BlockHeader, EraHistory, HeaderHash, Peer, Point, RawBlock, Tip,
     cardano::network_block::{make_block_with_header, make_encoded_block, make_network_block},
 };
 use amaru_ouroboros_traits::{MissingBlocks, StoreError, WriteChainStore, in_memory_chain_store::InMemoryChainStore};
@@ -92,11 +92,11 @@ impl TestPrep {
     }
 
     pub fn raw_block(header: &BlockHeader) -> RawBlock {
-        make_encoded_block(header, &TESTNET_ERA_HISTORY)
+        make_encoded_block(header, &EraHistory::default())
     }
 
     pub fn network_block(header: &BlockHeader) -> NetworkBlock {
-        make_network_block(header, &TESTNET_ERA_HISTORY)
+        make_network_block(header, &EraHistory::default())
     }
 
     pub fn set_anchor(&self, hash: HeaderHash) {

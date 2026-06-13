@@ -14,8 +14,8 @@
 
 use std::{error::Error, fs::remove_dir_all, path::PathBuf};
 
-use amaru::{DEFAULT_NETWORK, bootstrap::bootstrap, default_chain_dir, default_ledger_dir};
-use amaru_kernel::{Epoch, NetworkName};
+use amaru::{bootstrap::bootstrap, default_chain_dir, default_ledger_dir};
+use amaru_kernel::{Epoch, GlobalParameters, NetworkName};
 use clap::{ArgAction, Parser};
 use tracing::{info, warn};
 
@@ -50,29 +50,38 @@ pub struct Args {
     )]
     ledger_dir: Option<PathBuf>,
 
-    /// Bootstrap start epoch from snapshots.json.
+    /// The target bootstrap epoch; this is the epoch Amaru will start from.
     ///
-    /// Bootstrap requires this epoch and the next two consecutive epochs.
-    /// Defaults to the latest available epoch in snapshots.json when unspecified.
+    /// At least 3 past epochs must exist. When omitted, this defaults the latest available epoch
+    /// from known snapshots.
     #[arg(
         long = "epoch",
         value_name = amaru::value_names::UINT,
         env = amaru::env_vars::EPOCH,
     )]
-    epoch: Option<u64>,
+    epoch: Option<Epoch>,
 
     /// Network to bootstrap the node for.
     #[arg(
         long,
         value_name = amaru::value_names::NETWORK,
         env = amaru::env_vars::NETWORK,
-        default_value_t = DEFAULT_NETWORK,
     )]
     network: NetworkName,
+
+    /// Override network's global parameters for custom testnets.
+    #[command(flatten)]
+    global_parameters: GlobalParameters,
+
+    /// Show global network parameter overrides, for custom testnets.
+    #[arg(long)]
+    pub(crate) help_global_parameters: bool,
 }
 
 pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
     let network = args.network;
+
+    let global_parameters = network.as_global_parameters().cloned().unwrap_or(args.global_parameters);
 
     let ledger_dir = args.ledger_dir.unwrap_or_else(|| default_ledger_dir(network).into());
 
@@ -84,7 +93,9 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
         force = %args.force,
         ledger_dir = %ledger_dir.to_string_lossy(),
         network = %network,
-        requested_epoch = ?args.epoch,
+        epoch = args.epoch
+            .map(|e| Box::new(e.to_string()) as Box<dyn tracing::Value>)
+            .unwrap_or_else(|| Box::new(tracing::field::Empty)),
         "running",
     );
 
@@ -114,5 +125,5 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    bootstrap(network, ledger_dir, chain_dir, args.epoch.map(Epoch::from)).await
+    bootstrap(network, &global_parameters, ledger_dir, chain_dir, args.epoch).await
 }

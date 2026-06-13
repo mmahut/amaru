@@ -995,7 +995,7 @@ fn with_prefix_iterator<
 
 #[cfg(test)]
 mod tests {
-    use amaru_kernel::{EraHistory, NetworkName};
+    use amaru_kernel::PREPROD_ERA_HISTORY;
     use amaru_ledger::store::{Store, StoreError};
     use proptest::test_runner::TestRunner;
     use tempfile::TempDir;
@@ -1012,13 +1012,12 @@ mod tests {
     };
 
     fn setup_rocksdb_store(runner: &mut TestRunner) -> Result<(RocksDB, Fixture), StoreError> {
-        let era_history: EraHistory = (*Into::<&'static EraHistory>::into(NetworkName::Preprod)).clone();
         let tmp_dir = TempDir::new().expect("failed to create temp dir");
 
         let store =
             RocksDB::empty(&RocksDbConfig::new(tmp_dir.path().into())).map_err(|e| StoreError::Internal(e.into()))?;
 
-        let fixture = add_test_data_to_store(&store, &era_history, runner)?;
+        let fixture = add_test_data_to_store(&store, &PREPROD_ERA_HISTORY, runner)?;
         Ok((store, fixture))
     }
 

@@ -14,7 +14,9 @@
 
 use std::{fmt::Display, net::SocketAddr, path::PathBuf, sync::Arc};
 
-use amaru_kernel::{NetworkMagic, NetworkName};
+use amaru_kernel::{
+    EraHistory, GlobalParameters, NetworkMagic, NetworkName, PREPROD_ERA_HISTORY, PREPROD_GLOBAL_PARAMETERS,
+};
 use amaru_mempool::MempoolConfig;
 use amaru_ouroboros::ChainStore;
 use amaru_protocols::tx_submission::ResponderParams;
@@ -32,6 +34,8 @@ pub struct Config {
     pub target_downstream_peers: usize,
     pub network: NetworkName,
     pub network_magic: NetworkMagic,
+    pub era_history: EraHistory,
+    pub global_parameters: GlobalParameters,
     pub listen_address: String,
     pub max_extra_ledger_snapshots: MaxExtraLedgerSnapshots,
     pub migrate_chain_db: bool,
@@ -93,6 +97,8 @@ impl Default for Config {
             target_downstream_peers: DEFAULT_DOWNSTREAM_PEERS,
             network: NetworkName::Preprod,
             network_magic: NetworkMagic::PREPROD,
+            era_history: PREPROD_ERA_HISTORY.clone(),
+            global_parameters: PREPROD_GLOBAL_PARAMETERS.clone(),
             listen_address: "0.0.0.0:3000".to_string(),
             max_extra_ledger_snapshots: MaxExtraLedgerSnapshots::default(),
             migrate_chain_db: false,

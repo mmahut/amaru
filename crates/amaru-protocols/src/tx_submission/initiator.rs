@@ -506,7 +506,7 @@ impl AsRef<StageRef<MuxMessage>> for TxSubmissionInitiator {
 mod tests {
     use std::sync::Arc;
 
-    use amaru_kernel::{EraName, TESTNET_ERA_HISTORY, to_cbor};
+    use amaru_kernel::{EraHistory, EraName, to_cbor};
     use amaru_mempool::InMemoryMempool;
     use amaru_ouroboros_traits::{TxOrigin, TxSubmissionMempool};
 
@@ -514,7 +514,7 @@ mod tests {
     use crate::tx_submission::{assert_actions_eq, create_transactions_in_mempool, tests::create_transactions};
 
     fn test_era() -> EraName {
-        TESTNET_ERA_HISTORY.current_era_tag()
+        EraHistory::default().current_era_tag()
     }
 
     #[tokio::test]
@@ -608,11 +608,8 @@ mod tests {
     async fn blocking_request_waits_for_one_new_tx_id() -> anyhow::Result<()> {
         let mempool = new_mempool();
         let txs = create_transactions(1);
-        let (_, mut initiator) = TxSubmissionInitiator::new(
-            StageRef::blackhole(),
-            StageRef::blackhole(),
-            Arc::new(TESTNET_ERA_HISTORY.clone()),
-        );
+        let (_, mut initiator) =
+            TxSubmissionInitiator::new(StageRef::blackhole(), StageRef::blackhole(), Arc::new(EraHistory::default()));
 
         let seq_no = initiator.begin_request_tx_ids_blocking(0, 10).map_err(|error| anyhow::anyhow!(error))?;
 
@@ -628,11 +625,8 @@ mod tests {
     async fn blocking_request_keeps_pending_when_tx_was_removed() -> anyhow::Result<()> {
         let mempool = new_mempool();
         let txs = create_transactions(1);
-        let (_, mut initiator) = TxSubmissionInitiator::new(
-            StageRef::blackhole(),
-            StageRef::blackhole(),
-            Arc::new(TESTNET_ERA_HISTORY.clone()),
-        );
+        let (_, mut initiator) =
+            TxSubmissionInitiator::new(StageRef::blackhole(), StageRef::blackhole(), Arc::new(EraHistory::default()));
 
         let seq_no = initiator.begin_request_tx_ids_blocking(0, 10).map_err(|error| anyhow::anyhow!(error))?;
 
@@ -885,7 +879,7 @@ mod tests {
             TxSubmissionInitiator::new(
                 StageRef::named_for_tests("muxer"),
                 StageRef::blackhole(),
-                Arc::new(TESTNET_ERA_HISTORY.clone()),
+                Arc::new(EraHistory::default()),
             )
             .1,
             mempool,

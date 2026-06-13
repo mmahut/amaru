@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 
-use amaru::{DEFAULT_NETWORK, default_chain_dir};
+use amaru::default_chain_dir;
 use amaru_kernel::{IsHeader, NetworkName, Point};
 use amaru_ouroboros::{ChainStore, ChildTipsMode};
 use amaru_stores::rocksdb::{RocksDbConfig, consensus::RocksDBStore};
@@ -51,7 +51,6 @@ pub struct Args {
         long,
         value_name = amaru::value_names::NETWORK,
         env = amaru::env_vars::NETWORK,
-        default_value_t = DEFAULT_NETWORK,
     )]
     network: NetworkName,
 }

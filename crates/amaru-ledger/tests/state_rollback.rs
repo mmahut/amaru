@@ -15,7 +15,8 @@
 use std::collections::VecDeque;
 
 use amaru_kernel::{
-    BlockHeight, Epoch, EraHistory, GlobalParameters, Hash, NetworkName, Point, ProtocolParameters, Slot, Tip,
+    BlockHeight, Epoch, EraHistory, GlobalParameters, Hash, NetworkName, PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
+    PREPROD_ERA_HISTORY, PREPROD_GLOBAL_PARAMETERS, Point, ProtocolParameters, Slot, Tip,
 };
 use amaru_ledger::{
     epoch_transition::GovernanceActivity,
@@ -111,10 +112,9 @@ fn rollback_after_volatile_front_is_rejected() {
 #[expect(clippy::expect_used)]
 fn make_state() -> State<MockStore, RocksDBHistoricalStores> {
     let network = NetworkName::Preprod;
-    let era_history: EraHistory = <&EraHistory>::from(network).clone();
-    let global_parameters: GlobalParameters = <&GlobalParameters>::from(network).clone();
-    let protocol_parameters: ProtocolParameters =
-        <&ProtocolParameters>::try_from(network).expect("preprod parameters available").clone();
+    let era_history: EraHistory = PREPROD_ERA_HISTORY.clone();
+    let global_parameters: GlobalParameters = PREPROD_GLOBAL_PARAMETERS.clone();
+    let protocol_parameters: ProtocolParameters = PREPROD_DEFAULT_PROTOCOL_PARAMETERS.clone();
 
     let ledger_dir = tempfile::tempdir().expect("tempdir creation succeeds").keep();
     let cfg = RocksDbConfig::new(ledger_dir);

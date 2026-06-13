@@ -15,6 +15,7 @@
 use std::{
     fmt,
     ops::{Add, Sub},
+    str::FromStr,
 };
 
 use minicbor::{Decode, Decoder, Encode};
@@ -29,6 +30,13 @@ impl fmt::Display for Slot {
     }
 }
 
+impl FromStr for Slot {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from(u64::from_str(s).map_err(|e| e.to_string())?))
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, thiserror::Error, serde::Serialize, serde::Deserialize)]
 pub enum SlotArithmeticError {
     #[error("slot arithmetic underflow, subtracting {1} from {0}")]
@@ -36,7 +44,7 @@ pub enum SlotArithmeticError {
 }
 
 impl Slot {
-    pub fn new(slot: u64) -> Self {
+    pub const fn new(slot: u64) -> Self {
         Self(slot)
     }
 

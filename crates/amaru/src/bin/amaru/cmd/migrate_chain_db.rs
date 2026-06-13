@@ -14,7 +14,7 @@
 
 use std::{error::Error, path::PathBuf};
 
-use amaru::{DEFAULT_NETWORK, default_chain_dir};
+use amaru::default_chain_dir;
 use amaru_kernel::NetworkName;
 use amaru_observability::{MIGRATING_DATABASE, OPENING_CHAIN_DB};
 use amaru_ouroboros::StoreError;
@@ -40,7 +40,6 @@ pub struct Args {
         long,
         value_name = amaru::value_names::NETWORK,
         env = amaru::env_vars::NETWORK,
-        default_value_t = DEFAULT_NETWORK,
     )]
     network: NetworkName,
 }

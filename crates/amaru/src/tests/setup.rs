@@ -71,15 +71,19 @@ pub fn create_nodes(rng: &mut RandStdRng, configs: Vec<NodeTestConfig>) -> anyho
 
 /// Create a single node according to its configuration
 /// and populate its resources.
+#[allow(clippy::panic)]
 pub fn create_node(node_config: &NodeTestConfig, stage_graph: &mut impl StageGraph) -> anyhow::Result<TestNodeStages> {
     let config = node_config.make_node_configuration()?;
-    let global_parameters: &GlobalParameters = config.network.into();
+    let global_parameters: &GlobalParameters = config
+        .network
+        .as_global_parameters()
+        .unwrap_or_else(|| panic!("no default GlobalParameters for network: {}", config.network));
     let mut global_parameters = global_parameters.clone();
 
     // The chain length used when generating data is set as the `k` parameter for the node
     // in order to simulate what happens when new tips are added and trigger a move of the best
     // chain anchor.
-    global_parameters.consensus_security_param = node_config.chain_length;
+    global_parameters.consensus_security_param = node_config.chain_length as u64;
     let node_stages = build_node(&config, &global_parameters, None, stage_graph)
         .map_err(|e| anyhow!("Cannot build node.\nThe node config is\n{:?}\n\nThe error is {e:?}", node_config))?;
 

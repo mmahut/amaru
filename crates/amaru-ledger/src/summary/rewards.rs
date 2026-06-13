@@ -378,10 +378,8 @@ impl RewardsSummary {
 
         let (mut blocks_count, mut blocks_per_pool) = RewardsSummary::count_blocks(db)?;
 
-        let efficiency = safe_ratio(
-            blocks_count * global_parameters.active_slot_coeff_inverse as u64,
-            global_parameters.epoch_length as u64,
-        );
+        let efficiency =
+            safe_ratio(blocks_count * global_parameters.active_slot_coeff_inverse, global_parameters.epoch_length());
 
         blocks_count = blocks_count.max(1);
 

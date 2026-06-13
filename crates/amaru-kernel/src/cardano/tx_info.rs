@@ -18,10 +18,11 @@ use itertools::Itertools;
 use thiserror::Error;
 
 use crate::{
-    BorrowedScript, Certificate, EraHistory, EraHistoryError, HasScriptHash, Hash, Lovelace, MemoizedTransactionOutput,
-    NetworkName, OutputReference, PlutusDatums, PlutusMint, PlutusRedeemers, PlutusVotes, PlutusWithdrawals, Proposal,
-    RedeemerEntry, RedeemerKey, RequiredSigners, ScriptContext, ScriptPurpose, TimeRange, TransactionBody,
-    TransactionId, TransactionInput, Utxos, WithdrawalError, WitnessSet, size::SCRIPT, transaction_input_to_string,
+    BorrowedScript, Certificate, EraHistory, EraHistoryError, GlobalParameters, HasScriptHash, Hash, Lovelace,
+    MemoizedTransactionOutput, OutputReference, PlutusDatums, PlutusMint, PlutusRedeemers, PlutusVotes,
+    PlutusWithdrawals, Proposal, RedeemerEntry, RedeemerKey, RequiredSigners, ScriptContext, ScriptPurpose, TimeRange,
+    TransactionBody, TransactionId, TransactionInput, Utxos, WithdrawalError, WitnessSet, size::SCRIPT,
+    transaction_input_to_string,
 };
 
 /// An opaque type that represents the `TxInfo` field used in a [`ScriptContext`].
@@ -89,8 +90,8 @@ impl<'a> TxInfo<'a> {
         tx_id: TransactionId,
         utxos: &'a Utxos,
         slot: &crate::Slot,
-        network: NetworkName,
         era_history: &EraHistory,
+        global_parameters: &GlobalParameters,
     ) -> Result<Self, TxInfoTranslationError> {
         let mut scripts: BTreeMap<Hash<SCRIPT>, BorrowedScript<'_>> = BTreeMap::new();
         let inputs = Self::translate_inputs(&tx.inputs, utxos, &mut scripts)?;
@@ -111,7 +112,7 @@ impl<'a> TxInfo<'a> {
         let withdrawals = tx.withdrawals.as_ref().map(PlutusWithdrawals::try_from).transpose()?.unwrap_or_default();
 
         let valid_range =
-            TimeRange::new(tx.validity_interval_start, tx.validity_interval_end, slot, era_history, network)?;
+            TimeRange::new(tx.validity_interval_start, tx.validity_interval_end, slot, era_history, global_parameters)?;
 
         let signatories = tx.required_signers.as_ref().map(RequiredSigners::from).unwrap_or_default();
 

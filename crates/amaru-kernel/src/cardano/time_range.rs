@@ -14,7 +14,7 @@
 
 use std::time::{Duration, SystemTime};
 
-use crate::{EraHistory, EraHistoryError, GlobalParameters, NetworkName, Slot};
+use crate::{EraHistory, EraHistoryError, GlobalParameters, Slot};
 
 /// An interval of time using POSIX time
 ///
@@ -51,11 +51,10 @@ impl TimeRange {
         valid_to_slot: Option<Slot>,
         tip: &Slot,
         era_history: &EraHistory,
-        network: NetworkName,
+        global_parameters: &GlobalParameters,
     ) -> Result<Self, EraHistoryError> {
-        let parameters: &GlobalParameters = network.into();
         // TODO: Use 'SystemTime' for system_start in GlobalParameters
-        let system_start = SystemTime::UNIX_EPOCH + Duration::from_millis(parameters.system_start);
+        let system_start = SystemTime::UNIX_EPOCH + Duration::from_millis(global_parameters.system_start);
         let lower_bound =
             valid_from_slot.map(|slot| era_history.slot_to_posix_time(slot, *tip, system_start)).transpose()?;
         let upper_bound =

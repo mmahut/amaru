@@ -286,7 +286,7 @@ pub mod tests {
     use std::sync::Arc;
 
     use amaru_kernel::{
-        BlockHeader, EraName, IsHeader, Slot, TESTNET_ERA_HISTORY, any_fake_header, any_headers_chain,
+        BlockHeader, EraHistory, EraName, IsHeader, Slot, any_fake_header, any_headers_chain,
         any_headers_chain_with_root,
         cardano::network_block::{NetworkBlock, make_encoded_block},
         utils::tests::run_strategy,
@@ -502,7 +502,7 @@ pub mod tests {
 
     fn store_blocks(store: Arc<InMemoryChainStore>, headers: &[BlockHeader]) {
         for h in headers {
-            let raw_block = make_encoded_block(h, &TESTNET_ERA_HISTORY);
+            let raw_block = make_encoded_block(h, &EraHistory::default());
             store.store_block(&h.hash(), &raw_block).unwrap();
         }
     }

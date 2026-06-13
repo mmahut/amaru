@@ -21,14 +21,14 @@ use std::{
 };
 
 use crate::{
-    Epoch, EraBound, EraName, EraSummary, MAINNET_GLOBAL_PARAMETERS, PREPROD_GLOBAL_PARAMETERS, Slot,
-    TESTNET_GLOBAL_PARAMETERS,
+    Epoch, EraBound, EraName, EraSummary, MAINNET_GLOBAL_PARAMETERS, PREPROD_GLOBAL_PARAMETERS,
+    PREVIEW_GLOBAL_PARAMETERS, Slot,
     cardano::{era_params::EraParams, slot::SlotArithmeticError},
     cbor,
 };
 
 // A complete history of eras that have taken place.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EraHistory {
     /// Number of slots for which the chain growth property guarantees at least k blocks.
     ///
@@ -40,6 +40,23 @@ pub struct EraHistory {
 
     /// EraSummary of each era boundaries.
     eras: Vec<EraSummary>,
+}
+
+impl Default for EraHistory {
+    fn default() -> Self {
+        let eras: [EraSummary; 1] = [EraSummary {
+            start: EraBound { time: Duration::from_secs(0), slot: Slot::from(0), epoch: Epoch::from(0) },
+            end: None,
+
+            params: EraParams {
+                epoch_size_slots: 86400, // one day
+                slot_length: Duration::from_secs(1),
+                era_name: EraName::Conway,
+            },
+        }];
+
+        EraHistory::new(&eras, Slot::new(25920))
+    }
 }
 
 /// Era history for Mainnet retrieved with:
@@ -161,7 +178,7 @@ pub static MAINNET_ERA_HISTORY: LazyLock<EraHistory> = LazyLock::new(|| {
             },
         },
     ];
-    EraHistory::new(&eras, MAINNET_GLOBAL_PARAMETERS.stability_window)
+    EraHistory::new(&eras, MAINNET_GLOBAL_PARAMETERS.stability_window())
 });
 
 /// Era history for Preprod retrieved with:
@@ -260,7 +277,7 @@ pub static PREPROD_ERA_HISTORY: LazyLock<EraHistory> = LazyLock::new(|| {
         },
     ];
 
-    EraHistory::new(&eras, PREPROD_GLOBAL_PARAMETERS.stability_window)
+    EraHistory::new(&eras, PREPROD_GLOBAL_PARAMETERS.stability_window())
 });
 
 /// Era history for Preview retrieved with:
@@ -348,26 +365,7 @@ pub static PREVIEW_ERA_HISTORY: LazyLock<EraHistory> = LazyLock::new(|| {
         },
     ];
 
-    EraHistory::new(&eras, Slot::from(25920))
-});
-
-/// A default era history for testnets
-///
-/// This default `EraHistory` contains a single era which covers 1000 epochs,
-/// with a slot length of 1 second and epoch size of 86400 slots.
-pub static TESTNET_ERA_HISTORY: LazyLock<EraHistory> = LazyLock::new(|| {
-    let eras: [EraSummary; 1] = [EraSummary {
-        start: EraBound { time: Duration::from_secs(0), slot: Slot::from(0), epoch: Epoch::from(0) },
-        end: None,
-
-        params: EraParams {
-            epoch_size_slots: 86400, // one day
-            slot_length: Duration::from_secs(1),
-            era_name: EraName::Conway,
-        },
-    }];
-
-    EraHistory::new(&eras, TESTNET_GLOBAL_PARAMETERS.stability_window)
+    EraHistory::new(&eras, PREVIEW_GLOBAL_PARAMETERS.stability_window())
 });
 
 /// Error type for era history file operations
@@ -591,7 +589,7 @@ impl EraHistory {
             if era.contains_epoch_unchecked_horizon(&epoch) {
                 let epochs_elapsed = epoch - era.start.epoch;
                 let offset = era.start.slot;
-                let slots_elapsed = epochs_elapsed * era.params.epoch_size_slots;
+                let slots_elapsed = u64::from(epochs_elapsed) * era.params.epoch_size_slots;
                 let start = offset.offset_by(slots_elapsed);
                 let end = offset.offset_by(era.params.epoch_size_slots + slots_elapsed);
                 return Ok(EpochEraBounds { start, end: era.end.as_ref().map(|_| end) });
@@ -742,8 +740,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        Epoch, PREPROD_ERA_HISTORY, Slot, any_era_params, any_network_name, from_cbor_no_leftovers_with,
-        load_era_history_from_file, to_cbor,
+        Epoch, MAINNET_ERA_HISTORY, PREPROD_ERA_HISTORY, PREVIEW_ERA_HISTORY, Slot, any_era_params, any_network_name,
+        from_cbor_no_leftovers_with, load_era_history_from_file, to_cbor,
     };
 
     prop_compose! {
@@ -1225,6 +1223,16 @@ mod tests {
         assert_eq!(*original_era_history, loaded_era_history, "Era histories don't match");
 
         std::fs::remove_file(temp_file_path).ok();
+    }
+
+    #[test_case("mainnet", &MAINNET_ERA_HISTORY; "mainnet")]
+    #[test_case("preprod", &PREPROD_ERA_HISTORY; "preprod")]
+    #[test_case("preview", &PREVIEW_ERA_HISTORY; "preview")]
+    fn well_known_network_era_history_pretty_json_snapshot(network: &str, era_history: &EraHistory) {
+        insta::assert_snapshot!(
+            format!("{network}_era_history"),
+            serde_json::to_string_pretty(era_history).expect("failed to serialize era history to pretty JSON"),
+        );
     }
 
     #[test]

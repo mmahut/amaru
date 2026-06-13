@@ -251,8 +251,8 @@ mod tests {
     use std::mem;
 
     use amaru_kernel::{
-        EraHistory, HasTransactionId, NetworkName, Slot, TransactionBody, TransactionPointer, include_cbor,
-        include_json, json,
+        HasTransactionId, PREPROD_ERA_HISTORY, Slot, TransactionBody, TransactionPointer, include_cbor, include_json,
+        json,
     };
     use amaru_tracing_json::assert_trace;
     use test_case::test_case;
@@ -297,7 +297,7 @@ mod tests {
                     &mut ctx,
                     amaru_kernel::Network::Testnet,
                     &amaru_kernel::PREPROD_DEFAULT_PROTOCOL_PARAMETERS,
-                    <&EraHistory>::from(NetworkName::Preprod),
+                    &PREPROD_ERA_HISTORY,
                     (tx.tx_id(), tx_pointer),
                     mem::take(&mut tx.proposals).map(|xs| xs.to_vec()),
                 )

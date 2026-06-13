@@ -246,7 +246,7 @@ impl ToPlutusData<1> for PlutusDatums<'_> {
 // This test logic is basically 100% duplicated with v3. Should be able to simplify.
 #[cfg(test)]
 mod tests {
-    use amaru_kernel::{NetworkName, Transaction, cbor, to_cbor};
+    use amaru_kernel::{PREPROD_ERA_HISTORY, PREPROD_GLOBAL_PARAMETERS, Transaction, cbor, to_cbor};
     use test_case::test_case;
 
     use super::{
@@ -269,9 +269,6 @@ mod tests {
         // If not, we should fail early.
         assert_eq!(test_vector.meta.plutus_version, PLUTUS_VERSION);
 
-        // this should probably be encoded in the TestVector itself
-        let network = NetworkName::Preprod;
-
         let transaction: Transaction = cbor::decode(&test_vector.input.transaction_bytes).unwrap();
 
         let utxos = test_vector.input.utxo.clone().into();
@@ -281,8 +278,9 @@ mod tests {
             transaction.tx_id(),
             &utxos,
             &0.into(),
-            network,
-            network.into(),
+            // TODO: These should probably be encoded in the TestVector itself
+            &PREPROD_ERA_HISTORY,
+            &PREPROD_GLOBAL_PARAMETERS,
         )
         .unwrap();
 

@@ -42,6 +42,7 @@ hex.workspace = true
 include_dir = { workspace = true, features = ["glob"] }
 indoc.workspace = true
 minicbor.workspace = true
+num.workspace = true
 opentelemetry-appender-tracing.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry-semantic-conventions.workspace = true
@@ -72,7 +73,7 @@ tracing.workspace = true
 
 # Internal dependencies ───────────────────────────────────────────────────────┐
 amaru-consensus = { workspace = true, features = ["test-utils"] }
-amaru-kernel = { workspace = true, features = ["tracing"] }
+amaru-kernel = { workspace = true, features = ["tracing", "clap"] }
 amaru-ledger.workspace = true
 amaru-mempool.workspace = true
 amaru-metrics.workspace = true

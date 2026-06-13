@@ -19,7 +19,7 @@ use std::{
 };
 
 use amaru::default_snapshots_dir;
-use amaru_kernel::{Epoch, EraHistory, GlobalParameters, NetworkName};
+use amaru_kernel::{Epoch, NetworkName};
 use amaru_ledger::{
     store::{ReadStore, Snapshot},
     summary::{governance::GovernanceSummary, rewards::RewardsSummary, stake_distribution::StakeDistribution},
@@ -65,17 +65,21 @@ fn db(network: NetworkName, epoch: Epoch) -> Arc<impl Snapshot + Send + Sync> {
 
 include!(concat!("snapshots/", env!("AMARU_NETWORK"), "/generated_compare_snapshot_test_cases.incl"));
 
+#[expect(clippy::panic)]
+#[expect(clippy::expect_used)]
 #[expect(clippy::unwrap_used)]
 fn compare_snapshot(epoch: Epoch) {
-    #[expect(clippy::expect_used)]
     let network: NetworkName =
         env!("AMARU_NETWORK").to_string().parse().expect("$AMARU_NETWORK must be set to a valid network name");
 
     let snapshot = db(network, epoch);
 
-    let global_parameters: &GlobalParameters = network.into();
+    let global_parameters = network
+        .as_global_parameters()
+        .unwrap_or_else(|| panic!("missing default GlobalParameters for network: {network}"));
 
-    let era_history = <&EraHistory>::from(network);
+    let era_history =
+        network.as_era_history().unwrap_or_else(|| panic!("missing default EraHistory for network: {network}"));
 
     let dreps = GovernanceSummary::new(snapshot.as_ref(), era_history).unwrap();
 

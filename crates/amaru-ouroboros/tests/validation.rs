@@ -187,13 +187,14 @@ fn mock_ledger_state(context: &GeneratorContext) -> MockLedgerState {
     }
 }
 
+#[allow(clippy::expect_used)]
 fn consensus_parameters_from_context(context: &GeneratorContext) -> ConsensusParameters {
     ConsensusParameters::create(
         0,
         context.praos_slots_per_kes_period,
         context.praos_max_kes_evolution,
         context.active_slot_coeff(),
-        NetworkName::Preprod.into(),
+        NetworkName::Preprod.as_era_history().expect("missing network default EraHistory"),
         context.operational_certificate_counters.clone(),
     )
 }

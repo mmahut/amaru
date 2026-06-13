@@ -19,8 +19,8 @@ use std::{
 };
 
 use amaru_kernel::{
-    Block, EraHistory, ExUnits, HasExUnits, Hash, HeaderHash, NetworkName, ProtocolParameters, Slot, Transaction,
-    TransactionId, TransactionPointer, size::BLOCK_BODY,
+    Block, EraHistory, ExUnits, GlobalParameters, HasExUnits, Hash, HeaderHash, NetworkName, ProtocolParameters, Slot,
+    Transaction, TransactionId, TransactionPointer, size::BLOCK_BODY,
 };
 use amaru_observability::trace_span;
 use amaru_plutus::arena_pool::ArenaPool;
@@ -181,12 +181,14 @@ impl<A, E> Residual<A> for BlockValidationResidual<E> {
     type TryType = BlockValidation<A, E>;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn execute<C, S: From<C>>(
     context: &mut C,
     arena_pool: &ArenaPool,
     network: NetworkName,
     protocol_params: &ProtocolParameters,
     era_history: &EraHistory,
+    global_parameters: &GlobalParameters,
     governance_activity: GovernanceActivity,
     block: Block,
 ) -> BlockValidation<(), anyhow::Error>
@@ -226,6 +228,7 @@ where
             network,
             protocol_params,
             era_history,
+            global_parameters,
             governance_activity,
             TransactionPointer { slot, transaction_index: i as usize },
             &transaction,
@@ -263,6 +266,7 @@ pub fn validate_transaction<C>(
     network: NetworkName,
     protocol_params: &ProtocolParameters,
     era_history: &EraHistory,
+    global_parameters: &GlobalParameters,
     governance_activity: GovernanceActivity,
     pointer: TransactionPointer,
     transaction: &Transaction,
@@ -295,9 +299,9 @@ where
     transaction::phase_two::execute(
         context,
         arena_pool,
-        network,
         protocol_params,
         era_history,
+        global_parameters,
         pointer,
         transaction.is_expected_valid,
         &transaction.body,

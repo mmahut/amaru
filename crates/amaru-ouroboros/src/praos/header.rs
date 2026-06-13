@@ -106,7 +106,14 @@ pub fn assert_all<'a>(
     let (registered_vrf_key, leader_relative_stake): (Hash<{ vrf::PublicKey::HASH_SIZE }>, FixedDecimal) = ledger_state
         .get_pool(absolute_slot, &pool)
         .map(|pool| {
-            pool.map(|pool| (pool.vrf, FixedDecimal::from(pool.stake) / FixedDecimal::from(pool.active_stake)))
+            pool.map(|pool| {
+                let leader_relative_stake = if pool.active_stake == 0 {
+                    FixedDecimal::from(0u64)
+                } else {
+                    FixedDecimal::from(pool.stake) / FixedDecimal::from(pool.active_stake)
+                };
+                (pool.vrf, leader_relative_stake)
+            })
         })?
         .ok_or(AssertHeaderError::UnknownPool { pool })?;
 
@@ -308,6 +315,9 @@ impl AssertLeaderStakeError {
         leader_relative_stake: &FixedDecimal,
         certified_leader_vrf: &FixedDecimal,
     ) -> Result<(), Self> {
+        if active_slot_coeff >= &FixedDecimal::from(1u64) {
+            return Ok(());
+        }
         let denominator = CERTIFIED_NATURAL_MAX.deref() - certified_leader_vrf;
         let recip_q = CERTIFIED_NATURAL_MAX.deref() / &denominator;
         let c = (&FixedDecimal::from(1u64) - active_slot_coeff).ln();

@@ -14,7 +14,7 @@
 
 use std::{error::Error, fmt::Display, path::PathBuf};
 
-use amaru::{DEFAULT_NETWORK, default_chain_dir};
+use amaru::default_chain_dir;
 use amaru_consensus::effects::find_best_candidate;
 use amaru_kernel::{HeaderHash, IsHeader, NetworkName, to_cbor, utils::string::ListToString};
 use amaru_ouroboros::{ChildTipsMode, DiagnosticChainStore, ReadChainStore};
@@ -39,7 +39,6 @@ pub struct Args {
         long,
         value_name = amaru::value_names::NETWORK,
         env = amaru::env_vars::NETWORK,
-        default_value_t = DEFAULT_NETWORK,
     )]
     network: NetworkName,
 

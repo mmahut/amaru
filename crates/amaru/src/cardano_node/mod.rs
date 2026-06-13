@@ -15,11 +15,14 @@
 use std::{collections::BTreeMap, time::Duration};
 
 use amaru_kernel::{
-    Account, Bytes, DRep, EraBound, EraHistory, EraName, EraParams, EraSummary, Hash, HeaderHash, Lovelace, Network,
-    NetworkName, Nonce, Nullable, Point, PoolId, PoolMetadata, PoolParams, RationalNumber, Relay, RewardAccount, Set,
-    StakeCredential, StakePayload, StrictMaybe, cbor, new_stake_address, reward_account_to_stake_credential, size,
+    Account, Bytes, DRep, EraBound, EraHistory, EraName, EraParams, EraSummary, GlobalParameters, Hash, HeaderHash,
+    Lovelace, Network, NetworkName, Nonce, Nullable, Point, PoolId, PoolMetadata, PoolParams, RationalNumber, Relay,
+    RewardAccount, Set, StakeCredential, StakePayload, StrictMaybe, cbor, new_stake_address,
+    reward_account_to_stake_credential, size,
 };
+use anyhow::anyhow;
 use minicbor::Decoder;
+use tracing::warn;
 
 use crate::bootstrap::InitialNonces;
 
@@ -35,59 +38,33 @@ pub struct ParsedStateSnapshot {
 
 pub fn parse_state_snapshot(
     d: &mut Decoder<'_>,
-    network: &NetworkName,
+    global_parameters: &GlobalParameters,
 ) -> Result<ParsedStateSnapshot, Box<dyn std::error::Error>> {
     d.array()?;
 
     // version
-    // https://github.com/abailly/ouroboros-consensus/blob/1508638f832772d21874e18e48b908fcb791cd49/ouroboros-consensus/src/ouroboros-consensus/Ouroboros/Consensus/Util/Versioned.hs#L95
+    // <https://github.com/IntersectMBO/ouroboros-consensus/blob/617145bd1d36b4dd07ea2dfad4b840e6001ce427/ouroboros-consensus/src/ouroboros-consensus/Ouroboros/Consensus/Util/Versioned.hs#L94-L103>
     d.skip()?;
 
-    // ext ledger state
-    // https://github.com/abailly/ouroboros-consensus/blob/1508638f832772d21874e18e48b908fcb791cd49/ouroboros-consensus/src/ouroboros-consensus/Ouroboros/Consensus/Ledger/Extended.hs#L232
+    // Hardfork states
+    // <https://github.com/IntersectMBO/ouroboros-consensus/blob/617145bd1d36b4dd07ea2dfad4b840e6001ce427/ouroboros-consensus/src/ouroboros-consensus/Ouroboros/Consensus/HardFork/Combinator/State/Types.hs#L84-L101>
     d.array()?;
 
-    // ledger state
-    d.array()?;
+    // Past eras
+    let total_eras = d.array()?.ok_or_else(|| {
+        anyhow!("indefinite encoding used for hard fork states; cannot figure out how many eras to decode.")
+    })? as u8;
+    let mut past_eras: Vec<EraSummary> = Vec::with_capacity(total_eras as usize);
+    for era_tag in 1..=(total_eras - 1_u8) {
+        past_eras.push(decode_partial_era_summary(d, era_tag)?)
+    }
 
-    let mut eras: Vec<EraSummary> = decode_eras(d, network)?;
-
-    d.array()?;
-    let start: EraBound = d.decode()?;
-    eras.push(EraSummary {
-        start,
-        end: None,
-        params: EraParams {
-            epoch_size_slots: network.default_epoch_size_in_slots(),
-            slot_length: Duration::from_secs(1),
-            era_name: EraName::Conway,
-        },
-    });
-
-    let era_history = EraHistory::new(&eras, network.default_stability_window());
-
-    // ledger state
-    // https://github.com/abailly/ouroboros-consensus/blob/1508638f832772d21874e18e48b908fcb791cd49/ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs#L736
-    d.array()?;
-
-    // encoding version (2)
-    d.skip()?;
-
-    d.array()?;
-    // tip
-    // https://github.com/abailly/ouroboros-consensus/blob/1508638f832772d21874e18e48b908fcb791cd49/ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs#L694
-    // the Tip is wrapped in a WithOrigin type hence the double array
-    d.array()?;
-    d.array()?;
-    let slot = d.u64()?;
-    let _height = d.u64()?;
-    let hash: HeaderHash = d.decode()?;
-
-    let begin = d.position();
-    d.skip()?;
-    let end = d.position();
-
-    Ok(ParsedStateSnapshot { slot, hash, era_history, ledger_data_begin: begin, ledger_data_end: end })
+    // Current era
+    let current_era = EraName::try_from(total_eras)?;
+    if current_era != EraName::Conway {
+        warn!(snapshot_era = %current_era, "parsed snapshot has a current era different from 'Conway'; things may break down the line.");
+    }
+    decode_current_era(d, past_eras, current_era, global_parameters)
 }
 
 fn extract_snapshot_nonces_after_prefix(
@@ -105,15 +82,17 @@ fn extract_snapshot_nonces_after_prefix(
     d.skip().map_err(|err| format!("skip header state tip: {err}"))?;
 
     // ChainDepState for Praos
-    d.array().map_err(|err| format!("decode chain dep state: {err}"))?;
-    d.skip().map_err(|err| format!("skip hfc state 1: {err}"))?;
-    d.skip().map_err(|err| format!("skip hfc state 2: {err}"))?;
-    d.skip().map_err(|err| format!("skip hfc state 3: {err}"))?;
-    d.skip().map_err(|err| format!("skip hfc state 4: {err}"))?;
-    d.skip().map_err(|err| format!("skip hfc state 5: {err}"))?;
-    d.skip().map_err(|err| format!("skip hfc state 6: {err}"))?;
+    let num_eras = d
+        .array()
+        .map_err(|err| format!("decode chain dep state: {err}"))?
+        .ok_or("chain dep state encoded as indefinite array; cannot determine numbers of eras")?;
 
-    // the actual PraosState
+    // Previous, terminated, eras.
+    for i in 1..num_eras {
+        d.skip().map_err(|err| format!("skip hfc state {i}: {err}"))?;
+    }
+
+    // The actual PraosState
     d.array().map_err(|err| format!("decode praos state: {err}"))?;
     d.skip().map_err(|err| format!("skip praos era bounds: {err}"))?;
 
@@ -148,66 +127,79 @@ fn extract_snapshot_nonces_after_prefix(
 
 pub fn parse_state_snapshot_with_nonces(
     mut d: Decoder<'_>,
-    network: &NetworkName,
+    global_parameters: &GlobalParameters,
     tail: HeaderHash,
 ) -> Result<(ParsedStateSnapshot, InitialNonces), Box<dyn std::error::Error>> {
     let parsed_snapshot =
-        parse_state_snapshot(&mut d, network).map_err(|err| format!("parse state snapshot prefix: {err}"))?;
+        parse_state_snapshot(&mut d, global_parameters).map_err(|err| format!("parse state snapshot prefix: {err}"))?;
     let initial_nonces = extract_snapshot_nonces_after_prefix(&mut d, &parsed_snapshot, tail)?;
 
     Ok((parsed_snapshot, initial_nonces))
 }
 
-/// This is the number of past eras before the current era in the "standard" Cardano history, e.g
-/// from Byron to Babbage. Bump this number when a hard fork happens.
-pub const PAST_ERAS_NUMBER: u8 = 6;
+fn decode_current_era(
+    d: &mut Decoder<'_>,
+    mut eras: Vec<EraSummary>,
+    current_era: EraName,
+    global_parameters: &GlobalParameters,
+) -> Result<ParsedStateSnapshot, Box<dyn std::error::Error>> {
+    d.array()?;
 
-fn decode_eras(
+    eras.push(EraSummary {
+        start: d.decode()?,
+        end: None,
+        params: EraParams {
+            epoch_size_slots: global_parameters.epoch_length(),
+            slot_length: Duration::from_secs(1),
+            era_name: current_era,
+        },
+    });
+
+    // Versioned ledger state
+    // https://github.com/IntersectMBO/ouroboros-consensus/blob/617145bd1d36b4dd07ea2dfad4b840e6001ce427/ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs#L881
+    d.array()?;
+
+    // encoding version (2)
+    d.skip()?;
+
+    // (Shelley) ledger state
+    // https://github.com/IntersectMBO/ouroboros-consensus/blob/617145bd1d36b4dd07ea2dfad4b840e6001ce427/ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs#L890-L914
+    d.array()?;
+
+    // tip
+    // https://github.com/IntersectMBO/ouroboros-consensus/blob/617145bd1d36b4dd07ea2dfad4b840e6001ce427/ouroboros-consensus-cardano/src/shelley/Ouroboros/Consensus/Shelley/Ledger/Ledger.hs#L846-L857
+    // the Tip is wrapped in a WithOrigin type hence the double array
+    d.array()?;
+    d.array()?;
+    let slot = d.u64()?;
+    let _height = d.u64()?;
+    let hash: HeaderHash = d.decode()?;
+
+    let ledger_data_begin = d.position();
+    d.skip()?;
+    let ledger_data_end = d.position();
+
+    let era_history = EraHistory::new(&eras, global_parameters.stability_window());
+
+    Ok(ParsedStateSnapshot { slot, hash, era_history, ledger_data_begin, ledger_data_end })
+}
+
+fn decode_partial_era_summary(
     d: &mut minicbor::Decoder<'_>,
-    network: &NetworkName,
-) -> Result<Vec<EraSummary>, Box<dyn std::error::Error>> {
-    let mut eras = Vec::new();
+    era_tag: u8,
+) -> Result<EraSummary, Box<dyn std::error::Error>> {
+    d.array()?;
 
-    for era_tag in 1..=PAST_ERAS_NUMBER {
-        d.array()?;
-        let start: EraBound = d.decode()?;
-        let end: EraBound = d.decode()?;
-        let params = if end.slot == 0.into() {
-            #[expect(clippy::expect_used)]
-            EraParams {
-                epoch_size_slots: network.default_epoch_size_in_slots(),
-                slot_length: Duration::from_secs(0),
-                era_name: EraName::try_from(era_tag).expect("iteration over known era tags"),
-            }
-        } else {
-            let end_slot = u64::from(end.slot);
-            let start_slot = u64::from(start.slot);
-            let end_epoch = u64::from(end.epoch);
-            let start_epoch = u64::from(start.epoch);
-            let end_ms = end.time.as_millis() as u64;
-            let start_ms = start.time.as_millis() as u64;
+    let start: EraBound = d.decode()?;
 
-            if end_slot <= start_slot || end_epoch <= start_epoch {
-                return Err("Invalid era bounds (non-increasing)".into());
-            }
-            let slots_elapsed = end_slot - start_slot;
-            let epochs_elapsed = end_epoch - start_epoch;
-            let time_ms_elapsed = end_ms.saturating_sub(start_ms);
+    let end: EraBound = d.decode()?;
 
-            // end_slot > start_slot => slots_elapsed > 0
-            let slot_length = Duration::from_millis(time_ms_elapsed / slots_elapsed);
+    let era_name = EraName::try_from(era_tag)?;
 
-            #[expect(clippy::expect_used)]
-            EraParams {
-                epoch_size_slots: slots_elapsed / epochs_elapsed,
-                slot_length,
-                era_name: EraName::try_from(era_tag).expect("iteration over known era tags"),
-            }
-        };
-        let summary = EraSummary { start, end: Some(end), params };
-        eras.push(summary);
-    }
-    Ok(eras)
+    let params =
+        EraParams::from_bounds(&start, &end, era_name).ok_or_else(|| anyhow!("Invalid era bounds (non-increasing)"))?;
+
+    Ok(EraSummary { start, end: Some(end), params })
 }
 
 pub(crate) fn decode_node_pool_state(

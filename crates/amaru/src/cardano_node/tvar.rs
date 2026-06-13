@@ -26,8 +26,8 @@ use std::{
 };
 
 use amaru_kernel::{
-    Epoch, EraHistory, Hash, HeaderHash, MemoizedTransactionOutput, NetworkName, Point, TransactionInput, cbor,
-    cbor::lazy::LazyDecoder,
+    Epoch, EraHistory, GlobalParameters, Hash, HeaderHash, MemoizedTransactionOutput, NetworkName, Point,
+    TransactionInput, cbor, cbor::lazy::LazyDecoder,
 };
 use amaru_ledger::{
     bootstrap::import_initial_snapshot,
@@ -47,6 +47,7 @@ pub fn import_snapshot_from_tvar<S, F>(
     state_file: &mut std::fs::File,
     utxo_file: &mut std::fs::File,
     network: NetworkName,
+    global_parameters: &GlobalParameters,
     nonce_tail: Option<HeaderHash>,
     with_progress: F,
 ) -> Result<(Epoch, Point, Option<InitialNonces>), Box<dyn std::error::Error>>
@@ -57,14 +58,13 @@ where
     let state_head = read_state_snapshot(state_file)?;
     let (parsed_snapshot, initial_nonces) = if let Some(tail) = nonce_tail {
         let (parsed_snapshot, initial_nonces) =
-            parse_state_snapshot_with_nonces(minicbor::Decoder::new(&state_head), &network, tail)?;
+            parse_state_snapshot_with_nonces(minicbor::Decoder::new(&state_head), global_parameters, tail)?;
         (parsed_snapshot, Some(initial_nonces))
     } else {
         let mut decoder = minicbor::Decoder::new(&state_head);
-        (parse_state_snapshot(&mut decoder, &network)?, None)
+        (parse_state_snapshot(&mut decoder, global_parameters)?, None)
     };
     let point = Point::Specific(parsed_snapshot.slot.into(), parsed_snapshot.hash);
-    let era_history = parsed_snapshot.era_history;
     let new_epoch_state_offset = parsed_snapshot.ledger_data_begin;
 
     info!(point = %point, new_epoch_state_offset, "importing state snapshot with external utxo source");
@@ -75,14 +75,14 @@ where
         db,
         state_file,
         &point,
-        &era_history,
+        &parsed_snapshot.era_history,
         network,
         with_progress,
         decode_node_pool_state,
         decode_node_accounts,
     )?;
 
-    import_utxo_from_tvar(utxo_file, db, with_progress, &point, &era_history, network)?;
+    import_utxo_from_tvar(utxo_file, db, with_progress, &point, &parsed_snapshot.era_history, network)?;
 
     Ok((epoch, point, initial_nonces))
 }

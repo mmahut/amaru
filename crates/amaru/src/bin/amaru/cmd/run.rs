@@ -19,21 +19,22 @@ use std::{
 };
 
 use amaru::{
-    DEFAULT_DOWNSTREAM_PEERS, DEFAULT_LISTEN_ADDRESS, DEFAULT_NETWORK, DEFAULT_UPSTREAM_PEERS, default_chain_dir,
-    default_ledger_dir, default_peer_for_network,
+    DEFAULT_DOWNSTREAM_PEERS, DEFAULT_LISTEN_ADDRESS, DEFAULT_UPSTREAM_PEERS, default_chain_dir, default_ledger_dir,
+    default_peer_for_network,
     metrics::track_system_metrics,
     stages::{
         build_node::build_and_run_node,
         config::{Config, MaxExtraLedgerSnapshots, StoreType},
     },
 };
-use amaru_kernel::NetworkName;
+use amaru_kernel::{EraHistory, GlobalParameters, NetworkName};
 use amaru_mempool::MempoolConfig;
 use amaru_ouroboros::MempoolMsg;
 use amaru_protocols::tx_submission::ResponderParams;
 use amaru_pure_stage::{Sender, trace_buffer::TraceBuffer};
 use amaru_stores::rocksdb::RocksDbConfig;
-use clap::{ArgAction, Parser};
+use anyhow::anyhow;
+use clap::{self, ArgAction, Parser};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use parking_lot::Mutex;
 use thiserror::Error;
@@ -43,6 +44,15 @@ use crate::pid::with_optional_pid_file;
 
 #[derive(Debug, Parser)]
 pub struct Args {
+    /// The target network to run against.
+    #[arg(
+        long,
+        value_name = amaru::value_names::NETWORK,
+        env = amaru::env_vars::NETWORK,
+        display_order = 0,
+    )]
+    network: NetworkName,
+
     /// Path of the chain on-disk storage.
     ///
     /// Defaults to ./chain.<NETWORK>.db when unspecified.
@@ -50,59 +60,9 @@ pub struct Args {
         long,
         value_name = amaru::value_names::DIRECTORY,
         env = amaru::env_vars::CHAIN_DIR,
+        display_order = 0,
     )]
     chain_dir: Option<PathBuf>,
-
-    /// Path of the ledger on-disk storage.
-    ///
-    /// Defaults to ./ledger.<NETWORK>.db when unspecified.
-    #[arg(
-        long,
-        value_name = amaru::value_names::DIRECTORY,
-        env = amaru::env_vars::LEDGER_DIR,
-    )]
-    ledger_dir: Option<PathBuf>,
-
-    /// The address to listen on for incoming connections.
-    #[arg(
-        long,
-        value_name = amaru::value_names::ENDPOINT,
-        env = amaru::env_vars::LISTEN_ADDRESS,
-        default_value = DEFAULT_LISTEN_ADDRESS,
-    )]
-    listen_address: String,
-
-    /// The number of upstream peers to connect to.
-    #[arg(
-        long,
-        value_name = amaru::value_names::UINT,
-        env = amaru::env_vars::UPSTREAM_PEERS,
-        default_value_t = DEFAULT_UPSTREAM_PEERS,
-    )]
-    upstream_peers: usize,
-
-    /// The maximum number of downstream peers allowed to connect.
-    #[arg(
-        long,
-        value_name = amaru::value_names::UINT,
-        env = amaru::env_vars::DOWNSTREAM_PEERS,
-        default_value_t = DEFAULT_DOWNSTREAM_PEERS,
-    )]
-    downstream_peers: usize,
-
-    /// The maximum number of additional ledger snapshots to keep around.
-    ///
-    /// By default, Amaru only keeps the strict minimum of what's needed to operate.
-    ///
-    /// Should be a whole number >=0 or the string 'all' to keep all historical ledger snapshots
-    /// (~2GB per epoch on Mainnet).
-    #[arg(
-        long,
-        value_name = amaru::value_names::UINT_ALL,
-        env = amaru::env_vars::MAX_EXTRA_LEDGER_SNAPSHOTS,
-        default_value_t = MaxExtraLedgerSnapshots::default(),
-    )]
-    max_extra_ledger_snapshots: MaxExtraLedgerSnapshots,
 
     /// Flag to automatically migrate the chain database if needed.
     ///
@@ -112,17 +72,30 @@ pub struct Args {
         env = amaru::env_vars::MIGRATE_CHAIN_DB,
         action = ArgAction::SetTrue,
         default_value_t = false,
+        display_order = 0,
     )]
     migrate_chain_db: bool,
 
-    /// The target network to run against.
+    /// Path of the ledger on-disk storage.
+    ///
+    /// Defaults to ./ledger.<NETWORK>.db when unspecified.
     #[arg(
         long,
-        value_name = amaru::value_names::NETWORK,
-        env = amaru::env_vars::NETWORK,
-        default_value_t = DEFAULT_NETWORK,
+        value_name = amaru::value_names::DIRECTORY,
+        env = amaru::env_vars::LEDGER_DIR,
+        display_order = 0,
     )]
-    network: NetworkName,
+    ledger_dir: Option<PathBuf>,
+
+    /// The address to listen on for incoming connections.
+    #[arg(
+        long,
+        value_name = amaru::value_names::ENDPOINT,
+        env = amaru::env_vars::LISTEN_ADDRESS,
+        default_value = DEFAULT_LISTEN_ADDRESS,
+        display_order = 0,
+    )]
+    listen_address: String,
 
     /// Address for the HTTP transaction submit API.
     ///
@@ -131,6 +104,7 @@ pub struct Args {
         long,
         value_name = amaru::value_names::ENDPOINT,
         env = amaru::env_vars::SUBMIT_API_ADDRESS,
+        display_order = 0,
     )]
     submit_api_address: Option<String>,
 
@@ -146,8 +120,47 @@ pub struct Args {
         action = ArgAction::Append,
         value_delimiter = ',',
         num_args(0..),
+        display_order = 0,
     )]
     peer_address: Vec<String>,
+
+    /// The number of upstream peers to connect to.
+    #[arg(
+        long,
+        value_name = amaru::value_names::UINT,
+        env = amaru::env_vars::UPSTREAM_PEERS,
+        default_value_t = DEFAULT_UPSTREAM_PEERS,
+        display_order = 0,
+        help_heading = "Advanced Options",
+    )]
+    upstream_peers: usize,
+
+    /// The maximum number of downstream peers allowed to connect.
+    #[arg(
+        long,
+        value_name = amaru::value_names::UINT,
+        env = amaru::env_vars::DOWNSTREAM_PEERS,
+        default_value_t = DEFAULT_DOWNSTREAM_PEERS,
+        display_order = 0,
+        help_heading = "Advanced Options",
+    )]
+    downstream_peers: usize,
+
+    /// The maximum number of additional ledger snapshots to keep around.
+    ///
+    /// By default, Amaru only keeps the strict minimum of what's needed to operate.
+    ///
+    /// Should be a whole number >=0 or the string 'all' to keep all historical ledger snapshots
+    /// (~2GB per epoch on Mainnet).
+    #[arg(
+        long,
+        value_name = amaru::value_names::UINT_ALL,
+        env = amaru::env_vars::MAX_EXTRA_LEDGER_SNAPSHOTS,
+        default_value_t = MaxExtraLedgerSnapshots::default(),
+        display_order = 0,
+        help_heading = "Advanced Options",
+    )]
+    max_extra_ledger_snapshots: MaxExtraLedgerSnapshots,
 
     /// After removing a misbehaving upstream peer, wait this many seconds before allowing it to be re-added.
     #[arg(
@@ -155,6 +168,8 @@ pub struct Args {
         value_name = amaru::value_names::UINT,
         env = amaru::env_vars::PEER_REMOVAL_COOLDOWN_SECS,
         default_value_t = amaru::DEFAULT_PEER_REMOVAL_COOLDOWN_SECS,
+        display_order = 0,
+        help_heading = "Advanced Options",
     )]
     peer_removal_cooldown_secs: u64,
 
@@ -163,6 +178,8 @@ pub struct Args {
         long,
         value_name = amaru::value_names::FILEPATH,
         env = amaru::env_vars::PID_FILE,
+        display_order = 0,
+        help_heading = "Advanced Options",
     )]
     pid_file: Option<PathBuf>,
 
@@ -173,6 +190,8 @@ pub struct Args {
         long,
         value_name = "MIN_ENTRIES,MAX_SIZE",
         env = amaru::env_vars::TRACE_BUFFER,
+        display_order = 0,
+        help_heading = "Advanced Options",
     )]
     trace_buffer: Option<String>,
 
@@ -183,8 +202,33 @@ pub struct Args {
         long,
         value_name = amaru::value_names::FILEPATH,
         env = amaru::env_vars::DUMP_TRACE_BUFFER,
+        display_order = 0,
+        help_heading = "Advanced Options",
     )]
     dump_trace_buffer: Option<PathBuf>,
+
+    /// Path to a JSON era history file overriding the network default.
+    ///
+    /// This is required for generated custom testnets whose epoch length or era bounds differ from
+    /// Amaru's built-in network profiles.
+    ///
+    /// For an example, see <https://github.com/pragma-org/amaru/blob/main/crates/amaru-kernel/src/cardano/snapshots/amaru_kernel__cardano__era_history__tests__mainnet_era_history.snap>
+    #[arg(
+        long,
+        value_name = amaru::value_names::FILEPATH,
+        env = amaru::env_vars::ERA_HISTORY,
+        display_order = 0,
+        help_heading = "Network Global Parameters Overrides",
+    )]
+    era_history: Option<PathBuf>,
+
+    /// Override network's global parameters for custom testnets.
+    #[command(flatten)]
+    global_parameters: GlobalParameters,
+
+    /// Show global network parameter overrides, for custom testnets.
+    #[arg(long)]
+    pub(crate) help_global_parameters: bool,
 }
 
 impl Args {
@@ -291,8 +335,14 @@ fn parse_trace_buffer_limits(s: &str) -> Result<(usize, usize), String> {
     Ok((min_entries, max_size))
 }
 
+#[allow(clippy::expect_used)]
 fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
     let network = args.network;
+
+    let era_history =
+        network.as_era_history().cloned().map(Ok).unwrap_or_else(|| load_era_history(args.era_history.as_deref()))?;
+
+    let global_parameters = network.as_global_parameters().cloned().unwrap_or(args.global_parameters);
 
     let ledger_dir = args.ledger_dir.unwrap_or_else(|| default_ledger_dir(network).into());
 
@@ -323,6 +373,14 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         max_extra_ledger_snapshots = %args.max_extra_ledger_snapshots,
         migrate_chain_db = args.migrate_chain_db,
         network = %args.network,
+        era_history = args.era_history
+            .map(|file| Box::new(file.display().to_string()) as Box<dyn tracing::Value>)
+            .unwrap_or_else(|| Box::new(tracing::field::Empty)),
+        global_parameters = if matches!(network, NetworkName::Testnet(..)) {
+            Box::new(serde_json::to_string(&global_parameters).expect("failed to serialise GlobalParameters to string?")) as Box<dyn tracing::Value>
+        } else {
+            Box::new(tracing::field::Empty)
+        },
         peer_address = %peer_address.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
         pid_file = %args.pid_file.unwrap_or_default().to_string_lossy(),
         submit_api_address = %args.submit_api_address.as_deref().unwrap_or("disabled"),
@@ -346,6 +404,8 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         target_downstream_peers: args.downstream_peers,
         network: args.network,
         network_magic: args.network.to_network_magic(),
+        era_history,
+        global_parameters,
         listen_address: args.listen_address,
         max_extra_ledger_snapshots: args.max_extra_ledger_snapshots,
         migrate_chain_db: args.migrate_chain_db,
@@ -358,6 +418,13 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
         tx_submission_responder_params: tx_submission_params,
         ..Config::default()
     })
+}
+
+fn load_era_history(path: Option<&Path>) -> Result<EraHistory, Box<dyn std::error::Error>> {
+    match path {
+        Some(path) => Ok(serde_json::from_slice(&std::fs::read(path)?)?),
+        None => Err(anyhow!("missing era history for custom network").into()),
+    }
 }
 
 #[derive(Debug, Error)]
