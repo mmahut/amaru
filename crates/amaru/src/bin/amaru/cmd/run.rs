@@ -218,7 +218,7 @@ pub struct Args {
         value_name = amaru::value_names::FILEPATH,
         env = amaru::env_vars::ERA_HISTORY,
         display_order = 0,
-        help_heading = "Network Parameters Overrides",
+        help_heading = "Network Global Parameters Overrides",
     )]
     era_history: Option<PathBuf>,
 

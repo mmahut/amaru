@@ -22,7 +22,7 @@ fn default_global_parameters() -> &'static GlobalParameters {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
-#[cfg_attr(feature = "clap", command(next_help_heading = "Network Parameters Overrides"))]
+#[cfg_attr(feature = "clap", command(next_help_heading = "Network Global Parameters Overrides"))]
 pub struct GlobalParameters {
     /// The maximum depth of a rollback, also known as the security parameter 'k'.
     ///
@@ -35,7 +35,7 @@ pub struct GlobalParameters {
         hide_short_help = true,
         default_value_t = default_global_parameters().consensus_security_param,
     ))]
-    pub consensus_security_param: usize,
+    pub consensus_security_param: u64,
 
     /// Multiplier applied to the `consensus_security_param` to determine the epoch length.
     #[cfg_attr(feature = "clap", arg(
@@ -45,7 +45,7 @@ pub struct GlobalParameters {
         hide_short_help = true,
         default_value_t = default_global_parameters().epoch_length_scale_factor,
     ))]
-    pub epoch_length_scale_factor: usize,
+    pub epoch_length_scale_factor: u64,
 
     /// Inverse of the active slot coefficient (i.e. 1/f);
     #[cfg_attr(feature = "clap", arg(
@@ -55,7 +55,7 @@ pub struct GlobalParameters {
         hide_short_help = true,
         default_value_t = default_global_parameters().active_slot_coeff_inverse,
     ))]
-    pub active_slot_coeff_inverse: usize,
+    pub active_slot_coeff_inverse: u64,
 
     /// Maximum supply of Ada, in lovelace (1 Ada = 1,000,000 Lovelace)
     #[cfg_attr(feature = "clap", arg(
@@ -88,37 +88,6 @@ pub struct GlobalParameters {
     ))]
     pub max_kes_evolution: u8,
 
-    /// Number of slots in an epoch
-    #[cfg_attr(feature = "clap", arg(
-        long,
-        value_name = "UINT",
-        env = "AMARU_GLOBAL_EPOCH_LENGTH",
-        hide_short_help = true,
-        default_value_t = default_global_parameters().epoch_length,
-    ))]
-    pub epoch_length: usize,
-
-    /// Relative slot from which data of the previous epoch can be considered stable.
-    #[cfg_attr(feature = "clap", arg(
-        long,
-        value_name = "SLOT",
-        env = "AMARU_GLOBAL_STABILITY_WINDOW",
-        hide_short_help = true,
-        default_value_t = default_global_parameters().stability_window,
-    ))]
-    pub stability_window: Slot,
-
-    /// Number of slots at the end of each epoch which do NOT contribute randomness to the candidate
-    /// nonce of the following epoch.
-    #[cfg_attr(feature = "clap", arg(
-        long,
-        value_name = "UINT",
-        env = "AMARU_GLOBAL_RANDOMNESS_STABILIZATION_WINDOW",
-        hide_short_help = true,
-        default_value_t = default_global_parameters().randomness_stabilization_window,
-    ))]
-    pub randomness_stabilization_window: u64,
-
     /// POSIX time (milliseconds) of the System Start.
     #[cfg_attr(feature = "clap", arg(
         long,
@@ -128,6 +97,24 @@ pub struct GlobalParameters {
         default_value_t = default_global_parameters().system_start,
     ))]
     pub system_start: u64,
+}
+
+impl GlobalParameters {
+    /// Relative slot from which data of the previous epoch can be considered stable.
+    pub fn stability_window(&self) -> Slot {
+        Slot::new(3 * self.consensus_security_param * self.active_slot_coeff_inverse)
+    }
+
+    /// Number of slots at the end of each epoch which do NOT contribute randomness to the candidate
+    /// nonce of the following epoch.
+    pub fn randomness_stabilization_window(&self) -> u64 {
+        4 * self.consensus_security_param * self.active_slot_coeff_inverse
+    }
+
+    /// Number of slots in an epoch
+    pub fn epoch_length(&self) -> u64 {
+        self.active_slot_coeff_inverse * self.epoch_length_scale_factor * self.consensus_security_param
+    }
 }
 
 #[cfg(feature = "clap")]
@@ -143,6 +130,8 @@ impl GlobalParameters {
         cmd
     }
 
+    /// Show a custom help on demand for global parameters options, instead of cluttering the
+    /// standard --help.
     pub fn show_help() -> Result<(), std::io::Error> {
         use clap::Args as _;
 
@@ -154,67 +143,32 @@ impl GlobalParameters {
     }
 }
 
+// see Shelley Genesis https://book.world.dev.cardano.org/env-mainnet.html
 pub static MAINNET_GLOBAL_PARAMETERS: GlobalParameters = {
-    let consensus_security_param = 2160;
-    let active_slot_coeff_inverse = 20;
-    let epoch_length_scale_factor = 10;
-    let epoch_length = active_slot_coeff_inverse * epoch_length_scale_factor * consensus_security_param;
-    let system_start = 1506203091000; // 2017-09-23T21:44:51Z  (see Shelley Genesis https://book.world.dev.cardano.org/env-mainnet.html)
-
     GlobalParameters {
-        consensus_security_param,
-        epoch_length_scale_factor,
-        active_slot_coeff_inverse,
+        system_start: 1506203091000, // 2017-09-23T21:44:51Z
+        consensus_security_param: 2160,
+        epoch_length_scale_factor: 10,
+        active_slot_coeff_inverse: 20,
         max_lovelace_supply: 45_000_000_000_000_000,
         slots_per_kes_period: 129_600,
         max_kes_evolution: 62,
-        epoch_length,
-        stability_window: Slot::new((active_slot_coeff_inverse * consensus_security_param * 3) as u64),
-        randomness_stabilization_window: (4 * consensus_security_param * active_slot_coeff_inverse) as u64,
-        system_start,
     }
 };
 
+// see Shelley Genesis https://book.world.dev.cardano.org/env-preprod.html
 pub static PREPROD_GLOBAL_PARAMETERS: GlobalParameters = {
-    let consensus_security_param = 2160;
-    let active_slot_coeff_inverse = 20;
-    let epoch_length_scale_factor = 10;
-    let epoch_length = active_slot_coeff_inverse * epoch_length_scale_factor * consensus_security_param;
-    let system_start = 1654041600000; // 2022-06-01T00:00:00Z (see Shelley Genesis https://book.world.dev.cardano.org/env-preprod.html)
-
     GlobalParameters {
-        consensus_security_param,
-        epoch_length_scale_factor,
-        active_slot_coeff_inverse,
-        max_lovelace_supply: 45_000_000_000_000_000,
-        slots_per_kes_period: 129_600,
-        max_kes_evolution: 62,
-        epoch_length,
-        stability_window: Slot::new((active_slot_coeff_inverse * consensus_security_param * 3) as u64),
-        randomness_stabilization_window: (4 * consensus_security_param * active_slot_coeff_inverse) as u64,
-        system_start,
+        system_start: 1654041600000, // 2022-06-01T00:00:00Z
+        ..MAINNET_GLOBAL_PARAMETERS
     }
 };
 
+// see Shelley Genesis https://book.world.dev.cardano.org/env-preview.html
 pub static PREVIEW_GLOBAL_PARAMETERS: GlobalParameters = {
-    let consensus_security_param = 432;
-    let active_slot_coeff_inverse = 20;
-    let epoch_length_scale_factor = 10;
-    let epoch_length = active_slot_coeff_inverse * epoch_length_scale_factor * consensus_security_param;
-    let stability_window = Slot::new((active_slot_coeff_inverse * consensus_security_param * 3) as u64);
-    let randomness_stabilization_window = (4 * consensus_security_param * active_slot_coeff_inverse) as u64;
-    let system_start = 1666656000000; // 2022-10-25T00:00 (see Shelley Genesis https://book.world.dev.cardano.org/env-preview.html)
-
     GlobalParameters {
-        consensus_security_param,
-        epoch_length_scale_factor,
-        active_slot_coeff_inverse,
-        max_lovelace_supply: 45_000_000_000_000_000,
-        slots_per_kes_period: 129_600,
-        max_kes_evolution: 62,
-        epoch_length,
-        stability_window,
-        randomness_stabilization_window,
-        system_start,
+        system_start: 1666656000000, // 2022-10-25T00:00Z
+        consensus_security_param: 432,
+        ..MAINNET_GLOBAL_PARAMETERS
     }
 };

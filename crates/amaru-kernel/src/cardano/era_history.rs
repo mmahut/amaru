@@ -178,7 +178,7 @@ pub static MAINNET_ERA_HISTORY: LazyLock<EraHistory> = LazyLock::new(|| {
             },
         },
     ];
-    EraHistory::new(&eras, MAINNET_GLOBAL_PARAMETERS.stability_window)
+    EraHistory::new(&eras, MAINNET_GLOBAL_PARAMETERS.stability_window())
 });
 
 /// Era history for Preprod retrieved with:
@@ -277,7 +277,7 @@ pub static PREPROD_ERA_HISTORY: LazyLock<EraHistory> = LazyLock::new(|| {
         },
     ];
 
-    EraHistory::new(&eras, PREPROD_GLOBAL_PARAMETERS.stability_window)
+    EraHistory::new(&eras, PREPROD_GLOBAL_PARAMETERS.stability_window())
 });
 
 /// Era history for Preview retrieved with:
@@ -365,7 +365,7 @@ pub static PREVIEW_ERA_HISTORY: LazyLock<EraHistory> = LazyLock::new(|| {
         },
     ];
 
-    EraHistory::new(&eras, PREVIEW_GLOBAL_PARAMETERS.stability_window)
+    EraHistory::new(&eras, PREVIEW_GLOBAL_PARAMETERS.stability_window())
 });
 
 /// Error type for era history file operations

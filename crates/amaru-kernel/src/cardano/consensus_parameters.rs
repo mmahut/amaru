@@ -38,7 +38,7 @@ impl ConsensusParameters {
         ocert_counters: BTreeMap<PoolId, u64>,
     ) -> Self {
         Self::create(
-            global_parameters.randomness_stabilization_window,
+            global_parameters.randomness_stabilization_window(),
             global_parameters.slots_per_kes_period,
             global_parameters.max_kes_evolution as u64,
             1f64 / global_parameters.active_slot_coeff_inverse as f64,

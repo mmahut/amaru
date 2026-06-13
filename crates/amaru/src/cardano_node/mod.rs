@@ -149,7 +149,7 @@ fn decode_current_era(
         start: d.decode()?,
         end: None,
         params: EraParams {
-            epoch_size_slots: global_parameters.epoch_length as u64,
+            epoch_size_slots: global_parameters.epoch_length(),
             slot_length: Duration::from_secs(1),
             era_name: current_era,
         },
@@ -179,7 +179,7 @@ fn decode_current_era(
     d.skip()?;
     let ledger_data_end = d.position();
 
-    let era_history = EraHistory::new(&eras, global_parameters.stability_window);
+    let era_history = EraHistory::new(&eras, global_parameters.stability_window());
 
     Ok(ParsedStateSnapshot { slot, hash, era_history, ledger_data_begin, ledger_data_end })
 }

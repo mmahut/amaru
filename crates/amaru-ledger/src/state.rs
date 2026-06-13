@@ -424,7 +424,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         let next_epoch = unsafe_slot_to_epoch(&self.era_history, next_slot);
 
         // Once we reach the stability window, compute rewards unless we've already done so.
-        let is_stake_distribution_stable = next_relative_slot >= self.global_parameters.stability_window;
+        let is_stake_distribution_stable = next_relative_slot >= self.global_parameters.stability_window();
 
         // FIXME: Asynchronous rewards calculation
         //
@@ -479,7 +479,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             let security_param = self.global_parameters.consensus_security_param;
 
             // Yield any now-stable state change
-            let now_stable = if self.volatile.len() >= security_param {
+            let now_stable = if self.volatile.len() as u64 >= security_param {
                 let now_stable = self.volatile.pop_front().unwrap_or_else(|| {
                     unreachable!(
                         "pre-condition: self.volatile.len()={} >= consensus_security_param={}",
