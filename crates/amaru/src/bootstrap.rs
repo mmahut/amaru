@@ -859,33 +859,6 @@ async fn import_node_snapshot_dir(
         std::fs::remove_dir_all(ledger_dir.join("live"))?;
     }
 
-    // For custom testnets the snapshot's embedded era-history only carries the
-    // network-default epoch size, so load the bootstrap era-history sidecar
-    // (history.<slot>.<hash>.json) and use it to interpret the snapshot. Public
-    // networks rely on the snapshot-derived history, as before.
-    let era_history_override = match network {
-        NetworkName::Testnet(_) => {
-            let point = Point::try_from(
-                snapshot_dir
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .ok_or_else(|| ImportError::InvalidSnapshotFile(snapshot_dir.to_path_buf()))?,
-            )
-            .map_err(ImportError::MalformedDate)?;
-            let dir =
-                snapshot_dir.parent().ok_or_else(|| ImportError::InvalidSnapshotFile(snapshot_dir.to_path_buf()))?;
-            // The era-history sidecar is an optional override: present for custom
-            // short-epoch testnets (where the snapshot's embedded epoch size is the
-            // network default and thus wrong), absent for testnets matching a
-            // built-in profile or snapshots straight from `amaru create-snapshots`.
-            // Fall back to the snapshot-embedded history when it's missing rather
-            // than failing the import.
-            let history_file = dir.join(format!("history.{}.{}.json", point.slot_or_default(), point.hash()));
-            if history_file.is_file() { Some(make_era_history(dir, &point, network)?) } else { None }
-        }
-        NetworkName::Mainnet | NetworkName::Preprod | NetworkName::Preview => None,
-    };
-
     let db = RocksDB::empty(&RocksDbConfig::new(ledger_dir.to_path_buf()))?;
     let mut state_file = std::fs::File::open(&paths.state)?;
     let mut utxo_file = std::fs::File::open(&paths.utxo)?;
@@ -901,7 +874,6 @@ async fn import_node_snapshot_dir(
                 network,
                 &global_parameters,
                 nonce_tail,
-                era_history_override,
                 |size, template| TerminalProgressBar::new(size as u64, template).boxed(),
             )
             .map_err(|e| e.to_string())
