@@ -23,12 +23,13 @@ use crate::{
 
 const PROTOCOL_VERSION_9: ProtocolVersion = (9, 0);
 
-pub static MAINNET_GLOBAL_PARAMETERS: LazyLock<GlobalParameters> = LazyLock::new(|| {
+pub static MAINNET_GLOBAL_PARAMETERS: GlobalParameters = {
     let consensus_security_param = 2160;
     let active_slot_coeff_inverse = 20;
     let epoch_length_scale_factor = 10;
     let epoch_length = active_slot_coeff_inverse * epoch_length_scale_factor * consensus_security_param;
     let system_start = 1506203091000; // 2017-09-23T21:44:51Z  (see Shelley Genesis https://book.world.dev.cardano.org/env-mainnet.html)
+
     GlobalParameters {
         consensus_security_param,
         epoch_length_scale_factor,
@@ -37,11 +38,11 @@ pub static MAINNET_GLOBAL_PARAMETERS: LazyLock<GlobalParameters> = LazyLock::new
         slots_per_kes_period: 129_600,
         max_kes_evolution: 62,
         epoch_length,
-        stability_window: Slot::from((active_slot_coeff_inverse * consensus_security_param * 3) as u64),
+        stability_window: Slot::new((active_slot_coeff_inverse * consensus_security_param * 3) as u64),
         randomness_stabilization_window: (4 * consensus_security_param * active_slot_coeff_inverse) as u64,
         system_start,
     }
-});
+};
 
 pub static MAINNET_DEFAULT_PROTOCOL_PARAMETERS: LazyLock<ProtocolParameters> = LazyLock::new(|| ProtocolParameters {
     protocol_version: PROTOCOL_VERSION_10,
@@ -142,12 +143,13 @@ pub static MAINNET_DEFAULT_PROTOCOL_PARAMETERS: LazyLock<ProtocolParameters> = L
     drep_expiry: 20,
 });
 
-pub static PREPROD_GLOBAL_PARAMETERS: LazyLock<GlobalParameters> = LazyLock::new(|| {
+pub static PREPROD_GLOBAL_PARAMETERS: GlobalParameters = {
     let consensus_security_param = 2160;
     let active_slot_coeff_inverse = 20;
     let epoch_length_scale_factor = 10;
     let epoch_length = active_slot_coeff_inverse * epoch_length_scale_factor * consensus_security_param;
     let system_start = 1654041600000; // 2022-06-01T00:00:00Z (see Shelley Genesis https://book.world.dev.cardano.org/env-preprod.html)
+
     GlobalParameters {
         consensus_security_param,
         epoch_length_scale_factor,
@@ -156,11 +158,11 @@ pub static PREPROD_GLOBAL_PARAMETERS: LazyLock<GlobalParameters> = LazyLock::new
         slots_per_kes_period: 129_600,
         max_kes_evolution: 62,
         epoch_length,
-        stability_window: Slot::from((active_slot_coeff_inverse * consensus_security_param * 3) as u64),
+        stability_window: Slot::new((active_slot_coeff_inverse * consensus_security_param * 3) as u64),
         randomness_stabilization_window: (4 * consensus_security_param * active_slot_coeff_inverse) as u64,
         system_start,
     }
-});
+};
 
 // This default is the protocol parameters on Preprod as of epoch 197
 pub static PREPROD_DEFAULT_PROTOCOL_PARAMETERS: LazyLock<ProtocolParameters> = LazyLock::new(|| {
@@ -277,12 +279,12 @@ pub static PREPROD_DEFAULT_PROTOCOL_PARAMETERS: LazyLock<ProtocolParameters> = L
     }
 });
 
-pub static PREVIEW_GLOBAL_PARAMETERS: LazyLock<GlobalParameters> = LazyLock::new(|| {
+pub static PREVIEW_GLOBAL_PARAMETERS: GlobalParameters = {
     let consensus_security_param = 432;
     let active_slot_coeff_inverse = 20;
     let epoch_length_scale_factor = 10;
     let epoch_length = active_slot_coeff_inverse * epoch_length_scale_factor * consensus_security_param;
-    let stability_window = Slot::from((active_slot_coeff_inverse * consensus_security_param * 3) as u64);
+    let stability_window = Slot::new((active_slot_coeff_inverse * consensus_security_param * 3) as u64);
     let randomness_stabilization_window = (4 * consensus_security_param * active_slot_coeff_inverse) as u64;
     let system_start = 1666656000000; // 2022-10-25T00:00 (see Shelley Genesis https://book.world.dev.cardano.org/env-preview.html)
 
@@ -298,7 +300,7 @@ pub static PREVIEW_GLOBAL_PARAMETERS: LazyLock<GlobalParameters> = LazyLock::new
         randomness_stabilization_window,
         system_start,
     }
-});
+};
 
 // This default is the protocol parameters on Preview as of epoch 646
 pub static PREVIEW_DEFAULT_PROTOCOL_PARAMETERS: LazyLock<ProtocolParameters> = LazyLock::new(|| {
@@ -409,26 +411,5 @@ pub static PREVIEW_DEFAULT_PROTOCOL_PARAMETERS: LazyLock<ProtocolParameters> = L
         gov_action_deposit: 100_000_000_000,
         drep_deposit: 500_000_000,
         drep_expiry: 20,
-    }
-});
-
-pub static TESTNET_GLOBAL_PARAMETERS: LazyLock<GlobalParameters> = LazyLock::new(|| {
-    let consensus_security_param = 432;
-    let active_slot_coeff_inverse = 20;
-    let epoch_length_scale_factor = 10;
-    let epoch_length = active_slot_coeff_inverse * epoch_length_scale_factor * consensus_security_param;
-    let system_start = 1666656000000; // 2022-10-25T00:00:00Z (This is the preprod system start. If this is being used for Antithesis testing, it may need to change)
-
-    GlobalParameters {
-        consensus_security_param,
-        epoch_length_scale_factor,
-        active_slot_coeff_inverse,
-        max_lovelace_supply: 45_000_000_000_000_000,
-        slots_per_kes_period: 129_600,
-        max_kes_evolution: 62,
-        epoch_length,
-        stability_window: Slot::from((active_slot_coeff_inverse * consensus_security_param * 2) as u64),
-        randomness_stabilization_window: (4 * consensus_security_param * active_slot_coeff_inverse) as u64,
-        system_start,
     }
 });

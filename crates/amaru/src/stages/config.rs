@@ -14,7 +14,9 @@
 
 use std::{fmt::Display, net::SocketAddr, path::PathBuf, sync::Arc};
 
-use amaru_kernel::{EraHistory, GlobalParameters, NetworkMagic, NetworkName};
+use amaru_kernel::{
+    EraHistory, GlobalParameters, NetworkMagic, NetworkName, PREPROD_ERA_HISTORY, PREPROD_GLOBAL_PARAMETERS,
+};
 use amaru_mempool::MempoolConfig;
 use amaru_ouroboros::ChainStore;
 use amaru_protocols::tx_submission::ResponderParams;
@@ -87,20 +89,16 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Config {
-        let network = NetworkName::Preprod;
-        let era_history: &EraHistory = network.into();
-        let global_parameters: &GlobalParameters = network.into();
-
         Config {
             ledger_store: RocksDbConfig::new(PathBuf::from("./ledger.db")),
             chain_store: StoreType::RocksDb(RocksDbConfig::new(PathBuf::from("./chain.db"))),
             upstream_peers: vec![],
             target_upstream_peers: DEFAULT_UPSTREAM_PEERS,
             target_downstream_peers: DEFAULT_DOWNSTREAM_PEERS,
-            network,
+            network: NetworkName::Preprod,
             network_magic: NetworkMagic::PREPROD,
-            era_history: era_history.clone(),
-            global_parameters: global_parameters.clone(),
+            era_history: PREPROD_ERA_HISTORY.clone(),
+            global_parameters: PREPROD_GLOBAL_PARAMETERS.clone(),
             listen_address: "0.0.0.0:3000".to_string(),
             max_extra_ledger_snapshots: MaxExtraLedgerSnapshots::default(),
             migrate_chain_db: false,

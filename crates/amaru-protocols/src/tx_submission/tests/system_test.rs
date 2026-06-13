@@ -14,7 +14,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use amaru_kernel::{EraHistory, NetworkMagic, NetworkName, Peer, Transaction};
+use amaru_kernel::{NetworkMagic, PREPROD_ERA_HISTORY, Peer, Transaction};
 use amaru_mempool::InMemoryMempool;
 use amaru_network::connection::TokioConnections;
 use amaru_ouroboros::{ConnectionsResource, in_memory_chain_store::InMemoryChainStore};
@@ -52,7 +52,6 @@ async fn test_tx_submission_with_node() -> anyhow::Result<()> {
     network.resources().put::<Arc<dyn DiagnosticChainStore>>(Arc::new(InMemoryChainStore::new()));
     network.resources().put::<ResourceMempool<Transaction>>(Arc::new(InMemoryMempool::default()));
 
-    let era_history: &EraHistory = NetworkName::Preprod.into();
     let connection = network.stage("connection", connection::stage);
     let connection = network.wire_up(
         connection,
@@ -63,7 +62,7 @@ async fn test_tx_submission_with_node() -> anyhow::Result<()> {
             ManagerConfig::default(),
             NetworkMagic::for_testing(),
             StageRef::blackhole(),
-            Arc::new(era_history.clone()),
+            Arc::new(PREPROD_ERA_HISTORY.clone()),
             StageRef::blackhole(),
             StageRef::blackhole(), // dummy manager for test
         ),

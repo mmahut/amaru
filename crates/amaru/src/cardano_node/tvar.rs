@@ -26,8 +26,8 @@ use std::{
 };
 
 use amaru_kernel::{
-    Epoch, EraHistory, Hash, HeaderHash, MemoizedTransactionOutput, NetworkName, Point, TransactionInput, cbor,
-    cbor::lazy::LazyDecoder,
+    Epoch, EraHistory, GlobalParameters, Hash, HeaderHash, MemoizedTransactionOutput, NetworkName, Point,
+    TransactionInput, cbor, cbor::lazy::LazyDecoder,
 };
 use amaru_ledger::{
     bootstrap::import_initial_snapshot,
@@ -47,6 +47,7 @@ pub fn import_snapshot_from_tvar<S, F>(
     state_file: &mut std::fs::File,
     utxo_file: &mut std::fs::File,
     network: NetworkName,
+    global_parameters: &GlobalParameters,
     nonce_tail: Option<HeaderHash>,
     era_history_override: Option<EraHistory>,
     with_progress: F,
@@ -58,11 +59,11 @@ where
     let state_head = read_state_snapshot(state_file)?;
     let (parsed_snapshot, initial_nonces) = if let Some(tail) = nonce_tail {
         let (parsed_snapshot, initial_nonces) =
-            parse_state_snapshot_with_nonces(minicbor::Decoder::new(&state_head), &network, tail)?;
+            parse_state_snapshot_with_nonces(minicbor::Decoder::new(&state_head), global_parameters, tail)?;
         (parsed_snapshot, Some(initial_nonces))
     } else {
         let mut decoder = minicbor::Decoder::new(&state_head);
-        (parse_state_snapshot(&mut decoder, &network)?, None)
+        (parse_state_snapshot(&mut decoder, global_parameters)?, None)
     };
     let point = Point::Specific(parsed_snapshot.slot.into(), parsed_snapshot.hash);
     // The cardano-node snapshot only carries the network-default epoch size for

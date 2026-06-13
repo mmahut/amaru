@@ -33,6 +33,7 @@ use amaru_ouroboros::MempoolMsg;
 use amaru_protocols::tx_submission::ResponderParams;
 use amaru_pure_stage::{Sender, trace_buffer::TraceBuffer};
 use amaru_stores::rocksdb::RocksDbConfig;
+use anyhow::anyhow;
 use clap::{self, ArgAction, Parser};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use parking_lot::Mutex;
@@ -338,13 +339,10 @@ fn parse_trace_buffer_limits(s: &str) -> Result<(usize, usize), String> {
 fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
     let network = args.network;
 
-    let era_history = load_era_history(args.era_history.as_deref(), network)?;
+    let era_history =
+        network.as_era_history().cloned().map(Ok).unwrap_or_else(|| load_era_history(args.era_history.as_deref()))?;
 
-    let global_parameters = if matches!(network, NetworkName::Testnet(..)) {
-        args.global_parameters
-    } else {
-        <&GlobalParameters>::from(network).clone()
-    };
+    let global_parameters = network.as_global_parameters().cloned().unwrap_or(args.global_parameters);
 
     let ledger_dir = args.ledger_dir.unwrap_or_else(|| default_ledger_dir(network).into());
 
@@ -422,10 +420,10 @@ fn parse_args(args: Args) -> Result<Config, Box<dyn std::error::Error>> {
     })
 }
 
-fn load_era_history(path: Option<&Path>, network: NetworkName) -> Result<EraHistory, Box<dyn std::error::Error>> {
+fn load_era_history(path: Option<&Path>) -> Result<EraHistory, Box<dyn std::error::Error>> {
     match path {
         Some(path) => Ok(serde_json::from_slice(&std::fs::read(path)?)?),
-        None => Ok(<&EraHistory>::from(network).clone()),
+        None => Err(anyhow!("missing era history for custom network").into()),
     }
 }
 

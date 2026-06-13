@@ -32,7 +32,6 @@ use amaru_ouroboros::{
 };
 use amaru_pure_stage::trace_buffer::TraceBuffer;
 use amaru_stores::rocksdb::{RocksDB, RocksDbConfig};
-use anyhow::anyhow;
 use parking_lot::Mutex;
 
 use crate::{
@@ -131,12 +130,18 @@ impl NodeTestConfig {
             .with_node_type(UpstreamNode)
     }
 
+    #[allow(clippy::panic)]
     pub fn era_history(&self) -> &EraHistory {
-        self.network_name.into()
+        self.network_name
+            .as_era_history()
+            .unwrap_or_else(|| panic!("no default EraHistory for network: {}", self.network_name))
     }
 
-    pub fn protocol_parameters(&self) -> anyhow::Result<&ProtocolParameters> {
-        self.network_name.try_into().map_err(|e: String| anyhow!(e))
+    #[allow(clippy::panic)]
+    pub fn protocol_parameters(&self) -> &ProtocolParameters {
+        self.network_name
+            .as_protocol_parameters()
+            .unwrap_or_else(|| panic!("no default ProtocolParameters for network: {}", self.network_name))
     }
 
     pub fn with_no_upstream_peers(mut self) -> Self {
@@ -279,7 +284,7 @@ impl NodeTestConfig {
         {
             let store = RocksDB::empty(&ledger_store_config)?;
             let governance_activity = GovernanceActivity::default();
-            let pp = self.protocol_parameters()?;
+            let pp = self.protocol_parameters();
             let tx = store.create_transaction();
             tx.save(
                 self.era_history(),

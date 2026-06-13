@@ -129,7 +129,10 @@ pub enum NoncesError {
 mod test {
     use std::sync::{Arc, LazyLock};
 
-    use amaru_kernel::{BlockHeader, Epoch, GlobalParameters, IsHeader, NetworkName, from_cbor, hash, to_cbor};
+    use amaru_kernel::{
+        BlockHeader, Epoch, EraHistory, GlobalParameters, IsHeader, PREPROD_ERA_HISTORY, PREPROD_GLOBAL_PARAMETERS,
+        from_cbor, hash, to_cbor,
+    };
     use amaru_ouroboros_traits::{BaseReadChainStore, WriteChainStore, in_memory_chain_store::InMemoryChainStore};
     use proptest::{prelude::*, prop_compose, proptest};
 
@@ -183,14 +186,12 @@ mod test {
         last_header_last_epoch: &BlockHeader,
         parent: (&BlockHeader, &Nonces),
         current: &BlockHeader,
+        era_history: &EraHistory,
         global_parameters: &GlobalParameters,
     ) -> Option<Nonces> {
         let store = Arc::new(InMemoryChainStore::default());
-        let consensus_parameters = Arc::new(ConsensusParameters::new(
-            global_parameters.clone(),
-            NetworkName::Preprod.into(),
-            Default::default(),
-        ));
+        let consensus_parameters =
+            Arc::new(ConsensusParameters::new(global_parameters.clone(), era_history, Default::default()));
 
         // Have at least the last header of the last epoch available.
         store.store_header(last_header_last_epoch).expect("database failure");
@@ -211,7 +212,8 @@ mod test {
                 &PREPROD_HEADER_69638382,
                 (&PREPROD_HEADER_70070331, &PREPROD_NONCES_70070331),
                 &PREPROD_HEADER_70070379,
-                NetworkName::Preprod.into()
+                &PREPROD_ERA_HISTORY,
+                &PREPROD_GLOBAL_PARAMETERS
             )
             .as_ref(),
             Some(&*PREPROD_NONCES_70070379)
@@ -225,7 +227,8 @@ mod test {
                 &PREPROD_HEADER_69638382,
                 (&PREPROD_HEADER_70070379, &PREPROD_NONCES_70070379),
                 &PREPROD_HEADER_70070426,
-                NetworkName::Preprod.into()
+                &PREPROD_ERA_HISTORY,
+                &PREPROD_GLOBAL_PARAMETERS
             )
             .as_ref(),
             Some(&*PREPROD_NONCES_70070426)
@@ -239,7 +242,8 @@ mod test {
                 &PREPROD_HEADER_70070379,
                 (&PREPROD_HEADER_70070426, &PREPROD_NONCES_70070426),
                 &PREPROD_HEADER_70070464,
-                NetworkName::Preprod.into()
+                &PREPROD_ERA_HISTORY,
+                &PREPROD_GLOBAL_PARAMETERS
             )
             .as_ref(),
             Some(&*PREPROD_NONCES_70070464)

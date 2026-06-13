@@ -227,6 +227,10 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
         &self.era_history
     }
 
+    pub fn global_parameters(&self) -> &GlobalParameters {
+        &self.global_parameters
+    }
+
     /// Inspect the tip of this ledger state. This corresponds to the point of the latest block
     /// applied to the ledger.
     pub fn tip(&'_ self) -> Cow<'_, Point> {
@@ -652,6 +656,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
             self.network(),
             self.protocol_parameters(),
             self.era_history(),
+            self.global_parameters(),
             self.governance_activity(),
             TransactionPointer { slot, transaction_index: 0 },
             transaction,
@@ -727,6 +732,7 @@ impl<S: Store, HS: HistoricalStores> State<S, HS> {
                 self.network(),
                 self.protocol_parameters(),
                 self.era_history(),
+                self.global_parameters(),
                 self.governance_activity(),
                 block,
             )?;

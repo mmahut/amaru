@@ -15,7 +15,7 @@
 use std::sync::Arc;
 
 use amaru_kernel::{
-    BlockHeader, BlockHeight, HeaderHash, NonEmptyVec, Point, TESTNET_ERA_HISTORY, Tip,
+    BlockHeader, BlockHeight, EraHistory, HeaderHash, NonEmptyVec, Point, Tip,
     cardano::network_block::make_encoded_block, make_header, make_header_with_op_cert_seq,
 };
 use amaru_ouroboros::{MempoolMsg, StoreError};
@@ -111,7 +111,7 @@ impl TestPrep {
     }
 
     pub fn store_block(&self, header: &BlockHeader) {
-        let raw_block = make_encoded_block(header, &TESTNET_ERA_HISTORY);
+        let raw_block = make_encoded_block(header, &EraHistory::default());
         self.store.store_block(&header.hash(), &raw_block).unwrap();
     }
 

@@ -501,6 +501,12 @@ impl<C> cbor::encode::Encode<C> for ProtocolParameters {
     }
 }
 
+#[cfg(feature = "clap")]
+#[allow(clippy::expect_used)]
+fn default_global_parameters() -> &'static GlobalParameters {
+    crate::NetworkName::default().as_global_parameters().expect("no default GlobalParameters for default network!?")
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 #[cfg_attr(feature = "clap", command(next_help_heading = "Network Parameters Overrides"))]
@@ -514,7 +520,7 @@ pub struct GlobalParameters {
         value_name = "UINT",
         env = "AMARU_GLOBAL_CONSENSUS_SECURITY_PARAM",
         hide_short_help = true,
-        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).consensus_security_param,
+        default_value_t = default_global_parameters().consensus_security_param,
     ))]
     pub consensus_security_param: usize,
 
@@ -524,7 +530,7 @@ pub struct GlobalParameters {
         value_name = "UINT",
         env = "AMARU_GLOBAL_EPOCH_LENGTH_SCALE_FACTOR",
         hide_short_help = true,
-        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).epoch_length_scale_factor,
+        default_value_t = default_global_parameters().epoch_length_scale_factor,
     ))]
     pub epoch_length_scale_factor: usize,
 
@@ -534,7 +540,7 @@ pub struct GlobalParameters {
         value_name = "UINT",
         env = "AMARU_GLOBAL_ACTIVE_SLOT_COEFF_INVERSE",
         hide_short_help = true,
-        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).active_slot_coeff_inverse,
+        default_value_t = default_global_parameters().active_slot_coeff_inverse,
     ))]
     pub active_slot_coeff_inverse: usize,
 
@@ -544,7 +550,7 @@ pub struct GlobalParameters {
         value_name = "LOVELACE",
         env = "AMARU_GLOBAL_MAX_LOVELACE_SUPPLY",
         hide_short_help = true,
-        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).max_lovelace_supply,
+        default_value_t = default_global_parameters().max_lovelace_supply,
     ))]
     pub max_lovelace_supply: Lovelace,
 
@@ -554,7 +560,7 @@ pub struct GlobalParameters {
         value_name = "UINT",
         env = "AMARU_GLOBAL_SLOTS_PER_KES_PERIOD",
         hide_short_help = true,
-        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).slots_per_kes_period,
+        default_value_t = default_global_parameters().slots_per_kes_period,
     ))]
     pub slots_per_kes_period: u64,
 
@@ -565,7 +571,7 @@ pub struct GlobalParameters {
         value_name = "U8",
         env = "AMARU_GLOBAL_MAX_KES_EVOLUTION",
         hide_short_help = true,
-        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).max_kes_evolution,
+        default_value_t = default_global_parameters().max_kes_evolution,
     ))]
     pub max_kes_evolution: u8,
 
@@ -575,7 +581,7 @@ pub struct GlobalParameters {
         value_name = "UINT",
         env = "AMARU_GLOBAL_EPOCH_LENGTH",
         hide_short_help = true,
-        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).epoch_length,
+        default_value_t = default_global_parameters().epoch_length,
     ))]
     pub epoch_length: usize,
 
@@ -585,7 +591,7 @@ pub struct GlobalParameters {
         value_name = "SLOT",
         env = "AMARU_GLOBAL_STABILITY_WINDOW",
         hide_short_help = true,
-        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).stability_window,
+        default_value_t = default_global_parameters().stability_window,
     ))]
     pub stability_window: Slot,
 
@@ -596,7 +602,7 @@ pub struct GlobalParameters {
         value_name = "UINT",
         env = "AMARU_GLOBAL_RANDOMNESS_STABILIZATION_WINDOW",
         hide_short_help = true,
-        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).randomness_stabilization_window,
+        default_value_t = default_global_parameters().randomness_stabilization_window,
     ))]
     pub randomness_stabilization_window: u64,
 
@@ -606,7 +612,7 @@ pub struct GlobalParameters {
         value_name = "MILLIS",
         env = "AMARU_GLOBAL_SYSTEM_START",
         hide_short_help = true,
-        default_value_t = <&GlobalParameters>::from(crate::NetworkName::default()).system_start,
+        default_value_t = default_global_parameters().system_start,
     ))]
     pub system_start: u64,
 }
@@ -627,8 +633,9 @@ impl GlobalParameters {
     pub fn show_help() -> Result<(), std::io::Error> {
         use clap::Args as _;
 
-        let cmd = clap::Command::new("amaru run --help-global-parameters")
-            .about("The following options are hidden by default, but available on the 'run' command.");
+        let cmd = clap::Command::new("--help-global-parameters").about(
+            "The following options are hidden by default, but available on some commands (e.g. 'run' or 'bootstrap').",
+        );
 
         Self::augment_args(cmd).disable_help_flag(true).disable_help_subcommand(true).print_long_help()
     }

@@ -187,10 +187,16 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let ledger_dir = args.ledger_dir.unwrap_or_else(|| default_ledger_dir(network).into());
     let chain_dir = args.chain_dir.unwrap_or_else(|| default_chain_dir(network).into());
 
-    let era_history: &EraHistory = network.into();
-    let global_parameters: &GlobalParameters = network.into();
+    let era_history: &EraHistory =
+        network.as_era_history().ok_or_else(|| anyhow!("missing default EraHistory for network: {network}"))?;
+
+    let global_parameters: &GlobalParameters = network
+        .as_global_parameters()
+        .ok_or_else(|| anyhow!("missing default GlobalParameters for network: {network}"))?;
+
     let consensus_parameters =
         Arc::new(ConsensusParameters::new(global_parameters.clone(), era_history, Default::default()));
+
     let block_validator = new_block_validator(network, ledger_dir)?;
     let tip = block_validator.get_tip();
     let chain_store: Arc<dyn ChainStore> = Arc::new(RocksDBStore::open(&RocksDbConfig::new(chain_dir))?);

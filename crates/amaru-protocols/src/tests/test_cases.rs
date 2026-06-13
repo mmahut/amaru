@@ -14,7 +14,7 @@
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use amaru_kernel::{EraHistory, NetworkMagic, NetworkName, Peer};
+use amaru_kernel::{EraHistory, NetworkMagic, PREPROD_ERA_HISTORY, Peer};
 use amaru_network::connection::TokioConnections;
 use amaru_ouroboros_traits::ConnectionProvider;
 use amaru_pure_stage::{
@@ -313,8 +313,7 @@ async fn start_responder_with_failing_accept(
 const CONNECTION_BUFFER_SIZE: usize = 65535;
 
 fn era_history() -> Arc<EraHistory> {
-    let era_history: &EraHistory = NetworkName::Preprod.into();
-    Arc::new(era_history.clone())
+    Arc::new(PREPROD_ERA_HISTORY.clone())
 }
 
 fn create_manager(config: ManagerConfig, chainsync_stage: StageRef<ChainSyncInitiatorMsg>) -> Manager {

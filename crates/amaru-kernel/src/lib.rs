@@ -59,7 +59,7 @@ pub use cardano::{
     era_bound::EraBound,
     era_history::{
         EraHistory, EraHistoryError, EraHistoryFileError, MAINNET_ERA_HISTORY, PREPROD_ERA_HISTORY,
-        PREVIEW_ERA_HISTORY, TESTNET_ERA_HISTORY, load_era_history_from_file,
+        PREVIEW_ERA_HISTORY, load_era_history_from_file,
     },
     era_name::{EraName, EraNameError},
     era_params::EraParams,
@@ -105,7 +105,7 @@ pub use cardano::{
     protocol_parameters::{
         ConsensusParameters, GlobalParameters, MAINNET_DEFAULT_PROTOCOL_PARAMETERS, MAINNET_GLOBAL_PARAMETERS,
         PREPROD_DEFAULT_PROTOCOL_PARAMETERS, PREPROD_GLOBAL_PARAMETERS, PREVIEW_DEFAULT_PROTOCOL_PARAMETERS,
-        PREVIEW_GLOBAL_PARAMETERS, ProtocolParameters, TESTNET_GLOBAL_PARAMETERS,
+        PREVIEW_GLOBAL_PARAMETERS, ProtocolParameters,
     },
     protocol_parameters_update::{ProtocolParamUpdate, display_protocol_parameters_update},
     protocol_version::{self, PROTOCOL_VERSION_10, ProtocolVersion},

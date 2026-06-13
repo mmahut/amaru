@@ -15,7 +15,7 @@
 use std::{error::Error, fs::remove_dir_all, path::PathBuf};
 
 use amaru::{bootstrap::bootstrap, default_chain_dir, default_ledger_dir};
-use amaru_kernel::{Epoch, NetworkName};
+use amaru_kernel::{Epoch, GlobalParameters, NetworkName};
 use clap::{ArgAction, Parser};
 use tracing::{info, warn};
 
@@ -68,10 +68,20 @@ pub struct Args {
         env = amaru::env_vars::NETWORK,
     )]
     network: NetworkName,
+
+    /// Override network's global parameters for custom testnets.
+    #[command(flatten)]
+    global_parameters: GlobalParameters,
+
+    /// Show global network parameter overrides, for custom testnets.
+    #[arg(long)]
+    pub(crate) help_global_parameters: bool,
 }
 
 pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
     let network = args.network;
+
+    let global_parameters = network.as_global_parameters().cloned().unwrap_or(args.global_parameters);
 
     let ledger_dir = args.ledger_dir.unwrap_or_else(|| default_ledger_dir(network).into());
 
@@ -115,5 +125,5 @@ pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    bootstrap(network, ledger_dir, chain_dir, args.epoch).await
+    bootstrap(network, &global_parameters, ledger_dir, chain_dir, args.epoch).await
 }

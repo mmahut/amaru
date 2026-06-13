@@ -15,9 +15,9 @@
 use std::{collections::BTreeMap, fmt};
 
 use amaru_kernel::{
-    BorrowedScript, EraHistory, HasTransactionId, NetworkName, ProtocolParameters, TransactionBody, TransactionInput,
-    TransactionPointer, TxInfo, TxInfoTranslationError, Utxos, WitnessSet, cbor, decode_plutus_script, to_cbor,
-    transaction_input_to_string,
+    BorrowedScript, EraHistory, GlobalParameters, HasTransactionId, ProtocolParameters, TransactionBody,
+    TransactionInput, TransactionPointer, TxInfo, TxInfoTranslationError, Utxos, WitnessSet, cbor,
+    decode_plutus_script, to_cbor, transaction_input_to_string,
 };
 use amaru_plutus::{
     arena_pool::ArenaPool,
@@ -79,9 +79,9 @@ where
 pub fn execute<C>(
     context: &mut C,
     arena_pool: &ArenaPool,
-    network: NetworkName,
     protocol_parameters: &ProtocolParameters,
     era_history: &EraHistory,
+    global_parameters: &GlobalParameters,
     pointer: TransactionPointer,
     is_valid: bool,
     transaction_body: &TransactionBody,
@@ -128,8 +128,8 @@ where
         transaction_body.tx_id(),
         &utxos,
         &pointer.slot,
-        network,
         era_history,
+        global_parameters,
     )?;
 
     let scripts_to_execute = tx_info.to_script_contexts();
@@ -278,12 +278,9 @@ where
 mod tests {
     use std::{collections::BTreeMap, sync::LazyLock};
 
-    use amaru_kernel::{
-        EraHistory, MemoizedTransactionOutput, NetworkName, ProtocolParameters, Transaction, TransactionPointer,
-        include_cbor,
-    };
+    use amaru_kernel::{MemoizedTransactionOutput, NetworkName, Transaction, TransactionPointer, include_cbor};
     use amaru_plutus::arena_pool::ArenaPool;
-    use anyhow::{Context, Result};
+    use anyhow::Result;
 
     use crate::context::assert::{AssertPreparationContext, AssertValidationContext};
 
@@ -315,15 +312,12 @@ mod tests {
 
         let mut context = AssertValidationContext::from(AssertPreparationContext { utxo });
 
-        let protocol_parameters =
-            <&ProtocolParameters>::try_from(network).map_err(anyhow::Error::msg).context("missing network defaults")?;
-
         super::execute(
             &mut context,
             &ARENA_POOL,
-            network,
-            protocol_parameters,
-            <&EraHistory>::from(network),
+            network.as_protocol_parameters().expect("missing network defaults"),
+            network.as_era_history().expect("missing network defaults"),
+            network.as_global_parameters().expect("missing network defaults"),
             default_pointer(&transaction),
             transaction.is_expected_valid,
             &transaction.body,

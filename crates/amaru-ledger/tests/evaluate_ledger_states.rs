@@ -41,11 +41,9 @@ pub mod tests {
         snapshot: &str,
         expected_result: Result<(), &str>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let network = NetworkName::Testnet(1);
-        let era_history = network.into();
         let vector_file = fs::read(test_data_dir.join(snapshot))?;
         let record: TestVector = cbor::decode(&vector_file)?;
-        let actual = evaluate_vector(record, era_history, PPARAMS_DIR.as_ref()).map_err(|e| e.to_string());
+        let actual = evaluate_vector(record, &EraHistory::default(), PPARAMS_DIR.as_ref()).map_err(|e| e.to_string());
         if let Some(path) = std::env::var_os("AMARU_UPDATE_LEDGER_CONFORMANCE_SNAPSHOT_PATH") {
             // Append to the (toml format) snapshot file that tracks which tests are expected to fail.
             if let Err(error) = actual {

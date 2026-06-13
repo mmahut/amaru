@@ -44,7 +44,7 @@ pub enum SlotArithmeticError {
 }
 
 impl Slot {
-    pub fn new(slot: u64) -> Self {
+    pub const fn new(slot: u64) -> Self {
         Self(slot)
     }
 

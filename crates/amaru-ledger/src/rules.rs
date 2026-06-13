@@ -60,8 +60,8 @@ pub(crate) mod tests {
     use std::{collections::BTreeMap, sync::LazyLock};
 
     use amaru_kernel::{
-        EraHistory, NetworkName, PREPROD_DEFAULT_PROTOCOL_PARAMETERS, ProtocolParameters,
-        cardano::network_block::CONWAY_BLOCK, cbor,
+        NetworkName, PREPROD_DEFAULT_PROTOCOL_PARAMETERS, PREPROD_ERA_HISTORY, PREPROD_GLOBAL_PARAMETERS,
+        ProtocolParameters, cardano::network_block::CONWAY_BLOCK, cbor,
     };
     use amaru_plutus::arena_pool::ArenaPool;
 
@@ -109,7 +109,8 @@ pub(crate) mod tests {
             &ARENA_POOL,
             NetworkName::Preprod,
             &protocol_parameters,
-            <&EraHistory>::from(NetworkName::Preprod),
+            &PREPROD_ERA_HISTORY,
+            &PREPROD_GLOBAL_PARAMETERS,
             GovernanceActivity { consecutive_dormant_epochs: 0 },
             block,
         );
@@ -137,7 +138,8 @@ pub(crate) mod tests {
             &ARENA_POOL,
             NetworkName::Preprod,
             &pp,
-            <&EraHistory>::from(NetworkName::Preprod),
+            &PREPROD_ERA_HISTORY,
+            &PREPROD_GLOBAL_PARAMETERS,
             GovernanceActivity { consecutive_dormant_epochs: 0 },
             block,
         );

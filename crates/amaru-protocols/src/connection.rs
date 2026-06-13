@@ -319,7 +319,7 @@ pub fn register_deserializers() -> DeserializerGuards {
 
 #[cfg(test)]
 mod tests {
-    use amaru_kernel::NetworkName;
+    use amaru_kernel::PREPROD_ERA_HISTORY;
     use amaru_pure_stage::{Effect, StageGraph, simulation::SimulationBuilder};
 
     use super::*;
@@ -406,7 +406,6 @@ mod tests {
     // HELPERS
 
     fn test_connection(state: State) -> Connection {
-        let era_history: &EraHistory = NetworkName::Preprod.into();
         Connection {
             params: Params {
                 peer: Peer::new("test-peer"),
@@ -415,7 +414,7 @@ mod tests {
                 config: ManagerConfig::default(),
                 magic: NetworkMagic::PREPROD,
                 pipeline: StageRef::blackhole(),
-                era_history: Arc::new(era_history.clone()),
+                era_history: Arc::new(PREPROD_ERA_HISTORY.clone()),
                 mempool_stage: StageRef::blackhole(),
                 manager: StageRef::blackhole(),
             },

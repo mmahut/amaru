@@ -21,7 +21,8 @@ use std::{
 };
 
 use amaru_kernel::{
-    BlockHeader, Epoch, EraHistory, Hash, HeaderHash, IsHeader, NetworkName, Nonce, Peer, Point, from_cbor,
+    BlockHeader, Epoch, EraHistory, GlobalParameters, Hash, HeaderHash, IsHeader, NetworkName, Nonce, Peer, Point,
+    from_cbor,
 };
 use amaru_ledger::{
     bootstrap::import_initial_snapshot,
@@ -253,7 +254,7 @@ fn select_bootstrap_snapshots(
 
 fn initial_nonces_from_snapshot(
     snapshot_path: &Path,
-    network: NetworkName,
+    global_parameters: &GlobalParameters,
     tail: HeaderHash,
 ) -> Result<(Epoch, InitialNonces), Box<dyn Error>> {
     let bytes = if let Some(snapshot_paths) = node_snapshot_paths(snapshot_path) {
@@ -265,7 +266,7 @@ fn initial_nonces_from_snapshot(
     };
 
     let (parsed_snapshot, initial_nonces) =
-        parse_state_snapshot_with_nonces(minicbor::Decoder::new(&bytes), &network, tail)?;
+        parse_state_snapshot_with_nonces(minicbor::Decoder::new(&bytes), global_parameters, tail)?;
     let epoch = snapshot_epoch(&parsed_snapshot)?;
 
     Ok((epoch, initial_nonces))
@@ -274,21 +275,24 @@ fn initial_nonces_from_snapshot(
 fn default_bootstrap_nonces_from_snapshots(
     snapshots_dir: &Path,
     snapshots: &[Snapshot],
-    network: NetworkName,
+    global_parameters: &GlobalParameters,
 ) -> Result<(Epoch, InitialNonces), Box<dyn Error>> {
     let [_, second_snapshot, third_snapshot] = select_bootstrap_snapshots(snapshots, None)?;
     let third_snapshot_path = resolve_snapshot_path(snapshots_dir, third_snapshot).ok_or_else(|| {
         BootstrapError::MissingSnapshotDirectory(snapshot_directory_path(snapshots_dir, third_snapshot))
     })?;
     let (epoch, initial_nonces) =
-        initial_nonces_from_snapshot(&third_snapshot_path, network, snapshot_hash(second_snapshot)?)?;
+        initial_nonces_from_snapshot(&third_snapshot_path, global_parameters, snapshot_hash(second_snapshot)?)?;
 
     Ok((epoch, initial_nonces))
 }
 
-pub fn default_bootstrap_nonces(network: NetworkName) -> Result<(Epoch, InitialNonces), Box<dyn Error>> {
+pub fn default_bootstrap_nonces(
+    network: NetworkName,
+    global_parameters: &GlobalParameters,
+) -> Result<(Epoch, InitialNonces), Box<dyn Error>> {
     let (snapshots_dir, snapshots) = bootstrap_snapshots(network)?;
-    default_bootstrap_nonces_from_snapshots(&snapshots_dir, &snapshots, network)
+    default_bootstrap_nonces_from_snapshots(&snapshots_dir, &snapshots, global_parameters)
 }
 
 fn snapshot_parent_point(snapshot: &Snapshot) -> Result<Point, Box<dyn Error>> {
@@ -550,6 +554,7 @@ fn find_extracted_snapshot_dir(path: &Path) -> Result<Option<PathBuf>, io::Error
 /// Set the internal dbs in such a state that amaru can run
 pub async fn bootstrap(
     network: NetworkName,
+    global_parameters: &GlobalParameters,
     ledger_dir: PathBuf,
     chain_dir: PathBuf,
     target_epoch: Option<Epoch>,
@@ -569,10 +574,11 @@ pub async fn bootstrap(
         BootstrapError::MissingSnapshotDirectory(snapshot_directory_path(&snapshots_dir, third_snapshot))
     })?;
 
-    import_snapshot(network, &first_snapshot_path, &ledger_dir).await?;
-    import_snapshot(network, &second_snapshot_path, &ledger_dir).await?;
+    import_snapshot(network, global_parameters, &first_snapshot_path, &ledger_dir).await?;
+    import_snapshot(network, global_parameters, &second_snapshot_path, &ledger_dir).await?;
     let imported_third_snapshot = import_snapshot_with_optional_nonces(
         network,
+        global_parameters,
         &third_snapshot_path,
         &ledger_dir,
         Some(snapshot_hash(second_snapshot)?),
@@ -686,12 +692,13 @@ pub async fn import_headers(db: &RocksDBStore, headers: Vec<Vec<u8>>) -> Result<
 
 pub async fn import_snapshots_from_directory(
     network: NetworkName,
+    global_parameters: &GlobalParameters,
     ledger_dir: &Path,
     snapshot_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if node_snapshot_paths(snapshot_dir).is_some() {
         let snapshots = [snapshot_dir.to_path_buf()];
-        return import_snapshots(network, &snapshots, ledger_dir).await;
+        return import_snapshots(network, global_parameters, &snapshots, ledger_dir).await;
     }
 
     let mut snapshots = std::fs::read_dir(snapshot_dir)?
@@ -701,7 +708,7 @@ pub async fn import_snapshots_from_directory(
 
     sort_snapshots_by_slot(&mut snapshots);
 
-    import_snapshots(network, &snapshots, ledger_dir).await
+    import_snapshots(network, global_parameters, &snapshots, ledger_dir).await
 }
 
 fn sort_snapshots_by_slot(snapshots: &mut [PathBuf]) {
@@ -717,12 +724,13 @@ fn sort_snapshots_by_slot(snapshots: &mut [PathBuf]) {
 
 pub async fn import_snapshots(
     network: NetworkName,
+    global_parameters: &GlobalParameters,
     snapshots: &[PathBuf],
     ledger_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!(count = snapshots.len(), "Importing snapshots");
     for snapshot in snapshots {
-        import_snapshot(network, snapshot, ledger_dir).await?;
+        import_snapshot(network, global_parameters, snapshot, ledger_dir).await?;
     }
     info!("Imported snapshots");
     Ok(())
@@ -747,26 +755,28 @@ struct ImportedSnapshot {
 
 async fn import_snapshot(
     network: NetworkName,
+    global_parameters: &GlobalParameters,
     snapshot: &Path,
     ledger_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    import_snapshot_with_optional_nonces(network, snapshot, ledger_dir, None).await?;
+    import_snapshot_with_optional_nonces(network, global_parameters, snapshot, ledger_dir, None).await?;
 
     Ok(())
 }
 
 async fn import_snapshot_with_optional_nonces(
     network: NetworkName,
+    global_parameters: &GlobalParameters,
     snapshot: &Path,
     ledger_dir: &Path,
     nonce_tail: Option<HeaderHash>,
 ) -> Result<ImportedSnapshot, Box<dyn std::error::Error>> {
     if let Some(paths) = node_snapshot_paths(snapshot) {
-        return import_node_snapshot_dir(network, snapshot, &paths, ledger_dir, nonce_tail).await;
+        return import_node_snapshot_dir(network, global_parameters, snapshot, &paths, ledger_dir, nonce_tail).await;
     }
 
     if is_cbor_snapshot_file(snapshot) {
-        return import_cbor_snapshot_file(network, snapshot, ledger_dir, nonce_tail).await;
+        return import_cbor_snapshot_file(network, global_parameters, snapshot, ledger_dir, nonce_tail).await;
     }
 
     Err(Box::new(ImportError::UnsupportedSnapshotPath(snapshot.to_path_buf())))
@@ -775,6 +785,7 @@ async fn import_snapshot_with_optional_nonces(
 #[expect(clippy::unwrap_used)]
 async fn import_cbor_snapshot_file(
     network: NetworkName,
+    global_parameters: &GlobalParameters,
     snapshot: &Path,
     ledger_dir: &Path,
     nonce_tail: Option<HeaderHash>,
@@ -787,7 +798,8 @@ async fn import_cbor_snapshot_file(
     let era_history = make_era_history(dir, &point, network)?;
     let initial_nonces = if let Some(tail) = nonce_tail {
         let bytes = std::fs::read(snapshot)?;
-        let (_, initial_nonces) = parse_state_snapshot_with_nonces(minicbor::Decoder::new(&bytes), &network, tail)?;
+        let (_, initial_nonces) =
+            parse_state_snapshot_with_nonces(minicbor::Decoder::new(&bytes), global_parameters, tail)?;
         Some(initial_nonces)
     } else {
         None
@@ -833,6 +845,7 @@ async fn import_cbor_snapshot_file(
 #[expect(clippy::unwrap_used)]
 async fn import_node_snapshot_dir(
     network: NetworkName,
+    global_parameters: &GlobalParameters,
     snapshot_dir: &Path,
     paths: &NodeSnapshotPaths,
     ledger_dir: &Path,
@@ -877,6 +890,7 @@ async fn import_node_snapshot_dir(
     let mut state_file = std::fs::File::open(&paths.state)?;
     let mut utxo_file = std::fs::File::open(&paths.utxo)?;
 
+    let global_parameters = global_parameters.clone();
     let builder = std::thread::Builder::new().stack_size(10_000_000);
     let (db, epoch, initial_nonces) = builder
         .spawn(move || {
@@ -885,6 +899,7 @@ async fn import_node_snapshot_dir(
                 &mut state_file,
                 &mut utxo_file,
                 network,
+                &global_parameters,
                 nonce_tail,
                 era_history_override,
                 |size, template| TerminalProgressBar::new(size as u64, template).boxed(),
@@ -925,19 +940,17 @@ fn is_cbor_snapshot_file(path: &Path) -> bool {
     path.is_file() && path.extension().and_then(|extension| extension.to_str()) == Some("cbor")
 }
 
+// TODO: See if this cannot be determined from the snapshot?
 fn make_era_history(dir: &Path, point: &Point, network: NetworkName) -> Result<EraHistory, Box<dyn std::error::Error>> {
-    match network {
-        NetworkName::Testnet(_) => {
-            let filename = format!("history.{}.{}.json", point.slot_or_default(), point.hash());
-            let history_file = dir.join(filename);
-            if !history_file.is_file() {
-                return Err(format!("cannot import testnet era history from {}", history_file.display()).into());
-            }
-
-            Ok(serde_json::from_slice(&std::fs::read(&history_file)?)?)
+    network.as_era_history().cloned().map(Ok).unwrap_or_else(|| {
+        let filename = format!("history.{}.{}.json", point.slot_or_default(), point.hash());
+        let history_file = dir.join(filename);
+        if !history_file.is_file() {
+            return Err(format!("cannot import testnet era history from {}", history_file.display()).into());
         }
-        NetworkName::Mainnet | NetworkName::Preprod | NetworkName::Preview => Ok(<&EraHistory>::from(network).clone()),
-    }
+
+        Ok(serde_json::from_slice(&std::fs::read(&history_file)?)?)
+    })
 }
 
 #[cfg(test)]

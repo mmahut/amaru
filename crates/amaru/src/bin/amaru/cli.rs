@@ -88,6 +88,13 @@ impl Command {
             return Ok(true);
         }
 
+        if let Command::Bootstrap(args) = self
+            && args.help_global_parameters
+        {
+            GlobalParameters::show_help()?;
+            return Ok(true);
+        }
+
         Ok(false)
     }
 }
@@ -135,6 +142,7 @@ pub(crate) fn parse(version: &'static str) -> Result<Cli, clap::Error> {
         // Those options aren't declared hidden because it makes constructing the dedicated help a
         // lot harder. So we instead declare them visible and only hide them here.
         .mut_subcommand("run", GlobalParameters::hide_options)
+        .mut_subcommand("bootstrap", GlobalParameters::hide_options)
         .version(version)
         .get_matches();
 

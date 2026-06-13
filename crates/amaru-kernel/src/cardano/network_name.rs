@@ -15,8 +15,7 @@
 use crate::{
     EraHistory, GlobalParameters, MAINNET_DEFAULT_PROTOCOL_PARAMETERS, MAINNET_ERA_HISTORY, MAINNET_GLOBAL_PARAMETERS,
     Network, NetworkMagic, PREPROD_DEFAULT_PROTOCOL_PARAMETERS, PREPROD_ERA_HISTORY, PREPROD_GLOBAL_PARAMETERS,
-    PREVIEW_DEFAULT_PROTOCOL_PARAMETERS, PREVIEW_ERA_HISTORY, PREVIEW_GLOBAL_PARAMETERS, ProtocolParameters, Slot,
-    TESTNET_ERA_HISTORY, TESTNET_GLOBAL_PARAMETERS,
+    PREVIEW_DEFAULT_PROTOCOL_PARAMETERS, PREVIEW_ERA_HISTORY, PREVIEW_GLOBAL_PARAMETERS, ProtocolParameters,
 };
 
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
@@ -26,43 +25,6 @@ pub enum NetworkName {
     Preprod,
     Preview,
     Testnet(u32),
-}
-
-impl From<NetworkName> for &EraHistory {
-    fn from(value: NetworkName) -> Self {
-        match value {
-            NetworkName::Mainnet => &MAINNET_ERA_HISTORY,
-            NetworkName::Preprod => &PREPROD_ERA_HISTORY,
-            NetworkName::Preview => &PREVIEW_ERA_HISTORY,
-            NetworkName::Testnet(_) => &TESTNET_ERA_HISTORY,
-        }
-    }
-}
-
-impl From<NetworkName> for &GlobalParameters {
-    fn from(value: NetworkName) -> Self {
-        match value {
-            NetworkName::Mainnet => &MAINNET_GLOBAL_PARAMETERS,
-            NetworkName::Preprod => &PREPROD_GLOBAL_PARAMETERS,
-            NetworkName::Preview => &PREVIEW_GLOBAL_PARAMETERS,
-            // TODO: define global parameters for all the networks
-            NetworkName::Testnet(_) => &TESTNET_GLOBAL_PARAMETERS,
-        }
-    }
-}
-
-impl TryFrom<NetworkName> for &ProtocolParameters {
-    type Error = String;
-
-    // TODO: define protocol parameters for all the networks
-    fn try_from(value: NetworkName) -> Result<Self, String> {
-        match value {
-            NetworkName::Mainnet => Ok(&MAINNET_DEFAULT_PROTOCOL_PARAMETERS),
-            NetworkName::Preprod => Ok(&PREPROD_DEFAULT_PROTOCOL_PARAMETERS),
-            NetworkName::Preview => Ok(&PREVIEW_DEFAULT_PROTOCOL_PARAMETERS),
-            other @ NetworkName::Testnet(_) => Err(format!("no default protocol parameters for {other}")),
-        }
-    }
 }
 
 impl std::fmt::Display for NetworkName {
@@ -86,7 +48,6 @@ impl std::str::FromStr for NetworkName {
             "preview" => Ok(Self::Preview),
             _ => {
                 let magic = s.strip_prefix("testnet_").ok_or(format!("Invalid network name {}", s))?;
-
                 magic.parse::<u32>().map(NetworkName::Testnet).map_err(|e| e.to_string())
             }
         }
@@ -118,28 +79,30 @@ impl NetworkName {
         }
     }
 
-    /// Compute the default epoch length for this network.
-    ///
-    /// This is an over-simplification as _theoretically_ each era can
-    /// have a different epoch length but in practice, except for
-    /// Byron era, all eras for each network have always had the same
-    /// length
-    pub fn default_epoch_size_in_slots(&self) -> u64 {
+    pub fn as_era_history(&self) -> Option<&EraHistory> {
         match self {
-            NetworkName::Mainnet => 432000,
-            NetworkName::Preprod => 432000,
-            NetworkName::Preview => 86400,
-            NetworkName::Testnet(_) => 86400,
+            NetworkName::Mainnet => Some(&MAINNET_ERA_HISTORY),
+            NetworkName::Preprod => Some(&PREPROD_ERA_HISTORY),
+            NetworkName::Preview => Some(&PREVIEW_ERA_HISTORY),
+            NetworkName::Testnet(_) => None,
         }
     }
 
-    /// Provide stability window for given network.
-    pub fn default_stability_window(&self) -> Slot {
+    pub fn as_global_parameters(&self) -> Option<&'static GlobalParameters> {
         match self {
-            NetworkName::Mainnet => MAINNET_GLOBAL_PARAMETERS.stability_window,
-            NetworkName::Preprod => PREPROD_GLOBAL_PARAMETERS.stability_window,
-            NetworkName::Preview => PREVIEW_GLOBAL_PARAMETERS.stability_window,
-            NetworkName::Testnet(_) => TESTNET_GLOBAL_PARAMETERS.stability_window,
+            NetworkName::Mainnet => Some(&MAINNET_GLOBAL_PARAMETERS),
+            NetworkName::Preprod => Some(&PREPROD_GLOBAL_PARAMETERS),
+            NetworkName::Preview => Some(&PREVIEW_GLOBAL_PARAMETERS),
+            NetworkName::Testnet(_) => None,
+        }
+    }
+
+    pub fn as_protocol_parameters(&self) -> Option<&ProtocolParameters> {
+        match self {
+            NetworkName::Mainnet => Some(&MAINNET_DEFAULT_PROTOCOL_PARAMETERS),
+            NetworkName::Preprod => Some(&PREPROD_DEFAULT_PROTOCOL_PARAMETERS),
+            NetworkName::Preview => Some(&PREVIEW_DEFAULT_PROTOCOL_PARAMETERS),
+            NetworkName::Testnet(_) => None,
         }
     }
 }

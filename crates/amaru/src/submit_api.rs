@@ -129,7 +129,7 @@ mod tests {
         effects::{ResourceBlockValidation, ResourceEraHistory, ResourceTxValidation},
         stages::mempool::MempoolStageState,
     };
-    use amaru_kernel::{NetworkName, RawBlock, Transaction, to_cbor};
+    use amaru_kernel::{PREPROD_ERA_HISTORY, PREPROD_GLOBAL_PARAMETERS, RawBlock, Transaction, to_cbor};
     use amaru_mempool::{InMemoryMempool, MempoolConfig};
     use amaru_ouroboros::{MempoolMsg, ResourceMempool};
     use amaru_ouroboros_traits::{
@@ -336,10 +336,8 @@ mod tests {
         let mut stage_graph = TokioBuilder::default();
         let mempool_stage = stage_graph.stage("mempool", mempool::stage);
         let mempool_stage = stage_graph.wire_up(mempool_stage, MempoolStageState::default());
-        let era_history = <&amaru_kernel::EraHistory>::from(NetworkName::Preprod);
-        let global_parameters = <&amaru_kernel::GlobalParameters>::from(NetworkName::Preprod);
-        stage_graph.resources().put::<ResourceParameters>(global_parameters.clone());
-        stage_graph.resources().put::<ResourceEraHistory>(era_history.clone());
+        stage_graph.resources().put::<ResourceParameters>(PREPROD_GLOBAL_PARAMETERS.clone());
+        stage_graph.resources().put::<ResourceEraHistory>(PREPROD_ERA_HISTORY.clone());
         stage_graph.resources().put::<ResourceBlockValidation>(Arc::new(MockCanValidateBlocks));
         stage_graph.resources().put::<ResourceMempool<Transaction>>(mempool);
         stage_graph.resources().put::<ResourceTxValidation>(validator);

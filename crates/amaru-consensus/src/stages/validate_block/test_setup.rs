@@ -15,8 +15,7 @@
 use std::{collections::BTreeSet, net::SocketAddr, sync::Arc};
 
 use amaru_kernel::{
-    BlockHeader, BlockHeight, HeaderHash, IsHeader, Point, TESTNET_ERA_HISTORY, Tip, make_header,
-    make_header_with_op_cert_seq,
+    BlockHeader, BlockHeight, EraHistory, HeaderHash, IsHeader, Point, Tip, make_header, make_header_with_op_cert_seq,
 };
 use amaru_metrics::ledger::LedgerMetrics;
 use amaru_ouroboros_traits::{
@@ -233,7 +232,7 @@ impl TestPrep {
 
     pub fn store_blocks(&self, headers: &[&BlockHeader]) {
         for h in headers {
-            let raw = amaru_kernel::cardano::network_block::make_encoded_block(h, &TESTNET_ERA_HISTORY);
+            let raw = amaru_kernel::cardano::network_block::make_encoded_block(h, &EraHistory::default());
             self.store.store_block(&h.hash(), &raw).unwrap();
         }
     }
