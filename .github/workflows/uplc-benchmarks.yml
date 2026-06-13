@@ -15,68 +15,32 @@ permissions:
   actions: read
 
 jobs:
-  check-changes:
-    name: Check for changes
-    runs-on: ubuntu-24.04
-    outputs:
-      should_run: ${{ steps.check.outputs.should_run }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Check for changes since last run
-        id: check
-        run: |
-          LAST_RUN=$(gh run list --workflow=uplc-benchmarks.yml --branch=main --status=success --limit=1 --json createdAt --jq '.[0].createdAt' 2>/dev/null || echo "")
-
-          if [ -z "$LAST_RUN" ]; then
-            echo "No previous benchmark run found, will run benchmarks"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          COMMITS_SINCE=$(git log --since="$LAST_RUN" --oneline origin/main -- crates/amaru-uplc/ | wc -l)
-
-          if [ "$COMMITS_SINCE" -gt 0 ]; then
-            echo "Found $COMMITS_SINCE commits since last run affecting amaru-uplc, will run benchmarks"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-          else
-            echo "No commits since last run affecting amaru-uplc, skipping benchmarks"
-            echo "should_run=false" >> $GITHUB_OUTPUT
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-
   run-turbo-benchmarks:
     name: benchmarks-turbo
     runs-on: ubuntu-24.04
-    needs: check-changes
-    if: needs.check-changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: true
+
       - uses: ./.github/actions/cache
 
       - name: Cache benchmark data
         id: cache-benchmarks
         uses: actions/cache@v4
         with:
-          path: turbo.tar.xz
+          path: uplc-benchmarks-turbo.tar.xz
           key: ${{ env.BENCHMARK_CACHE_KEY }}
 
       - name: Download benchmark data
         if: steps.cache-benchmarks.outputs.cache-hit != 'true'
-        run: curl -L -o turbo.tar.xz "$BENCHMARK_URL"
+        run: curl -L -o  uplc-benchmarks-turbo.tar.xz "$BENCHMARK_URL"
 
       - name: Extract benchmark data
         run: |
           echo "Extracting benchmark data..."
           mkdir -p crates/amaru-uplc/benches/turbo/samples
-          tar -xf turbo.tar.xz -C crates/amaru-uplc/benches/turbo/samples
+          tar -xf uplc-benchmarks-turbo.tar.xz -C crates/amaru-uplc/benches/turbo/samples
           echo "Extraction complete"
           ls -la crates/amaru-uplc/benches/turbo/samples
 
