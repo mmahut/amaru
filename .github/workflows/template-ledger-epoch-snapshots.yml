@@ -87,7 +87,7 @@ jobs:
       DEFAULT_TIMEOUT: ${{ inputs.default_timeout }}
       TRACE_CONTRACT: data/${{ matrix.network.name }}/run-until-trace-contract.json
       TRACE_COMPARE_LOG: trace-compare.log
-      TRACE_COMPARE_TARGET_EPOCH: 166
+      TRACE_COMPARE_TARGET_EPOCH: 275
     continue-on-error: true
 
     steps:
