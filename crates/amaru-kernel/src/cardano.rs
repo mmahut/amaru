@@ -27,6 +27,7 @@ pub mod bootstrap_witness;
 pub mod bytes;
 pub mod certificate;
 pub mod certificate_pointer;
+pub mod consensus_parameters;
 pub mod constitution;
 pub mod constitutional_committee;
 pub mod cost_model;
@@ -50,6 +51,7 @@ pub mod script_integrity_data;
 // We have two types that seemingly fulfill the same function. They shall be unified.
 pub mod era_bound;
 pub mod era_summary;
+pub mod global_parameters;
 pub mod header;
 pub mod header_body;
 pub mod int;
